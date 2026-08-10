@@ -1,0 +1,51 @@
+package com.example.cardcounter.domain
+
+enum class SessionPhase {
+    PRE_PLAY,
+    ACTIVE,
+    PAUSED,
+    CLOSED
+}
+
+data class GameState(
+    val phase: SessionPhase,
+    val selfLockedHand: RankCounts? = null,
+    val outsidePlayed: RankCounts = RankCounts.zero(),
+    val outsidePlayedBySeat: Map<OutsideSeat, RankCounts> =
+        OutsideSeat.entries.associateWith { RankCounts.zero() },
+    val revertedEventIds: Set<String> = emptySet(),
+    val pauseReason: PauseReason? = null,
+    val events: List<GameEvent> = emptyList()
+) {
+    val outsideRemaining: RankCounts?
+        get() = selfLockedHand?.let { Rank.initialInventory.minus(it).minus(outsidePlayed) }
+
+    fun playedBy(seat: OutsideSeat): RankCounts =
+        outsidePlayedBySeat[seat] ?: RankCounts.zero()
+
+    /** 买牌等前置转移尚未归因时，超过33张不伪造剩余数。 */
+    fun remainingCardsBy(seat: OutsideSeat): Int? =
+        (33 - playedBy(seat).total()).takeIf { it >= 0 }
+
+    fun requireInvariant() {
+        check(Rank.initialInventory.total() == 198)
+        check(selfLockedHand?.fitsWithin(Rank.initialInventory) != false)
+        val assignedOutside = OutsideSeat.entries.fold(RankCounts.zero()) { total, seat ->
+            total.plus(playedBy(seat))
+        }
+        check(assignedOutside.fitsWithin(outsidePlayed))
+        val availableOutside = selfLockedHand?.let { Rank.initialInventory.minus(it) }
+        check(availableOutside == null || outsidePlayed.fitsWithin(availableOutside))
+        if (selfLockedHand != null) {
+            val remaining = outsideRemaining!!
+            Rank.entries.forEach { rank ->
+                check(
+                    Rank.initialInventory[rank] ==
+                        selfLockedHand[rank] + outsidePlayed[rank] + remaining[rank]
+                )
+            }
+        } else {
+            check(outsidePlayed == RankCounts.zero())
+        }
+    }
+}

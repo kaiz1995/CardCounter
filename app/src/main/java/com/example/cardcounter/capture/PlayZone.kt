@@ -1,0 +1,124 @@
+package com.example.cardcounter.capture
+
+import com.example.cardcounter.domain.RankCounts
+import com.example.cardcounter.domain.OutsideSeat
+import kotlin.math.roundToInt
+
+/** 固定皮肤的六个公开出牌区；中央仅代表自己，其余五区代表外面。 */
+enum class PlayZone(
+    val source: PlaySource,
+    val seat: OutsideSeat?,
+    private val leftRatio: Double,
+    private val rightRatio: Double,
+    private val rankYRatio: Double,
+    val visibilityHeight: Int = 70
+) {
+    TOP(PlaySource.OUTSIDE, OutsideSeat.TOP, 0.539, 0.602, 0.022),
+    LEFT_TOP(PlaySource.OUTSIDE, OutsideSeat.LEFT_TOP, 0.148, 0.266, 0.156, 56),
+    LEFT_BOTTOM(PlaySource.OUTSIDE, OutsideSeat.LEFT_BOTTOM, 0.141, 0.281, 0.429),
+    RIGHT_TOP(PlaySource.OUTSIDE, OutsideSeat.RIGHT_TOP, 0.750, 0.859, 0.156, 56),
+    RIGHT_BOTTOM(PlaySource.OUTSIDE, OutsideSeat.RIGHT_BOTTOM, 0.750, 0.859, 0.429),
+    SELF(PlaySource.SELF, null, 0.438, 0.563, 0.358, 28);
+
+    fun left(width: Int): Int = (width * leftRatio).roundToInt()
+
+    fun right(width: Int): Int = (width * rightRatio).roundToInt()
+
+    fun rankY(height: Int): Int = (height * rankYRatio).roundToInt()
+
+    /** YOLO 输入保持正方形，避免横向出牌条被强制拉伸后合并重叠牌。 */
+    fun yoloCrop(width: Int, height: Int): PlayCrop {
+        val left = left(width)
+        val size = right(width) - left + 1
+        val top = (rankY(height) - size * 43 / 100).coerceIn(0, height - size)
+        return PlayCrop(left, top, size)
+    }
+}
+
+data class PlayCrop(val left: Int, val top: Int, val size: Int)
+
+enum class PlaySource { SELF, OUTSIDE }
+
+internal data class StablePlay(val zone: PlayZone, val cards: RankCounts)
+
+/** 同一区连续两次相同候选才接收；清空两次后允许下一组相同牌再次出现。 */
+internal class StablePlayGate {
+    private data class ZoneState(
+        val candidate: RankCounts? = null,
+        val stableSamples: Int = 0,
+        val emptySamples: Int = 0,
+        val accepted: RankCounts? = null
+    )
+
+    private val states = PlayZone.entries.associateWith { ZoneState() }.toMutableMap()
+
+    fun update(zone: PlayZone, cards: RankCounts): StablePlay? {
+        val before = states.getValue(zone)
+        val next = when {
+            cards.total() == 0 -> before.copy(
+                candidate = null,
+                stableSamples = 0,
+                emptySamples = before.emptySamples + 1,
+                accepted = if (before.emptySamples + 1 >= CLEAR_SAMPLES) null else before.accepted
+            )
+            cards == before.candidate -> before.copy(
+                stableSamples = before.stableSamples + 1,
+                emptySamples = 0
+            )
+            else -> before.copy(candidate = cards, stableSamples = 1, emptySamples = 0)
+        }
+        states[zone] = next
+        return if (next.stableSamples >= 2 && next.accepted != cards) {
+            states[zone] = next.copy(accepted = cards)
+            StablePlay(zone, cards)
+        } else {
+            null
+        }
+    }
+
+    fun reset() {
+        PlayZone.entries.forEach { states[it] = ZoneState() }
+    }
+
+    /** 服务重启时，桌面尚未收走的牌只作为去重基线。 */
+    fun prime(zone: PlayZone, cards: RankCounts) {
+        states[zone] = ZoneState(accepted = cards.takeIf { it.total() > 0 })
+    }
+
+    private companion object {
+        const val CLEAR_SAMPLES = 6
+    }
+}
+
+internal fun stableUnknownCount(previous: Int, cardsVisible: Boolean, cards: RankCounts): Int = when {
+    !cardsVisible || cards.total() > 0 -> 0
+    else -> previous + 1
+}
+
+/** YOLO会把“过牌”等文字误识别成牌，必须同时存在白色牌面。 */
+internal fun isPlayVisible(whiteAreaVisible: Boolean): Boolean = whiteAreaVisible
+
+/** 单张牌在最宽的侧边区域约占14.5%，阈值留到10%避免漏掉深色花纹。 */
+internal fun hasVisibleCardArea(whiteSamples: Int, totalSamples: Int): Boolean =
+    totalSamples > 0 && whiteSamples * 100 >= totalSamples * 10
+
+internal fun isTableGreen(red: Int, green: Int, blue: Int): Boolean =
+    green >= 70 && green - red >= 30 && green - blue >= 10
+
+/** 公开出牌的点数位固定在裁剪中部；底部边缘框来自界面文字或面板。 */
+internal fun isPublicRankBand(centerY: Float): Boolean = centerY < 0.85f
+
+/** 开局前必须先稳定手牌；正式对局时公共出牌不应被自己手牌动画阻塞。 */
+internal fun shouldProbeRanks(firstPlayArmed: Boolean, stableHandSamples: Int): Boolean =
+    firstPlayArmed || stableHandSamples >= 3
+
+/** 多张且每张都很确定时不等待下一帧，避免开点动画清桌前丢失整手。 */
+internal fun canFastConfirmPlay(cards: RankCounts, minimumConfidence: Float): Boolean =
+    cards.total() >= 3 && minimumConfidence >= 0.60f
+
+/** 单张以全屏固定牌角模板为准；ROI 模板未校准，不能参与此处融合。 */
+internal fun fuseSinglePublicPlay(model: RankCounts, template: RankCounts): RankCounts =
+    if (model.total() == 1 && template.total() == 1) template else model
+
+/** 牌桌动画会短暂露出无法识别的牌面；连续三次才按未知牌暂停。 */
+internal fun isStableUnknownPlay(samples: Int): Boolean = samples >= 3
