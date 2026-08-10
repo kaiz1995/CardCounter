@@ -9,3 +9,8 @@ captures/
 *.keystore
 releases/**/*.apk
 releases/**/*-source.zip
+.workbuddy/
+9局/
+g2-analysis/
+*.mp4
+*.jpg
