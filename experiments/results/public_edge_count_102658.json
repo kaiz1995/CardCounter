@@ -1,0 +1,799 @@
+{
+  "rule": "gray>190 column runs >=2px, white fraction>.20",
+  "exact": 6,
+  "total": 35,
+  "rows": [
+    {
+      "event_id": "G3-E037",
+      "time_s": "516.146",
+      "zone": "TOP",
+      "seat": "对家",
+      "cards": "4",
+      "confidence": "high",
+      "edge_count": 2,
+      "truth_count": 1,
+      "runs": [
+        [
+          5,
+          13
+        ],
+        [
+          16,
+          49
+        ]
+      ]
+    },
+    {
+      "event_id": "G3-E038",
+      "time_s": "517.157",
+      "zone": "LEFT_TOP",
+      "seat": "上联",
+      "cards": "7",
+      "confidence": "high",
+      "edge_count": 2,
+      "truth_count": 1,
+      "runs": [
+        [
+          24,
+          49
+        ],
+        [
+          52,
+          68
+        ]
+      ]
+    },
+    {
+      "event_id": "G3-E039",
+      "time_s": "518.178",
+      "zone": "LEFT_BOTTOM",
+      "seat": "上家",
+      "cards": "9",
+      "confidence": "high",
+      "edge_count": 1,
+      "truth_count": 1,
+      "runs": [
+        [
+          33,
+          77
+        ]
+      ]
+    },
+    {
+      "event_id": "G3-E040",
+      "time_s": "518.439",
+      "zone": "RIGHT_TOP",
+      "seat": "下联",
+      "cards": "10",
+      "confidence": "high",
+      "edge_count": 4,
+      "truth_count": 1,
+      "runs": [
+        [
+          62,
+          106
+        ],
+        [
+          115,
+          116
+        ],
+        [
+          118,
+          120
+        ],
+        [
+          138,
+          140
+        ]
+      ]
+    },
+    {
+      "event_id": "G3-E042",
+      "time_s": "519.206",
+      "zone": "LEFT_BOTTOM",
+      "seat": "上家",
+      "cards": "Q",
+      "confidence": "high",
+      "edge_count": 2,
+      "truth_count": 1,
+      "runs": [
+        [
+          33,
+          43
+        ],
+        [
+          45,
+          77
+        ]
+      ]
+    },
+    {
+      "event_id": "G3-E043",
+      "time_s": "519.454",
+      "zone": "RIGHT_TOP",
+      "seat": "下联",
+      "cards": "K",
+      "confidence": "high",
+      "edge_count": 4,
+      "truth_count": 1,
+      "runs": [
+        [
+          62,
+          106
+        ],
+        [
+          115,
+          116
+        ],
+        [
+          118,
+          120
+        ],
+        [
+          138,
+          140
+        ]
+      ]
+    },
+    {
+      "event_id": "G3-E044",
+      "time_s": "520.508",
+      "zone": "RIGHT_TOP",
+      "seat": "下联",
+      "cards": "BIG_JOKER+6xK",
+      "confidence": "high",
+      "edge_count": 8,
+      "truth_count": 7,
+      "runs": [
+        [
+          19,
+          20
+        ],
+        [
+          22,
+          23
+        ],
+        [
+          26,
+          31
+        ],
+        [
+          33,
+          46
+        ],
+        [
+          48,
+          60
+        ],
+        [
+          62,
+          106
+        ],
+        [
+          114,
+          122
+        ],
+        [
+          137,
+          140
+        ]
+      ]
+    },
+    {
+      "event_id": "G3-E045",
+      "time_s": "521.018",
+      "zone": "RIGHT_TOP",
+      "seat": "下联",
+      "cards": "3",
+      "confidence": "high",
+      "edge_count": 5,
+      "truth_count": 1,
+      "runs": [
+        [
+          14,
+          15
+        ],
+        [
+          58,
+          59
+        ],
+        [
+          62,
+          106
+        ],
+        [
+          114,
+          123
+        ],
+        [
+          137,
+          140
+        ]
+      ]
+    },
+    {
+      "event_id": "G3-E046",
+      "time_s": "521.285",
+      "zone": "TOP",
+      "seat": "对家",
+      "cards": "K",
+      "confidence": "high",
+      "edge_count": 2,
+      "truth_count": 1,
+      "runs": [
+        [
+          5,
+          49
+        ],
+        [
+          59,
+          60
+        ]
+      ]
+    },
+    {
+      "event_id": "G3-E047",
+      "time_s": "522.085",
+      "zone": "TOP",
+      "seat": "对家",
+      "cards": "2x5",
+      "confidence": "high",
+      "edge_count": 1,
+      "truth_count": 2,
+      "runs": [
+        [
+          5,
+          64
+        ]
+      ]
+    },
+    {
+      "event_id": "G3-E048",
+      "time_s": "522.886",
+      "zone": "TOP",
+      "seat": "对家",
+      "cards": "2x6",
+      "confidence": "high",
+      "edge_count": 1,
+      "truth_count": 2,
+      "runs": [
+        [
+          5,
+          64
+        ]
+      ]
+    },
+    {
+      "event_id": "G3-E049",
+      "time_s": "524.481",
+      "zone": "TOP",
+      "seat": "对家",
+      "cards": "2x10",
+      "confidence": "high",
+      "edge_count": 1,
+      "truth_count": 2,
+      "runs": [
+        [
+          5,
+          65
+        ]
+      ]
+    },
+    {
+      "event_id": "G3-E050",
+      "time_s": "525.264",
+      "zone": "TOP",
+      "seat": "对家",
+      "cards": "2xJ",
+      "confidence": "high",
+      "edge_count": 1,
+      "truth_count": 2,
+      "runs": [
+        [
+          5,
+          64
+        ]
+      ]
+    },
+    {
+      "event_id": "G3-E051",
+      "time_s": "526.064",
+      "zone": "TOP",
+      "seat": "对家",
+      "cards": "6",
+      "confidence": "high",
+      "edge_count": 2,
+      "truth_count": 1,
+      "runs": [
+        [
+          5,
+          49
+        ],
+        [
+          55,
+          56
+        ]
+      ]
+    },
+    {
+      "event_id": "G3-E052",
+      "time_s": "526.330",
+      "zone": "LEFT_TOP",
+      "seat": "上联",
+      "cards": "8",
+      "confidence": "high",
+      "edge_count": 1,
+      "truth_count": 1,
+      "runs": [
+        [
+          24,
+          68
+        ]
+      ]
+    },
+    {
+      "event_id": "G3-E053",
+      "time_s": "526.595",
+      "zone": "LEFT_BOTTOM",
+      "seat": "上家",
+      "cards": "10",
+      "confidence": "high",
+      "edge_count": 3,
+      "truth_count": 1,
+      "runs": [
+        [
+          33,
+          39
+        ],
+        [
+          42,
+          54
+        ],
+        [
+          65,
+          77
+        ]
+      ]
+    },
+    {
+      "event_id": "G3-E054",
+      "time_s": "527.113",
+      "zone": "LEFT_TOP",
+      "seat": "上联",
+      "cards": "K",
+      "confidence": "high",
+      "edge_count": 2,
+      "truth_count": 1,
+      "runs": [
+        [
+          24,
+          49
+        ],
+        [
+          52,
+          68
+        ]
+      ]
+    },
+    {
+      "event_id": "G3-E055",
+      "time_s": "527.628",
+      "zone": "TOP",
+      "seat": "对家",
+      "cards": "A",
+      "confidence": "high",
+      "edge_count": 2,
+      "truth_count": 1,
+      "runs": [
+        [
+          5,
+          49
+        ],
+        [
+          55,
+          56
+        ]
+      ]
+    },
+    {
+      "event_id": "G3-E056",
+      "time_s": "528.395",
+      "zone": "TOP",
+      "seat": "对家",
+      "cards": "2xK",
+      "confidence": "high",
+      "edge_count": 2,
+      "truth_count": 2,
+      "runs": [
+        [
+          5,
+          64
+        ],
+        [
+          73,
+          74
+        ]
+      ]
+    },
+    {
+      "event_id": "G3-E057",
+      "time_s": "529.191",
+      "zone": "TOP",
+      "seat": "对家",
+      "cards": "2xA",
+      "confidence": "high",
+      "edge_count": 1,
+      "truth_count": 2,
+      "runs": [
+        [
+          5,
+          65
+        ]
+      ]
+    },
+    {
+      "event_id": "G3-E058",
+      "time_s": "529.993",
+      "zone": "TOP",
+      "seat": "对家",
+      "cards": "3",
+      "confidence": "high",
+      "edge_count": 1,
+      "truth_count": 1,
+      "runs": [
+        [
+          5,
+          50
+        ]
+      ]
+    },
+    {
+      "event_id": "G3-E059",
+      "time_s": "530.259",
+      "zone": "LEFT_TOP",
+      "seat": "上联",
+      "cards": "9",
+      "confidence": "high",
+      "edge_count": 2,
+      "truth_count": 1,
+      "runs": [
+        [
+          24,
+          49
+        ],
+        [
+          52,
+          68
+        ]
+      ]
+    },
+    {
+      "event_id": "G3-E060",
+      "time_s": "530.522",
+      "zone": "LEFT_BOTTOM",
+      "seat": "上家",
+      "cards": "Q",
+      "confidence": "high",
+      "edge_count": 2,
+      "truth_count": 1,
+      "runs": [
+        [
+          33,
+          43
+        ],
+        [
+          45,
+          77
+        ]
+      ]
+    },
+    {
+      "event_id": "G3-E061",
+      "time_s": "531.025",
+      "zone": "LEFT_BOTTOM",
+      "seat": "上家",
+      "cards": "4",
+      "confidence": "high",
+      "edge_count": 2,
+      "truth_count": 1,
+      "runs": [
+        [
+          33,
+          40
+        ],
+        [
+          42,
+          77
+        ]
+      ]
+    },
+    {
+      "event_id": "G3-E062",
+      "time_s": "531.297",
+      "zone": "LEFT_TOP",
+      "seat": "上联",
+      "cards": "10",
+      "confidence": "high",
+      "edge_count": 1,
+      "truth_count": 1,
+      "runs": [
+        [
+          24,
+          68
+        ]
+      ]
+    },
+    {
+      "event_id": "G3-E063",
+      "time_s": "531.822",
+      "zone": "LEFT_TOP",
+      "seat": "上联",
+      "cards": "2x4",
+      "confidence": "high",
+      "edge_count": 2,
+      "truth_count": 2,
+      "runs": [
+        [
+          24,
+          36
+        ],
+        [
+          38,
+          82
+        ]
+      ]
+    },
+    {
+      "event_id": "G3-E064",
+      "time_s": "532.088",
+      "zone": "LEFT_BOTTOM",
+      "seat": "上家",
+      "cards": "2xQ",
+      "confidence": "high",
+      "edge_count": 3,
+      "truth_count": 2,
+      "runs": [
+        [
+          33,
+          45
+        ],
+        [
+          47,
+          71
+        ],
+        [
+          74,
+          91
+        ]
+      ]
+    },
+    {
+      "event_id": "G3-E065",
+      "time_s": "532.355",
+      "zone": "LEFT_TOP",
+      "seat": "上联",
+      "cards": "2xK",
+      "confidence": "high",
+      "edge_count": 3,
+      "truth_count": 2,
+      "runs": [
+        [
+          24,
+          36
+        ],
+        [
+          38,
+          63
+        ],
+        [
+          67,
+          82
+        ]
+      ]
+    },
+    {
+      "event_id": "G3-E066",
+      "time_s": "532.872",
+      "zone": "LEFT_TOP",
+      "seat": "上联",
+      "cards": "3x6",
+      "confidence": "high",
+      "edge_count": 2,
+      "truth_count": 3,
+      "runs": [
+        [
+          24,
+          36
+        ],
+        [
+          38,
+          96
+        ]
+      ]
+    },
+    {
+      "event_id": "G3-E067",
+      "time_s": "533.375",
+      "zone": "LEFT_TOP",
+      "seat": "上联",
+      "cards": "2x8",
+      "confidence": "high",
+      "edge_count": 3,
+      "truth_count": 2,
+      "runs": [
+        [
+          24,
+          36
+        ],
+        [
+          38,
+          64
+        ],
+        [
+          66,
+          82
+        ]
+      ]
+    },
+    {
+      "event_id": "G3-E068",
+      "time_s": "533.618",
+      "zone": "LEFT_BOTTOM",
+      "seat": "上家",
+      "cards": "2xK",
+      "confidence": "high",
+      "edge_count": 3,
+      "truth_count": 2,
+      "runs": [
+        [
+          33,
+          45
+        ],
+        [
+          47,
+          71
+        ],
+        [
+          74,
+          91
+        ]
+      ]
+    },
+    {
+      "event_id": "G3-E069",
+      "time_s": "534.151",
+      "zone": "LEFT_BOTTOM",
+      "seat": "上家",
+      "cards": "4x8",
+      "confidence": "high",
+      "edge_count": 5,
+      "truth_count": 4,
+      "runs": [
+        [
+          33,
+          45
+        ],
+        [
+          47,
+          74
+        ],
+        [
+          76,
+          100
+        ],
+        [
+          104,
+          115
+        ],
+        [
+          117,
+          118
+        ]
+      ]
+    },
+    {
+      "event_id": "G3-E069A",
+      "time_s": "534.686",
+      "zone": "LEFT_BOTTOM",
+      "seat": "上家",
+      "cards": "SMALL_JOKER+6",
+      "confidence": "high",
+      "edge_count": 4,
+      "truth_count": 2,
+      "runs": [
+        [
+          33,
+          37
+        ],
+        [
+          39,
+          45
+        ],
+        [
+          47,
+          71
+        ],
+        [
+          74,
+          91
+        ]
+      ]
+    },
+    {
+      "event_id": "G3-E070",
+      "time_s": "535.218",
+      "zone": "LEFT_BOTTOM",
+      "seat": "上家",
+      "cards": "SMALL_JOKER+6x7",
+      "confidence": "high",
+      "edge_count": 10,
+      "truth_count": 7,
+      "runs": [
+        [
+          33,
+          37
+        ],
+        [
+          39,
+          44
+        ],
+        [
+          47,
+          50
+        ],
+        [
+          62,
+          64
+        ],
+        [
+          76,
+          82
+        ],
+        [
+          90,
+          95
+        ],
+        [
+          101,
+          103
+        ],
+        [
+          105,
+          107
+        ],
+        [
+          110,
+          115
+        ],
+        [
+          155,
+          163
+        ]
+      ]
+    },
+    {
+      "event_id": "G3-E071",
+      "time_s": "535.818",
+      "zone": "LEFT_BOTTOM",
+      "seat": "上家",
+      "cards": "3",
+      "confidence": "high",
+      "edge_count": 3,
+      "truth_count": 1,
+      "runs": [
+        [
+          33,
+          41
+        ],
+        [
+          44,
+          55
+        ],
+        [
+          65,
+          77
+        ]
+      ]
+    }
+  ]
+}
