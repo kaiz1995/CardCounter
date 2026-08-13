@@ -28,10 +28,6 @@ data class GameState(
 
     fun playedCountBy(seat: OutsideSeat): Int = outsidePlayedCountBySeat[seat] ?: 0
 
-    /** 买牌等前置转移尚未归因时，超过33张不伪造剩余数。 */
-    fun remainingCardsBy(seat: OutsideSeat): Int? =
-        (33 - playedBy(seat).total()).takeIf { it >= 0 }
-
     fun requireInvariant() {
         check(Rank.initialInventory.total() == 198)
         check(selfLockedHand?.fitsWithin(Rank.initialInventory) != false)
