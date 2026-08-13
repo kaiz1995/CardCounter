@@ -511,13 +511,6 @@ class CaptureProbeService : Service() {
                 entry.value.size >= 2 || canFastConfirmPlay(it, entry.value.first().minimumConfidence)
             }
             }
-            if (cards != null && shouldAuditAce(finalized.zone, cards) && cards != lastAceAuditAccepted) {
-                lastAceAuditAccepted = cards
-                issueSampleStore.saveAceAudit(
-                    finalized.frames.map { it.bitmap }, finalized.zone, candidates,
-                    templateCards, cards, finalized.generation, SystemClock.elapsedRealtime()
-                )
-            }
             if (cards == null) {
                 saveIssue(finalized, "NO_CONSENSUS", candidates)
                 Log.w(TAG, "ROI_NO_CONSENSUS zone=${finalized.zone} candidates=$candidates")
@@ -526,6 +519,11 @@ class CaptureProbeService : Service() {
             val repository = SessionRepository(this)
             if (repository.state.phase != SessionPhase.ACTIVE) return
             val stable = stablePlayGate.acceptStable(finalized.zone, cards) ?: return
+            if (shouldAuditAce(finalized.zone, stable.cards) && stable.cards != lastAceAuditAccepted) {
+                lastAceAuditAccepted = stable.cards
+                issueSampleStore.saveAceAudit(finalized.frames.map { it.bitmap }, finalized.zone, candidates,
+                    templateCards, stable.cards, finalized.generation, SystemClock.elapsedRealtime())
+            }
             val event = when (stable.zone.source) {
                 PlaySource.SELF -> GameEvent.SelfCardsPlayed(stable.cards)
                 PlaySource.OUTSIDE -> GameEvent.OutsideCardsPlayed(stable.cards, seat = requireNotNull(stable.zone.seat))
