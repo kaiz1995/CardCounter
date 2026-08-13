@@ -62,8 +62,6 @@ internal class RoiPlayEventCache<T>(
         if (state.emptySamples >= clearSamples) {
             state.emptySamples = 0
             state.reported = false
-        } else {
-            state.reported = true
         }
     }
 

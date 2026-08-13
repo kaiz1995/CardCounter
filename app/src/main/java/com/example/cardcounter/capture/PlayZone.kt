@@ -81,6 +81,15 @@ internal class StablePlayGate {
         }
     }
 
+    /** Caller already established a stable batch; apply only accepted-value deduplication. */
+    fun acceptStable(zone: PlayZone, cards: RankCounts): StablePlay? {
+        if (cards.total() == 0) return null
+        val before = states.getValue(zone)
+        if (before.accepted == cards) return null
+        states[zone] = before.copy(candidate = cards, stableSamples = 0, emptySamples = 0, accepted = cards)
+        return StablePlay(zone, cards)
+    }
+
     fun reset() {
         PlayZone.entries.forEach { states[it] = ZoneState() }
     }

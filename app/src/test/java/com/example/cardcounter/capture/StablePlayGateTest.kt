@@ -47,6 +47,33 @@ class StablePlayGateTest {
     }
 
     @Test
+    fun acceptsReplacementWithoutEmptyAndRearmsAfterSixEmptySamples() {
+        val gate = StablePlayGate()
+        val king = RankCounts.of(mapOf(Rank.KING to 1))
+        val pairFives = RankCounts.of(mapOf(Rank.FIVE to 2))
+        assertNull(gate.update(PlayZone.TOP, king))
+        assertEquals(StablePlay(PlayZone.TOP, king), gate.update(PlayZone.TOP, king))
+        assertNull(gate.update(PlayZone.TOP, pairFives))
+        assertEquals(StablePlay(PlayZone.TOP, pairFives), gate.update(PlayZone.TOP, pairFives))
+        repeat(6) { assertNull(gate.update(PlayZone.TOP, RankCounts.zero())) }
+        assertNull(gate.update(PlayZone.TOP, pairFives))
+        assertEquals(StablePlay(PlayZone.TOP, pairFives), gate.update(PlayZone.TOP, pairFives))
+    }
+
+    @Test
+    fun acceptsStableBatchOnceAndSuppressesSameBatchUntilCleared() {
+        val gate = StablePlayGate()
+        val king = RankCounts.of(mapOf(Rank.KING to 1))
+        val pair = RankCounts.of(mapOf(Rank.FIVE to 2))
+        assertEquals(StablePlay(PlayZone.TOP, king), gate.acceptStable(PlayZone.TOP, king))
+        assertNull(gate.acceptStable(PlayZone.TOP, king))
+        assertEquals(StablePlay(PlayZone.TOP, pair), gate.acceptStable(PlayZone.TOP, pair))
+        assertNull(gate.acceptStable(PlayZone.TOP, pair))
+        repeat(6) { gate.update(PlayZone.TOP, RankCounts.zero()) }
+        assertEquals(StablePlay(PlayZone.TOP, pair), gate.acceptStable(PlayZone.TOP, pair))
+    }
+
+    @Test
     fun acceptsCorrectedTopReplacementSequenceWithoutMergingDifferentCandidates() {
         val gate = StablePlayGate()
         val sequence = listOf(

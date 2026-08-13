@@ -17,7 +17,7 @@ class RoiPlayEventCacheTest {
         assertEquals(true, finalized.early)
         assertEquals(listOf("one", "two", "three"), finalized.frames)
         cache.completeEarly(PlayZone.RIGHT_TOP, 1)
-        assertEquals(false, cache.needsFrame(PlayZone.RIGHT_TOP, 1))
+        assertEquals(true, cache.needsFrame(PlayZone.RIGHT_TOP, 1))
     }
 
     @Test

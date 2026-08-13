@@ -464,6 +464,9 @@ class CaptureProbeService : Service() {
         }
         PlayZone.entries.forEach { zone ->
             val visible = tableVisible && isPlayVisible(visibleZones[zone] == true)
+            if (takeSample && tableVisible && !visible) {
+                rankHandler.post { stablePlayGate.update(zone, RankCounts.zero()) }
+            }
             val frame = if (visible && takeSample && roiEventCache.needsFrame(zone, generation)) {
                 val bitmap = publicPlayBitmap(image, zone)
                 val ink = templateInk ?: handRankMatcher.snapshot(image).also { templateInk = it }
@@ -514,9 +517,10 @@ class CaptureProbeService : Service() {
             }
             val repository = SessionRepository(this)
             if (repository.state.phase != SessionPhase.ACTIVE) return
-            val event = when (finalized.zone.source) {
-                PlaySource.SELF -> GameEvent.SelfCardsPlayed(cards)
-                PlaySource.OUTSIDE -> GameEvent.OutsideCardsPlayed(cards, seat = requireNotNull(finalized.zone.seat))
+            val stable = stablePlayGate.acceptStable(finalized.zone, cards) ?: return
+            val event = when (stable.zone.source) {
+                PlaySource.SELF -> GameEvent.SelfCardsPlayed(stable.cards)
+                PlaySource.OUTSIDE -> GameEvent.OutsideCardsPlayed(stable.cards, seat = requireNotNull(stable.zone.seat))
             }
             runCatching { repository.dispatch(event) }
                 .onSuccess {
