@@ -6,7 +6,8 @@ import com.example.cardcounter.domain.RankCounts
 internal data class CountedPlay(
     val zone: PlayZone,
     val cards: RankCounts,
-    val cardCount: Int
+    val cardCount: Int,
+    val generation: Long
 )
 
 /** 合并同一区短间隔换牌；牌点仍取下一批，数量只用显式候选数和上一批王。 */
@@ -48,17 +49,17 @@ internal class PublicPlayCountAggregator(
         if (timeMs - old.timeMs <= mergeWindowMs) {
             pending.remove(zone)
             val jokerCount = old.cards[Rank.BIG_JOKER] + old.cards[Rank.SMALL_JOKER]
-            return listOf(CountedPlay(zone, cards, cardCount + jokerCount))
+            return listOf(CountedPlay(zone, cards, cardCount + jokerCount, generation))
         }
         pending[zone] = Pending(generation, timeMs, cards, cardCount)
-        return listOf(CountedPlay(zone, old.cards, old.cardCount))
+        return listOf(CountedPlay(zone, old.cards, old.cardCount, old.generation))
     }
 
     fun flush(zone: PlayZone, generation: Long): List<CountedPlay> {
         val old = pending.remove(zone) ?: return emptyList()
         if (old.generation != generation) return emptyList()
         empty[zone] = 0
-        return listOf(CountedPlay(zone, old.cards, old.cardCount))
+        return listOf(CountedPlay(zone, old.cards, old.cardCount, old.generation))
     }
 
     fun reset() {

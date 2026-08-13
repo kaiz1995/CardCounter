@@ -129,6 +129,30 @@ class GameReducerTest {
     }
 
     @Test
+    fun preservesCardCountWhenRankIsExhausted() {
+        val hand = RankCounts.of(mapOf(Rank.ACE to 16))
+        val active = GameReducer.apply(GameReducer.newSession(), GameEvent.SelfHandLocked(hand))
+        val next = GameReducer.apply(active, GameEvent.OutsideCardsPlayed(RankCounts.of(mapOf(Rank.ACE to 3)), id = "exhausted", cardCount = 3))
+        assertEquals(0, next.outsidePlayed[Rank.ACE])
+        assertEquals(3, next.outsidePlayedCount)
+    }
+
+    @Test
+    fun clampsRankButKeepsCountAndRevertsConsistently() {
+        val hand = RankCounts.of(mapOf(Rank.ACE to 15))
+        val active = GameReducer.apply(GameReducer.newSession(), GameEvent.SelfHandLocked(hand))
+        val play = GameEvent.OutsideCardsPlayed(RankCounts.of(mapOf(Rank.ACE to 3)), id = "partial", seat = OutsideSeat.TOP, cardCount = 3)
+        val played = GameReducer.apply(active, play)
+        assertEquals(1, played.playedBy(OutsideSeat.TOP)[Rank.ACE])
+        assertEquals(3, played.playedCountBy(OutsideSeat.TOP))
+        val replayed = GameReducer.replay(listOf(GameEvent.NewSession("s"), GameEvent.SelfHandLocked(hand, "h"), play))
+        assertEquals(played.outsidePlayed, replayed.outsidePlayed)
+        val reverted = GameReducer.apply(played, GameEvent.Reverted(play.id, "r"))
+        assertEquals(0, reverted.outsidePlayed[Rank.ACE])
+        assertEquals(0, reverted.outsidePlayedCount)
+    }
+
+    @Test
     fun outsideCardCountIsIndependentFromRankClassification() {
         val active = GameReducer.apply(
             GameReducer.newSession(),

@@ -11,7 +11,7 @@ class PublicPlayCountAggregatorTest {
     @Test fun mergesBigJokerThenKingBody() {
         val a = PublicPlayCountAggregator(); val king = cards(Rank.KING to 6)
         assertEquals(emptyList<CountedPlay>(), a.offer(PlayZone.RIGHT_TOP, 1, 0, cards(Rank.BIG_JOKER to 1), 1))
-        assertEquals(listOf(CountedPlay(PlayZone.RIGHT_TOP, king, 7)), a.offer(PlayZone.RIGHT_TOP, 1, 200, king, 6))
+        assertEquals(listOf(CountedPlay(PlayZone.RIGHT_TOP, king, 7, 1)), a.offer(PlayZone.RIGHT_TOP, 1, 200, king, 6))
     }
 
     @Test fun mergesSmallJokerThenSevens() {

@@ -51,19 +51,20 @@ object GameReducer {
         require(state.phase == SessionPhase.ACTIVE) { "当前不接受自动出牌事件" }
         require(event.cardCount > 0) { "出牌张数必须为正数" }
         val remaining = state.outsideRemaining ?: error("未锁定自己手牌")
-        require(event.cards.fitsWithin(remaining)) { "外面出牌超过剩余库存" }
+        val normalizedCards = event.cards.clampTo(remaining)
+        val normalizedEvent = event.copy(cards = normalizedCards)
         val bySeat = event.seat?.let { seat ->
-            state.outsidePlayedBySeat + (seat to state.playedBy(seat).plus(event.cards))
+            state.outsidePlayedBySeat + (seat to state.playedBy(seat).plus(normalizedCards))
         } ?: state.outsidePlayedBySeat
         val countBySeat = event.seat?.let { seat ->
             state.outsidePlayedCountBySeat + (seat to state.playedCountBy(seat) + event.cardCount)
         } ?: state.outsidePlayedCountBySeat
         return state.copy(
-            outsidePlayed = state.outsidePlayed.plus(event.cards),
+            outsidePlayed = state.outsidePlayed.plus(normalizedCards),
             outsidePlayedCount = state.outsidePlayedCount + event.cardCount,
             outsidePlayedBySeat = bySeat,
             outsidePlayedCountBySeat = countBySeat,
-            events = state.events + event
+            events = state.events + normalizedEvent
         )
     }
 

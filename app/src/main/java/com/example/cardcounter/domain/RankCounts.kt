@@ -19,6 +19,10 @@ class RankCounts private constructor(private val values: Map<Rank, Int>) {
     fun fitsWithin(limit: RankCounts): Boolean =
         Rank.entries.all { this[it] <= limit[it] }
 
+    fun clampTo(limit: RankCounts): RankCounts = of(
+        Rank.entries.associateWith { rank -> minOf(this[rank], limit[rank].coerceAtLeast(0)) }
+    )
+
     override fun equals(other: Any?): Boolean =
         other is RankCounts && values == other.values
 

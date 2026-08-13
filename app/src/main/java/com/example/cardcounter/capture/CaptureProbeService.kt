@@ -465,9 +465,10 @@ class CaptureProbeService : Service() {
         }
         PlayZone.entries.forEach { zone ->
             val visible = tableVisible && isPlayVisible(visibleZones[zone] == true)
-            if (takeSample && tableVisible && !visible) {
+            if (takeSample && !visible) {
                 rankHandler.post {
-                    stablePlayGate.update(zone, RankCounts.zero())
+                    if (generation != captureGeneration) return@post
+                    if (tableVisible) stablePlayGate.update(zone, RankCounts.zero())
                     if (zone.source == PlaySource.OUTSIDE) {
                         dispatchCountedPlays(
                             publicPlayCountAggregator.offer(
@@ -553,6 +554,7 @@ class CaptureProbeService : Service() {
         val repository = SessionRepository(this)
         if (repository.state.phase != SessionPhase.ACTIVE) return
         plays.forEach { play ->
+            if (play.generation != captureGeneration) return@forEach
             if (play.zone.source != PlaySource.OUTSIDE) return@forEach
             runCatching {
                 repository.dispatch(
