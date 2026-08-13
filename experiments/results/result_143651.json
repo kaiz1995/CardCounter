@@ -1,0 +1,151 @@
+{
+  "video": "source/SVID_20260810_143651_1.mp4",
+  "start_s": 697.2,
+  "duration_s": 20.0,
+  "sample_ms": 50.0,
+  "visibility_segments": [
+    {
+      "zone": "LEFT_TOP",
+      "start_s": 697.3574333333333,
+      "confirm_s": 700.2568333333334,
+      "white_samples": 39,
+      "total_samples": 152,
+      "end_s": 700.5547333333334
+    },
+    {
+      "zone": "LEFT_BOTTOM",
+      "start_s": 698.3556222222222,
+      "confirm_s": 701.7540666666667,
+      "white_samples": 28,
+      "total_samples": 207,
+      "end_s": 702.0551666666667
+    },
+    {
+      "zone": "SELF",
+      "start_s": 699.0577222222223,
+      "confirm_s": 703.4502555555556,
+      "white_samples": 25,
+      "total_samples": 84,
+      "end_s": 703.7534666666667
+    },
+    {
+      "zone": "SELF",
+      "start_s": 704.3170222222222,
+      "confirm_s": 707.7594444444445,
+      "white_samples": 32,
+      "total_samples": 84,
+      "end_s": 708.0559222222223
+    },
+    {
+      "zone": "RIGHT_BOTTOM",
+      "start_s": 706.3607333333333,
+      "confirm_s": 707.2139777777778,
+      "white_samples": 38,
+      "total_samples": 162,
+      "end_s": 707.5120444444444
+    },
+    {
+      "zone": "LEFT_TOP",
+      "start_s": 706.8607222222224,
+      "confirm_s": 710.9109666666667,
+      "white_samples": 39,
+      "total_samples": 152,
+      "end_s": 711.2050777777778
+    },
+    {
+      "zone": "LEFT_BOTTOM",
+      "start_s": 708.1584888888889,
+      "confirm_s": 709.0561444444445,
+      "white_samples": 27,
+      "total_samples": 207,
+      "end_s": 709.3571000000001
+    },
+    {
+      "zone": "RIGHT_BOTTOM",
+      "start_s": 710.5546777777778,
+      "confirm_s": 712.451688888889,
+      "white_samples": 53,
+      "total_samples": 162,
+      "end_s": 712.7565222222222
+    },
+    {
+      "zone": "LEFT_TOP",
+      "start_s": 712.1023666666667,
+      "confirm_s": 712.9540333333333,
+      "white_samples": 52,
+      "total_samples": 152,
+      "end_s": 713.2547888888889
+    },
+    {
+      "zone": "TOP",
+      "start_s": 712.8572666666666,
+      "confirm_s": 716.9124333333334,
+      "white_samples": 40,
+      "total_samples": 99,
+      "end_s": 717.2457888888889
+    },
+    {
+      "zone": "LEFT_TOP",
+      "start_s": 714.1529222222223,
+      "confirm_s": 715.0553666666667,
+      "white_samples": 39,
+      "total_samples": 152,
+      "end_s": 715.3565777777778
+    },
+    {
+      "zone": "LEFT_TOP",
+      "start_s": 716.2512,
+      "confirm_s": 717.2457888888889,
+      "white_samples": 69,
+      "total_samples": 152,
+      "end_s": 717.2
+    }
+  ],
+  "visibility_segment_count": {
+    "TOP": 1,
+    "LEFT_TOP": 5,
+    "LEFT_BOTTOM": 2,
+    "RIGHT_TOP": 0,
+    "RIGHT_BOTTOM": 2,
+    "SELF": 2
+  },
+  "replacement_boundary_count": {
+    "TOP": 2,
+    "LEFT_TOP": 0,
+    "LEFT_BOTTOM": 0,
+    "RIGHT_TOP": 0,
+    "RIGHT_BOTTOM": 0,
+    "SELF": 0
+  },
+  "replacement_boundaries": [
+    {
+      "zone": "TOP",
+      "time_s": 713.9581444444444
+    },
+    {
+      "zone": "TOP",
+      "time_s": 716.0571333333334
+    }
+  ],
+  "boundary_event_count": {
+    "TOP": 3,
+    "LEFT_TOP": 5,
+    "LEFT_BOTTOM": 2,
+    "RIGHT_TOP": 0,
+    "RIGHT_BOTTOM": 2,
+    "SELF": 2
+  },
+  "all_zone_boundary_event_count": 14,
+  "external_boundary_event_count": 12,
+  "external_visibility_segment_count": 10,
+  "diagnostic_scope": "visibility-stage approximation; not formal events/TP/FP/FN",
+  "limitations": [
+    "3 visible samples start a segment",
+    "6 empty samples end a segment",
+    "tableVisible=false leaves per-zone state unchanged",
+    "no cross-session boundary handling"
+  ],
+  "reference_hand_count": 17,
+  "reference_scope": "unresolved",
+  "boundary_count_delta": null
+}

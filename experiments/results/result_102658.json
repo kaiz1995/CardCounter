@@ -1,0 +1,183 @@
+{
+  "video": "source/SVID_20260810_102658_1.mp4",
+  "start_s": 516.0,
+  "duration_s": 20.0,
+  "sample_ms": 50.0,
+  "visibility_segments": [
+    {
+      "zone": "SELF",
+      "start_s": 516.1116000000001,
+      "confirm_s": 520.4086666666667,
+      "white_samples": 26,
+      "total_samples": 84,
+      "end_s": 520.7078444444445
+    },
+    {
+      "zone": "TOP",
+      "start_s": 516.2113666666667,
+      "confirm_s": 518.608388888889,
+      "white_samples": 38,
+      "total_samples": 99,
+      "end_s": 518.907788888889
+    },
+    {
+      "zone": "LEFT_TOP",
+      "start_s": 517.2086,
+      "confirm_s": 518.8572333333334,
+      "white_samples": 38,
+      "total_samples": 152,
+      "end_s": 519.1591777777778
+    },
+    {
+      "zone": "LEFT_BOTTOM",
+      "start_s": 518.2600777777778,
+      "confirm_s": 520.1602555555556,
+      "white_samples": 31,
+      "total_samples": 207,
+      "end_s": 520.4606111111111
+    },
+    {
+      "zone": "RIGHT_TOP",
+      "start_s": 518.5097555555556,
+      "confirm_s": 522.0057555555555,
+      "white_samples": 40,
+      "total_samples": 144,
+      "end_s": 522.3065888888889
+    },
+    {
+      "zone": "TOP",
+      "start_s": 521.3546333333334,
+      "confirm_s": 526.7662777777778,
+      "white_samples": 35,
+      "total_samples": 99,
+      "end_s": 527.0662777777778
+    },
+    {
+      "zone": "LEFT_TOP",
+      "start_s": 526.4145666666667,
+      "confirm_s": 527.8119777777778,
+      "white_samples": 36,
+      "total_samples": 152,
+      "end_s": 528.1141555555556
+    },
+    {
+      "zone": "LEFT_BOTTOM",
+      "start_s": 526.669,
+      "confirm_s": 527.2665222222222,
+      "white_samples": 32,
+      "total_samples": 207,
+      "end_s": 527.5686333333333
+    },
+    {
+      "zone": "TOP",
+      "start_s": 527.7125,
+      "confirm_s": 530.9629555555556,
+      "white_samples": 36,
+      "total_samples": 99,
+      "end_s": 531.2669222222222
+    },
+    {
+      "zone": "LEFT_TOP",
+      "start_s": 530.3109222222223,
+      "confirm_s": 530.7081222222223,
+      "white_samples": 39,
+      "total_samples": 152,
+      "end_s": 531.0107666666667
+    },
+    {
+      "zone": "LEFT_BOTTOM",
+      "start_s": 530.6122777777778,
+      "confirm_s": 531.4599555555556,
+      "white_samples": 30,
+      "total_samples": 207,
+      "end_s": 531.7615444444444
+    },
+    {
+      "zone": "LEFT_TOP",
+      "start_s": 531.3665666666667,
+      "confirm_s": 533.8067111111111,
+      "white_samples": 37,
+      "total_samples": 152,
+      "end_s": 534.1043222222222
+    },
+    {
+      "zone": "LEFT_BOTTOM",
+      "start_s": 532.1595444444445,
+      "confirm_s": 532.5115000000001,
+      "white_samples": 52,
+      "total_samples": 207,
+      "end_s": 532.8061
+    },
+    {
+      "zone": "LEFT_BOTTOM",
+      "start_s": 533.7042888888889,
+      "confirm_s": 536.0037222222222,
+      "white_samples": 49,
+      "total_samples": 207,
+      "end_s": 536.0
+    },
+    {
+      "zone": "SELF",
+      "start_s": 535.9027111111111,
+      "confirm_s": 536.0037222222222,
+      "white_samples": 11,
+      "total_samples": 84,
+      "end_s": 536.0
+    }
+  ],
+  "visibility_segment_count": {
+    "TOP": 3,
+    "LEFT_TOP": 4,
+    "LEFT_BOTTOM": 5,
+    "RIGHT_TOP": 1,
+    "RIGHT_BOTTOM": 0,
+    "SELF": 2
+  },
+  "replacement_boundary_count": {
+    "TOP": 4,
+    "LEFT_TOP": 0,
+    "LEFT_BOTTOM": 0,
+    "RIGHT_TOP": 0,
+    "RIGHT_BOTTOM": 0,
+    "SELF": 0
+  },
+  "replacement_boundaries": [
+    {
+      "zone": "TOP",
+      "time_s": 522.2030555555556
+    },
+    {
+      "zone": "TOP",
+      "time_s": 526.2042555555556
+    },
+    {
+      "zone": "TOP",
+      "time_s": 528.5005
+    },
+    {
+      "zone": "TOP",
+      "time_s": 530.1137333333334
+    }
+  ],
+  "boundary_event_count": {
+    "TOP": 7,
+    "LEFT_TOP": 4,
+    "LEFT_BOTTOM": 5,
+    "RIGHT_TOP": 1,
+    "RIGHT_BOTTOM": 0,
+    "SELF": 2
+  },
+  "all_zone_boundary_event_count": 19,
+  "external_boundary_event_count": 17,
+  "external_visibility_segment_count": 13,
+  "diagnostic_scope": "visibility-stage approximation; not formal events/TP/FP/FN",
+  "limitations": [
+    "3 visible samples start a segment",
+    "6 empty samples end a segment",
+    "tableVisible=false leaves per-zone state unchanged",
+    "no cross-session boundary handling"
+  ],
+  "reference_hand_count": 35,
+  "reference_scope": "unresolved",
+  "boundary_count_delta": null
+}
