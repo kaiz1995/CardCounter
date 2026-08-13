@@ -62,6 +62,12 @@ internal class PublicPlayCountAggregator(
         return listOf(CountedPlay(zone, old.cards, old.cardCount, old.generation))
     }
 
+    fun flushExpired(zone: PlayZone, generation: Long, nowMs: Long): List<CountedPlay> {
+        val old = pending[zone] ?: return emptyList()
+        if (old.generation != generation || nowMs - old.timeMs <= mergeWindowMs) return emptyList()
+        pending.remove(zone); return listOf(CountedPlay(zone, old.cards, old.cardCount, old.generation))
+    }
+
     fun reset() {
         pending.clear()
         empty.clear()

@@ -535,14 +535,20 @@ class CaptureProbeService : Service() {
                 dispatchGameEvent(GameEvent.SelfCardsPlayed(stable.cards))
                 return
             }
+            val offeredAt = SystemClock.elapsedRealtime()
             val counted = publicPlayCountAggregator.offer(
                 finalized.zone,
                 finalized.generation,
-                SystemClock.elapsedRealtime(),
+                offeredAt,
                 stable.cards,
                 stable.cardCount
             ).firstOrNull() ?: return
             dispatchCountedPlays(listOf(counted))
+            rankHandler.postDelayed({
+                if (finalized.generation == captureGeneration) {
+                    dispatchCountedPlays(publicPlayCountAggregator.flushExpired(finalized.zone, finalized.generation, SystemClock.elapsedRealtime()))
+                }
+            }, 301L)
         } finally {
             if (finalized.early) roiEventCache.completeEarly(finalized.zone, finalized.generation)
             finalized.frames.forEach { it.bitmap.recycle() }

@@ -42,4 +42,14 @@ class PublicPlayCountAggregatorTest {
         repeat(5) { assertEquals(emptyList<CountedPlay>(), a.offer(PlayZone.TOP, 1, 10L + it, RankCounts.zero(), 0)) }
         assertEquals(4, a.offer(PlayZone.TOP, 1, 20, RankCounts.zero(), 0).single().cardCount)
     }
+
+    @Test fun flushesOnlyAfterMergeDeadline() {
+        val a = PublicPlayCountAggregator(); val four = cards(Rank.FOUR to 4)
+        a.offer(PlayZone.TOP, 1, 0, four, 4)
+        assertEquals(emptyList<CountedPlay>(), a.flushExpired(PlayZone.TOP, 1, 299))
+        assertEquals(4, a.flushExpired(PlayZone.TOP, 1, 301).single().cardCount)
+        a.offer(PlayZone.TOP, 1, 400, four, 4)
+        a.offer(PlayZone.TOP, 1, 500, cards(Rank.SIX to 6), 6)
+        assertEquals(emptyList<CountedPlay>(), a.flushExpired(PlayZone.TOP, 1, 600))
+    }
 }
