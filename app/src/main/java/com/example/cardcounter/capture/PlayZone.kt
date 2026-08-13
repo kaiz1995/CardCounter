@@ -1,6 +1,7 @@
 package com.example.cardcounter.capture
 
 import com.example.cardcounter.domain.RankCounts
+import com.example.cardcounter.domain.Rank
 import com.example.cardcounter.domain.OutsideSeat
 import kotlin.math.roundToInt
 
@@ -132,7 +133,9 @@ internal fun canFastConfirmPlay(cards: RankCounts, minimumConfidence: Float): Bo
 
 /** 单张以全屏固定牌角模板为准；ROI 模板未校准，不能参与此处融合。 */
 internal fun fuseSinglePublicPlay(model: RankCounts, template: RankCounts): RankCounts =
-    if (model.total() == 1 && template.total() == 1) template else model
+    if (model.total() == 1 && template.total() == 1 &&
+        !(template[Rank.ACE] > 0 && model[Rank.ACE] == 0)
+    ) template else model
 
 internal fun shouldAuditAce(zone: PlayZone, cards: RankCounts): Boolean =
     zone == PlayZone.LEFT_BOTTOM && cards[com.example.cardcounter.domain.Rank.ACE] > 0

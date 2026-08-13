@@ -174,6 +174,17 @@ class StablePlayGateTest {
     }
 
     @Test
+    fun preventsTemplateOnlyAcePromotion() {
+        val ace = RankCounts.of(mapOf(Rank.ACE to 1))
+        val ten = RankCounts.of(mapOf(Rank.TEN to 1))
+        val king = RankCounts.of(mapOf(Rank.KING to 1))
+        assertEquals(ten, fuseSinglePublicPlay(ten, ace))
+        assertEquals(ace, fuseSinglePublicPlay(ace, ace))
+        assertEquals(king, fuseSinglePublicPlay(ten, king))
+        assertEquals(fives, fuseSinglePublicPlay(fives, ace))
+    }
+
+    @Test
     fun auditsAceOnlyForLeftBottom() {
         val ace = RankCounts.of(mapOf(Rank.ACE to 1))
         assertTrue(shouldAuditAce(PlayZone.LEFT_BOTTOM, ace))
