@@ -36,6 +36,25 @@ class StablePlayGateTest {
     }
 
     @Test
+    fun acceptsCorrectedTopReplacementSequenceWithoutMergingDifferentCandidates() {
+        val gate = StablePlayGate()
+        val sequence = listOf(
+            RankCounts.of(mapOf(Rank.KING to 1)),
+            RankCounts.of(mapOf(Rank.FIVE to 2)),
+            RankCounts.of(mapOf(Rank.SIX to 2)),
+            RankCounts.of(mapOf(Rank.TEN to 2)),
+            RankCounts.of(mapOf(Rank.JACK to 2)),
+            RankCounts.of(mapOf(Rank.SIX to 1))
+        )
+        val events = sequence.flatMap { cards ->
+            listOf(gate.update(PlayZone.TOP, cards), gate.update(PlayZone.TOP, cards))
+        }.filterNotNull()
+        assertEquals(sequence.map { StablePlay(PlayZone.TOP, it) }, events)
+        assertNull(gate.update(PlayZone.TOP, sequence.last()))
+        assertNull(gate.update(PlayZone.TOP, sequence.last()))
+    }
+
+    @Test
     fun ignoresBriefEmptyAnimationBeforeSameCardsReturn() {
         val gate = StablePlayGate()
         gate.update(PlayZone.RIGHT_TOP, fives)

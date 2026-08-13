@@ -1,0 +1,1008 @@
+{
+  "video": "source/SVID_20260810_102658_1.mp4",
+  "start_s": 516.0,
+  "duration_s": 20.0,
+  "sample_ms": 50.0,
+  "stable_samples": 2,
+  "clear_samples": 6,
+  "events": [
+    {
+      "time_s": 516.165211,
+      "zone": "TOP",
+      "cards": {
+        "4": 1
+      },
+      "confidence": 0.8305
+    },
+    {
+      "time_s": 517.161411,
+      "zone": "LEFT_TOP",
+      "cards": {
+        "7": 1
+      },
+      "confidence": 0.4795
+    },
+    {
+      "time_s": 518.260078,
+      "zone": "LEFT_BOTTOM",
+      "cards": {
+        "9": 1
+      },
+      "confidence": 0.5994
+    },
+    {
+      "time_s": 518.464278,
+      "zone": "RIGHT_TOP",
+      "cards": {
+        "10": 1
+      },
+      "confidence": 0.8188
+    },
+    {
+      "time_s": 519.207667,
+      "zone": "LEFT_BOTTOM",
+      "cards": {
+        "Q": 1
+      },
+      "confidence": 0.8677
+    },
+    {
+      "time_s": 519.505478,
+      "zone": "RIGHT_TOP",
+      "cards": {
+        "K": 1
+      },
+      "confidence": 0.4816
+    },
+    {
+      "time_s": 520.504811,
+      "zone": "RIGHT_TOP",
+      "cards": {
+        "10": 2,
+        "2": 1,
+        "BIG_JOKER": 1
+      },
+      "confidence": 0.8612
+    },
+    {
+      "time_s": 520.759822,
+      "zone": "RIGHT_TOP",
+      "cards": {
+        "K": 6
+      },
+      "confidence": 0.8607
+    },
+    {
+      "time_s": 521.054911,
+      "zone": "RIGHT_TOP",
+      "cards": {
+        "3": 1
+      },
+      "confidence": 0.8177
+    },
+    {
+      "time_s": 521.308911,
+      "zone": "TOP",
+      "cards": {
+        "K": 1
+      },
+      "confidence": 0.878
+    },
+    {
+      "time_s": 522.1041,
+      "zone": "TOP",
+      "cards": {
+        "5": 2
+      },
+      "confidence": 0.8953
+    },
+    {
+      "time_s": 522.9024,
+      "zone": "TOP",
+      "cards": {
+        "6": 2
+      },
+      "confidence": 0.9025
+    },
+    {
+      "time_s": 524.505011,
+      "zone": "TOP",
+      "cards": {
+        "10": 2
+      },
+      "confidence": 0.8674
+    },
+    {
+      "time_s": 525.305067,
+      "zone": "TOP",
+      "cards": {
+        "J": 2
+      },
+      "confidence": 0.8732
+    },
+    {
+      "time_s": 526.104178,
+      "zone": "TOP",
+      "cards": {
+        "6": 1
+      },
+      "confidence": 0.8828
+    },
+    {
+      "time_s": 526.366711,
+      "zone": "LEFT_TOP",
+      "cards": {
+        "8": 1
+      },
+      "confidence": 0.8675
+    },
+    {
+      "time_s": 526.602867,
+      "zone": "LEFT_BOTTOM",
+      "cards": {
+        "10": 1
+      },
+      "confidence": 0.7666
+    },
+    {
+      "time_s": 527.113333,
+      "zone": "LEFT_TOP",
+      "cards": {
+        "K": 1
+      },
+      "confidence": 0.6497
+    },
+    {
+      "time_s": 527.666478,
+      "zone": "TOP",
+      "cards": {
+        "A": 1
+      },
+      "confidence": 0.5724
+    },
+    {
+      "time_s": 528.402156,
+      "zone": "TOP",
+      "cards": {
+        "K": 2
+      },
+      "confidence": 0.8716
+    },
+    {
+      "time_s": 529.200667,
+      "zone": "TOP",
+      "cards": {
+        "A": 2
+      },
+      "confidence": 0.8731
+    },
+    {
+      "time_s": 530.009344,
+      "zone": "TOP",
+      "cards": {
+        "3": 1
+      },
+      "confidence": 0.8604
+    },
+    {
+      "time_s": 530.264611,
+      "zone": "LEFT_TOP",
+      "cards": {
+        "9": 1
+      },
+      "confidence": 0.5831
+    },
+    {
+      "time_s": 530.563867,
+      "zone": "LEFT_BOTTOM",
+      "cards": {
+        "Q": 1
+      },
+      "confidence": 0.8514
+    },
+    {
+      "time_s": 531.062956,
+      "zone": "LEFT_BOTTOM",
+      "cards": {
+        "4": 1
+      },
+      "confidence": 0.7959
+    },
+    {
+      "time_s": 531.304533,
+      "zone": "LEFT_TOP",
+      "cards": {
+        "10": 1
+      },
+      "confidence": 0.8258
+    },
+    {
+      "time_s": 531.861322,
+      "zone": "LEFT_TOP",
+      "cards": {
+        "4": 2
+      },
+      "confidence": 0.8643
+    },
+    {
+      "time_s": 532.1081,
+      "zone": "LEFT_BOTTOM",
+      "cards": {
+        "Q": 2
+      },
+      "confidence": 0.8623
+    },
+    {
+      "time_s": 532.3624,
+      "zone": "LEFT_TOP",
+      "cards": {
+        "9": 2
+      },
+      "confidence": 0.8412
+    },
+    {
+      "time_s": 532.907422,
+      "zone": "LEFT_TOP",
+      "cards": {
+        "6": 3
+      },
+      "confidence": 0.8941
+    },
+    {
+      "time_s": 533.406,
+      "zone": "LEFT_TOP",
+      "cards": {
+        "8": 2
+      },
+      "confidence": 0.8805
+    },
+    {
+      "time_s": 533.656511,
+      "zone": "LEFT_BOTTOM",
+      "cards": {
+        "K": 2
+      },
+      "confidence": 0.8369
+    },
+    {
+      "time_s": 534.156544,
+      "zone": "LEFT_BOTTOM",
+      "cards": {
+        "8": 4
+      },
+      "confidence": 0.8626
+    },
+    {
+      "time_s": 534.703744,
+      "zone": "LEFT_BOTTOM",
+      "cards": {
+        "SMALL_JOKER": 1,
+        "6": 1
+      },
+      "confidence": 0.8131
+    },
+    {
+      "time_s": 535.359367,
+      "zone": "LEFT_BOTTOM",
+      "cards": {
+        "7": 6,
+        "SMALL_JOKER": 1
+      },
+      "confidence": 0.8551
+    },
+    {
+      "time_s": 535.804444,
+      "zone": "LEFT_BOTTOM",
+      "cards": {
+        "3": 1
+      },
+      "confidence": 0.4505
+    }
+  ],
+  "truth_events": 35,
+  "predicted_events": 36,
+  "tp": 33,
+  "fp": 3,
+  "fn": 2,
+  "precision": 0.9166666666666666,
+  "recall": 0.9428571428571428,
+  "matches": [
+    {
+      "event": {
+        "time_s": 516.165211,
+        "zone": "TOP",
+        "cards": {
+          "4": 1
+        },
+        "confidence": 0.8305
+      },
+      "truth": {
+        "event_id": "G3-E037",
+        "time_s": 516.146,
+        "zone": "TOP",
+        "seat": "对家",
+        "cards": "4",
+        "confidence": "high",
+        "counts": {
+          "4": 1
+        }
+      }
+    },
+    {
+      "event": {
+        "time_s": 517.161411,
+        "zone": "LEFT_TOP",
+        "cards": {
+          "7": 1
+        },
+        "confidence": 0.4795
+      },
+      "truth": {
+        "event_id": "G3-E038",
+        "time_s": 517.157,
+        "zone": "LEFT_TOP",
+        "seat": "上联",
+        "cards": "7",
+        "confidence": "high",
+        "counts": {
+          "7": 1
+        }
+      }
+    },
+    {
+      "event": {
+        "time_s": 518.260078,
+        "zone": "LEFT_BOTTOM",
+        "cards": {
+          "9": 1
+        },
+        "confidence": 0.5994
+      },
+      "truth": {
+        "event_id": "G3-E039",
+        "time_s": 518.178,
+        "zone": "LEFT_BOTTOM",
+        "seat": "上家",
+        "cards": "9",
+        "confidence": "high",
+        "counts": {
+          "9": 1
+        }
+      }
+    },
+    {
+      "event": {
+        "time_s": 518.464278,
+        "zone": "RIGHT_TOP",
+        "cards": {
+          "10": 1
+        },
+        "confidence": 0.8188
+      },
+      "truth": {
+        "event_id": "G3-E040",
+        "time_s": 518.439,
+        "zone": "RIGHT_TOP",
+        "seat": "下联",
+        "cards": "10",
+        "confidence": "high",
+        "counts": {
+          "10": 1
+        }
+      }
+    },
+    {
+      "event": {
+        "time_s": 519.207667,
+        "zone": "LEFT_BOTTOM",
+        "cards": {
+          "Q": 1
+        },
+        "confidence": 0.8677
+      },
+      "truth": {
+        "event_id": "G3-E042",
+        "time_s": 519.206,
+        "zone": "LEFT_BOTTOM",
+        "seat": "上家",
+        "cards": "Q",
+        "confidence": "high",
+        "counts": {
+          "Q": 1
+        }
+      }
+    },
+    {
+      "event": {
+        "time_s": 519.505478,
+        "zone": "RIGHT_TOP",
+        "cards": {
+          "K": 1
+        },
+        "confidence": 0.4816
+      },
+      "truth": {
+        "event_id": "G3-E043",
+        "time_s": 519.454,
+        "zone": "RIGHT_TOP",
+        "seat": "下联",
+        "cards": "K",
+        "confidence": "high",
+        "counts": {
+          "K": 1
+        }
+      }
+    },
+    {
+      "event": {
+        "time_s": 521.054911,
+        "zone": "RIGHT_TOP",
+        "cards": {
+          "3": 1
+        },
+        "confidence": 0.8177
+      },
+      "truth": {
+        "event_id": "G3-E045",
+        "time_s": 521.018,
+        "zone": "RIGHT_TOP",
+        "seat": "下联",
+        "cards": "3",
+        "confidence": "high",
+        "counts": {
+          "3": 1
+        }
+      }
+    },
+    {
+      "event": {
+        "time_s": 521.308911,
+        "zone": "TOP",
+        "cards": {
+          "K": 1
+        },
+        "confidence": 0.878
+      },
+      "truth": {
+        "event_id": "G3-E046",
+        "time_s": 521.285,
+        "zone": "TOP",
+        "seat": "对家",
+        "cards": "K",
+        "confidence": "high",
+        "counts": {
+          "K": 1
+        }
+      }
+    },
+    {
+      "event": {
+        "time_s": 522.1041,
+        "zone": "TOP",
+        "cards": {
+          "5": 2
+        },
+        "confidence": 0.8953
+      },
+      "truth": {
+        "event_id": "G3-E047",
+        "time_s": 522.085,
+        "zone": "TOP",
+        "seat": "对家",
+        "cards": "2x5",
+        "confidence": "high",
+        "counts": {
+          "5": 2
+        }
+      }
+    },
+    {
+      "event": {
+        "time_s": 522.9024,
+        "zone": "TOP",
+        "cards": {
+          "6": 2
+        },
+        "confidence": 0.9025
+      },
+      "truth": {
+        "event_id": "G3-E048",
+        "time_s": 522.886,
+        "zone": "TOP",
+        "seat": "对家",
+        "cards": "2x6",
+        "confidence": "high",
+        "counts": {
+          "6": 2
+        }
+      }
+    },
+    {
+      "event": {
+        "time_s": 524.505011,
+        "zone": "TOP",
+        "cards": {
+          "10": 2
+        },
+        "confidence": 0.8674
+      },
+      "truth": {
+        "event_id": "G3-E049",
+        "time_s": 524.481,
+        "zone": "TOP",
+        "seat": "对家",
+        "cards": "2x10",
+        "confidence": "high",
+        "counts": {
+          "10": 2
+        }
+      }
+    },
+    {
+      "event": {
+        "time_s": 525.305067,
+        "zone": "TOP",
+        "cards": {
+          "J": 2
+        },
+        "confidence": 0.8732
+      },
+      "truth": {
+        "event_id": "G3-E050",
+        "time_s": 525.264,
+        "zone": "TOP",
+        "seat": "对家",
+        "cards": "2xJ",
+        "confidence": "high",
+        "counts": {
+          "J": 2
+        }
+      }
+    },
+    {
+      "event": {
+        "time_s": 526.104178,
+        "zone": "TOP",
+        "cards": {
+          "6": 1
+        },
+        "confidence": 0.8828
+      },
+      "truth": {
+        "event_id": "G3-E051",
+        "time_s": 526.064,
+        "zone": "TOP",
+        "seat": "对家",
+        "cards": "6",
+        "confidence": "high",
+        "counts": {
+          "6": 1
+        }
+      }
+    },
+    {
+      "event": {
+        "time_s": 526.366711,
+        "zone": "LEFT_TOP",
+        "cards": {
+          "8": 1
+        },
+        "confidence": 0.8675
+      },
+      "truth": {
+        "event_id": "G3-E052",
+        "time_s": 526.33,
+        "zone": "LEFT_TOP",
+        "seat": "上联",
+        "cards": "8",
+        "confidence": "high",
+        "counts": {
+          "8": 1
+        }
+      }
+    },
+    {
+      "event": {
+        "time_s": 526.602867,
+        "zone": "LEFT_BOTTOM",
+        "cards": {
+          "10": 1
+        },
+        "confidence": 0.7666
+      },
+      "truth": {
+        "event_id": "G3-E053",
+        "time_s": 526.595,
+        "zone": "LEFT_BOTTOM",
+        "seat": "上家",
+        "cards": "10",
+        "confidence": "high",
+        "counts": {
+          "10": 1
+        }
+      }
+    },
+    {
+      "event": {
+        "time_s": 527.113333,
+        "zone": "LEFT_TOP",
+        "cards": {
+          "K": 1
+        },
+        "confidence": 0.6497
+      },
+      "truth": {
+        "event_id": "G3-E054",
+        "time_s": 527.113,
+        "zone": "LEFT_TOP",
+        "seat": "上联",
+        "cards": "K",
+        "confidence": "high",
+        "counts": {
+          "K": 1
+        }
+      }
+    },
+    {
+      "event": {
+        "time_s": 527.666478,
+        "zone": "TOP",
+        "cards": {
+          "A": 1
+        },
+        "confidence": 0.5724
+      },
+      "truth": {
+        "event_id": "G3-E055",
+        "time_s": 527.628,
+        "zone": "TOP",
+        "seat": "对家",
+        "cards": "A",
+        "confidence": "high",
+        "counts": {
+          "A": 1
+        }
+      }
+    },
+    {
+      "event": {
+        "time_s": 528.402156,
+        "zone": "TOP",
+        "cards": {
+          "K": 2
+        },
+        "confidence": 0.8716
+      },
+      "truth": {
+        "event_id": "G3-E056",
+        "time_s": 528.395,
+        "zone": "TOP",
+        "seat": "对家",
+        "cards": "2xK",
+        "confidence": "high",
+        "counts": {
+          "K": 2
+        }
+      }
+    },
+    {
+      "event": {
+        "time_s": 529.200667,
+        "zone": "TOP",
+        "cards": {
+          "A": 2
+        },
+        "confidence": 0.8731
+      },
+      "truth": {
+        "event_id": "G3-E057",
+        "time_s": 529.191,
+        "zone": "TOP",
+        "seat": "对家",
+        "cards": "2xA",
+        "confidence": "high",
+        "counts": {
+          "A": 2
+        }
+      }
+    },
+    {
+      "event": {
+        "time_s": 530.009344,
+        "zone": "TOP",
+        "cards": {
+          "3": 1
+        },
+        "confidence": 0.8604
+      },
+      "truth": {
+        "event_id": "G3-E058",
+        "time_s": 529.993,
+        "zone": "TOP",
+        "seat": "对家",
+        "cards": "3",
+        "confidence": "high",
+        "counts": {
+          "3": 1
+        }
+      }
+    },
+    {
+      "event": {
+        "time_s": 530.264611,
+        "zone": "LEFT_TOP",
+        "cards": {
+          "9": 1
+        },
+        "confidence": 0.5831
+      },
+      "truth": {
+        "event_id": "G3-E059",
+        "time_s": 530.259,
+        "zone": "LEFT_TOP",
+        "seat": "上联",
+        "cards": "9",
+        "confidence": "high",
+        "counts": {
+          "9": 1
+        }
+      }
+    },
+    {
+      "event": {
+        "time_s": 530.563867,
+        "zone": "LEFT_BOTTOM",
+        "cards": {
+          "Q": 1
+        },
+        "confidence": 0.8514
+      },
+      "truth": {
+        "event_id": "G3-E060",
+        "time_s": 530.522,
+        "zone": "LEFT_BOTTOM",
+        "seat": "上家",
+        "cards": "Q",
+        "confidence": "high",
+        "counts": {
+          "Q": 1
+        }
+      }
+    },
+    {
+      "event": {
+        "time_s": 531.062956,
+        "zone": "LEFT_BOTTOM",
+        "cards": {
+          "4": 1
+        },
+        "confidence": 0.7959
+      },
+      "truth": {
+        "event_id": "G3-E061",
+        "time_s": 531.025,
+        "zone": "LEFT_BOTTOM",
+        "seat": "上家",
+        "cards": "4",
+        "confidence": "high",
+        "counts": {
+          "4": 1
+        }
+      }
+    },
+    {
+      "event": {
+        "time_s": 531.304533,
+        "zone": "LEFT_TOP",
+        "cards": {
+          "10": 1
+        },
+        "confidence": 0.8258
+      },
+      "truth": {
+        "event_id": "G3-E062",
+        "time_s": 531.297,
+        "zone": "LEFT_TOP",
+        "seat": "上联",
+        "cards": "10",
+        "confidence": "high",
+        "counts": {
+          "10": 1
+        }
+      }
+    },
+    {
+      "event": {
+        "time_s": 531.861322,
+        "zone": "LEFT_TOP",
+        "cards": {
+          "4": 2
+        },
+        "confidence": 0.8643
+      },
+      "truth": {
+        "event_id": "G3-E063",
+        "time_s": 531.822,
+        "zone": "LEFT_TOP",
+        "seat": "上联",
+        "cards": "2x4",
+        "confidence": "high",
+        "counts": {
+          "4": 2
+        }
+      }
+    },
+    {
+      "event": {
+        "time_s": 532.1081,
+        "zone": "LEFT_BOTTOM",
+        "cards": {
+          "Q": 2
+        },
+        "confidence": 0.8623
+      },
+      "truth": {
+        "event_id": "G3-E064",
+        "time_s": 532.088,
+        "zone": "LEFT_BOTTOM",
+        "seat": "上家",
+        "cards": "2xQ",
+        "confidence": "high",
+        "counts": {
+          "Q": 2
+        }
+      }
+    },
+    {
+      "event": {
+        "time_s": 532.907422,
+        "zone": "LEFT_TOP",
+        "cards": {
+          "6": 3
+        },
+        "confidence": 0.8941
+      },
+      "truth": {
+        "event_id": "G3-E066",
+        "time_s": 532.872,
+        "zone": "LEFT_TOP",
+        "seat": "上联",
+        "cards": "3x6",
+        "confidence": "high",
+        "counts": {
+          "6": 3
+        }
+      }
+    },
+    {
+      "event": {
+        "time_s": 533.406,
+        "zone": "LEFT_TOP",
+        "cards": {
+          "8": 2
+        },
+        "confidence": 0.8805
+      },
+      "truth": {
+        "event_id": "G3-E067",
+        "time_s": 533.375,
+        "zone": "LEFT_TOP",
+        "seat": "上联",
+        "cards": "2x8",
+        "confidence": "high",
+        "counts": {
+          "8": 2
+        }
+      }
+    },
+    {
+      "event": {
+        "time_s": 533.656511,
+        "zone": "LEFT_BOTTOM",
+        "cards": {
+          "K": 2
+        },
+        "confidence": 0.8369
+      },
+      "truth": {
+        "event_id": "G3-E068",
+        "time_s": 533.618,
+        "zone": "LEFT_BOTTOM",
+        "seat": "上家",
+        "cards": "2xK",
+        "confidence": "high",
+        "counts": {
+          "K": 2
+        }
+      }
+    },
+    {
+      "event": {
+        "time_s": 534.156544,
+        "zone": "LEFT_BOTTOM",
+        "cards": {
+          "8": 4
+        },
+        "confidence": 0.8626
+      },
+      "truth": {
+        "event_id": "G3-E069",
+        "time_s": 534.151,
+        "zone": "LEFT_BOTTOM",
+        "seat": "上家",
+        "cards": "4x8",
+        "confidence": "high",
+        "counts": {
+          "8": 4
+        }
+      }
+    },
+    {
+      "event": {
+        "time_s": 534.703744,
+        "zone": "LEFT_BOTTOM",
+        "cards": {
+          "SMALL_JOKER": 1,
+          "6": 1
+        },
+        "confidence": 0.8131
+      },
+      "truth": {
+        "event_id": "G3-E069A",
+        "time_s": 534.686,
+        "zone": "LEFT_BOTTOM",
+        "seat": "上家",
+        "cards": "SMALL_JOKER+6",
+        "confidence": "high",
+        "counts": {
+          "SMALL_JOKER": 1,
+          "6": 1
+        }
+      }
+    },
+    {
+      "event": {
+        "time_s": 535.359367,
+        "zone": "LEFT_BOTTOM",
+        "cards": {
+          "7": 6,
+          "SMALL_JOKER": 1
+        },
+        "confidence": 0.8551
+      },
+      "truth": {
+        "event_id": "G3-E070",
+        "time_s": 535.218,
+        "zone": "LEFT_BOTTOM",
+        "seat": "上家",
+        "cards": "SMALL_JOKER+6x7",
+        "confidence": "high",
+        "counts": {
+          "SMALL_JOKER": 1,
+          "7": 6
+        }
+      }
+    },
+    {
+      "event": {
+        "time_s": 535.804444,
+        "zone": "LEFT_BOTTOM",
+        "cards": {
+          "3": 1
+        },
+        "confidence": 0.4505
+      },
+      "truth": {
+        "event_id": "G3-E071",
+        "time_s": 535.818,
+        "zone": "LEFT_BOTTOM",
+        "seat": "上家",
+        "cards": "3",
+        "confidence": "high",
+        "counts": {
+          "3": 1
+        }
+      }
+    }
+  ]
+}
