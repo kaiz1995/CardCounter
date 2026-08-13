@@ -25,6 +25,17 @@ class StablePlayGateTest {
     }
 
     @Test
+    fun publicPlayCropUsesZoneHeightForLetterboxInput() {
+        val top = PlayZone.TOP.yoloCrop(1280, 578)
+        val left = PlayZone.LEFT_TOP.yoloCrop(1280, 578)
+        assertEquals(82, top.width)
+        assertEquals(70, top.height)
+        assertEquals(152, left.width)
+        assertEquals(56, left.height)
+        assertEquals(161, PlayZone.SELF.yoloCrop(1280, 578).height)
+    }
+
+    @Test
     fun acceptsStablePlayOnceAndAllowsSameCardsAfterClear() {
         val gate = StablePlayGate()
         assertNull(gate.update(PlayZone.SELF, fives))

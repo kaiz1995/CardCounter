@@ -34,6 +34,7 @@ import com.example.cardcounter.domain.SessionPhase
 import com.example.cardcounter.persistence.SessionRepository
 import com.example.cardcounter.service.OverlayService
 import com.example.cardcounter.vision.MnnYoloDetector
+import kotlin.math.roundToInt
 
 /** 仅验证 MediaProjection 与帧流，不在此处实现视觉识别。 */
 class CaptureProbeService : Service() {
@@ -575,8 +576,8 @@ class CaptureProbeService : Service() {
         val crop = zone.yoloCrop(1_280, 578)
         val left = crop.left
         val top = crop.top
-        val width = crop.size
-        val height = crop.size
+        val width = crop.width
+        val height = crop.height
         val plane = image.planes[0]
         val pixels = IntArray(width * height)
         for (y in 0 until height) for (x in 0 until width) {
@@ -588,7 +589,21 @@ class CaptureProbeService : Service() {
             val blue = plane.buffer.get(offset + 2).toInt() and 0xff
             pixels[y * width + x] = 0xff000000.toInt() or (red shl 16) or (green shl 8) or blue
         }
-        return Bitmap.createBitmap(pixels, width, height, Bitmap.Config.ARGB_8888)
+        val source = Bitmap.createBitmap(pixels, width, height, Bitmap.Config.ARGB_8888)
+        val scale = minOf(320f / width, 320f / height)
+        val scaled = Bitmap.createScaledBitmap(
+            source,
+            (width * scale).roundToInt(),
+            (height * scale).roundToInt(),
+            true
+        )
+        val output = Bitmap.createBitmap(320, 320, Bitmap.Config.ARGB_8888)
+        output.eraseColor(0xff727272.toInt())
+        val canvas = android.graphics.Canvas(output)
+        canvas.drawBitmap(scaled, (320 - scaled.width) / 2f, (320 - scaled.height) / 2f, null)
+        if (scaled !== source) source.recycle()
+        scaled.recycle()
+        return output
     }
 
     private fun handYoloBitmap(image: Image): Bitmap {

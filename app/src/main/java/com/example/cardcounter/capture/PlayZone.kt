@@ -26,16 +26,21 @@ enum class PlayZone(
 
     fun rankY(height: Int): Int = (height * rankYRatio).roundToInt()
 
-    /** YOLO 输入保持正方形，避免横向出牌条被强制拉伸后合并重叠牌。 */
+    /** Public-play crop keeps aspect ratio; caller letterboxes into the 320 model input. */
     fun yoloCrop(width: Int, height: Int): PlayCrop {
         val left = left(width)
-        val size = right(width) - left + 1
-        val top = (rankY(height) - size * 43 / 100).coerceIn(0, height - size)
-        return PlayCrop(left, top, size)
+        val cropWidth = right(width) - left + 1
+        val cropHeight = if (source == PlaySource.SELF) cropWidth else visibilityHeight
+        val top = if (source == PlaySource.SELF) {
+            (rankY(height) - cropHeight * 43 / 100).coerceIn(0, height - cropHeight)
+        } else {
+            (rankY(height) - cropHeight / 2).coerceIn(0, height - cropHeight)
+        }
+        return PlayCrop(left, top, cropWidth, cropHeight)
     }
 }
 
-data class PlayCrop(val left: Int, val top: Int, val size: Int)
+data class PlayCrop(val left: Int, val top: Int, val width: Int, val height: Int)
 
 enum class PlaySource { SELF, OUTSIDE }
 
