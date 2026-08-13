@@ -1,0 +1,166 @@
+{
+  "baseline": {
+    "exact": 31,
+    "total": 35,
+    "focus": [
+      {
+        "event_id": "G3-E039",
+        "truth": "9",
+        "predicted": {
+          "3": 1
+        },
+        "exact_match": false
+      },
+      {
+        "event_id": "G3-E044",
+        "truth": "BIG_JOKER+6xK",
+        "predicted": {
+          "10": 2,
+          "2": 1,
+          "BIG_JOKER": 1
+        },
+        "exact_match": false
+      },
+      {
+        "event_id": "G3-E065",
+        "truth": "2xK",
+        "predicted": {
+          "9": 2
+        },
+        "exact_match": false
+      },
+      {
+        "event_id": "G3-E070",
+        "truth": "SMALL_JOKER+6x7",
+        "predicted": {
+          "7": 5,
+          "SMALL_JOKER": 1
+        },
+        "exact_match": false
+      }
+    ]
+  },
+  "A": {
+    "exact": 31,
+    "total": 35,
+    "focus": [
+      {
+        "event_id": "G3-E039",
+        "truth": "9",
+        "predicted": {
+          "9": 1
+        },
+        "exact_match": true
+      },
+      {
+        "event_id": "G3-E044",
+        "truth": "BIG_JOKER+6xK",
+        "predicted": {
+          "10": 2,
+          "2": 1,
+          "BIG_JOKER": 1
+        },
+        "exact_match": false
+      },
+      {
+        "event_id": "G3-E065",
+        "truth": "2xK",
+        "predicted": {
+          "9": 2
+        },
+        "exact_match": false
+      },
+      {
+        "event_id": "G3-E070",
+        "truth": "SMALL_JOKER+6x7",
+        "predicted": {
+          "7": 5,
+          "SMALL_JOKER": 1
+        },
+        "exact_match": false
+      }
+    ]
+  },
+  "B": {
+    "exact": 30,
+    "total": 35,
+    "focus": [
+      {
+        "event_id": "G3-E039",
+        "truth": "9",
+        "predicted": {
+          "3": 1
+        },
+        "exact_match": false
+      },
+      {
+        "event_id": "G3-E044",
+        "truth": "BIG_JOKER+6xK",
+        "predicted": {
+          "10": 2,
+          "2": 1,
+          "BIG_JOKER": 1
+        },
+        "exact_match": false
+      },
+      {
+        "event_id": "G3-E065",
+        "truth": "2xK",
+        "predicted": {
+          "9": 2
+        },
+        "exact_match": false
+      },
+      {
+        "event_id": "G3-E070",
+        "truth": "SMALL_JOKER+6x7",
+        "predicted": {
+          "7": 5,
+          "SMALL_JOKER": 1
+        },
+        "exact_match": false
+      }
+    ]
+  },
+  "C": {
+    "exact": 33,
+    "total": 35,
+    "focus": [
+      {
+        "event_id": "G3-E039",
+        "truth": "9",
+        "predicted": {
+          "9": 1
+        },
+        "exact_match": true
+      },
+      {
+        "event_id": "G3-E044",
+        "truth": "BIG_JOKER+6xK",
+        "predicted": {
+          "10": 2,
+          "2": 1,
+          "BIG_JOKER": 1
+        },
+        "exact_match": false
+      },
+      {
+        "event_id": "G3-E065",
+        "truth": "2xK",
+        "predicted": {
+          "K": 2
+        },
+        "exact_match": true
+      },
+      {
+        "event_id": "G3-E070",
+        "truth": "SMALL_JOKER+6x7",
+        "predicted": {
+          "7": 5,
+          "SMALL_JOKER": 1
+        },
+        "exact_match": false
+      }
+    ]
+  }
+}
