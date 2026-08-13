@@ -11,8 +11,11 @@ data class GameState(
     val phase: SessionPhase,
     val selfLockedHand: RankCounts? = null,
     val outsidePlayed: RankCounts = RankCounts.zero(),
+    val outsidePlayedCount: Int = 0,
     val outsidePlayedBySeat: Map<OutsideSeat, RankCounts> =
         OutsideSeat.entries.associateWith { RankCounts.zero() },
+    val outsidePlayedCountBySeat: Map<OutsideSeat, Int> =
+        OutsideSeat.entries.associateWith { 0 },
     val revertedEventIds: Set<String> = emptySet(),
     val pauseReason: PauseReason? = null,
     val events: List<GameEvent> = emptyList()
@@ -22,6 +25,8 @@ data class GameState(
 
     fun playedBy(seat: OutsideSeat): RankCounts =
         outsidePlayedBySeat[seat] ?: RankCounts.zero()
+
+    fun playedCountBy(seat: OutsideSeat): Int = outsidePlayedCountBySeat[seat] ?: 0
 
     /** 买牌等前置转移尚未归因时，超过33张不伪造剩余数。 */
     fun remainingCardsBy(seat: OutsideSeat): Int? =
@@ -34,6 +39,9 @@ data class GameState(
             total.plus(playedBy(seat))
         }
         check(assignedOutside.fitsWithin(outsidePlayed))
+        check(outsidePlayedCount >= 0)
+        check(outsidePlayedCountBySeat.values.all { it >= 0 })
+        check(outsidePlayedCountBySeat.values.sum() <= outsidePlayedCount)
         val availableOutside = selfLockedHand?.let { Rank.initialInventory.minus(it) }
         check(availableOutside == null || outsidePlayed.fitsWithin(availableOutside))
         if (selfLockedHand != null) {

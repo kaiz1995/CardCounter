@@ -38,7 +38,7 @@ class CounterOverlayView(context: Context) : View(context) {
                 canvas,
                 rect,
                 current?.playedBy(seat) ?: RankCounts.zero(),
-                current?.remainingCardsBy(seat) ?: 33,
+                current?.playedCountBy(seat) ?: 0,
                 current?.pauseReason != null
             )
         }
@@ -50,7 +50,7 @@ class CounterOverlayView(context: Context) : View(context) {
         canvas: Canvas,
         rect: OverlayLayout.Rect,
         counts: RankCounts,
-        remaining: Int?,
+        played: Int?,
         paused: Boolean
     ) {
         drawFrame(canvas, rect, paused) {
@@ -79,7 +79,7 @@ class CounterOverlayView(context: Context) : View(context) {
             val lastLeft = rect.x + rect.width - lastWidth
             drawCell(
                 canvas, lastLeft, rect.y.toFloat(), lastWidth, headerHeight,
-                "剩", 15f, COLOR_TEXT, COLOR_HEADER
+                "已出", 15f, COLOR_TEXT, COLOR_HEADER
             )
             drawCell(
                 canvas,
@@ -87,7 +87,7 @@ class CounterOverlayView(context: Context) : View(context) {
                 rect.y + headerHeight,
                 lastWidth,
                 rect.height - headerHeight,
-                remaining?.toString() ?: "—",
+                played?.toString() ?: "—",
                 16f,
                 COLOR_RED,
                 COLOR_VALUE

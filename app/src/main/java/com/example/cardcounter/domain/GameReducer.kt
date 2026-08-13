@@ -49,14 +49,20 @@ object GameReducer {
 
     private fun addOutsidePlay(state: GameState, event: GameEvent.OutsideCardsPlayed): GameState {
         require(state.phase == SessionPhase.ACTIVE) { "当前不接受自动出牌事件" }
+        require(event.cardCount > 0) { "出牌张数必须为正数" }
         val remaining = state.outsideRemaining ?: error("未锁定自己手牌")
         require(event.cards.fitsWithin(remaining)) { "外面出牌超过剩余库存" }
         val bySeat = event.seat?.let { seat ->
             state.outsidePlayedBySeat + (seat to state.playedBy(seat).plus(event.cards))
         } ?: state.outsidePlayedBySeat
+        val countBySeat = event.seat?.let { seat ->
+            state.outsidePlayedCountBySeat + (seat to state.playedCountBy(seat) + event.cardCount)
+        } ?: state.outsidePlayedCountBySeat
         return state.copy(
             outsidePlayed = state.outsidePlayed.plus(event.cards),
+            outsidePlayedCount = state.outsidePlayedCount + event.cardCount,
             outsidePlayedBySeat = bySeat,
+            outsidePlayedCountBySeat = countBySeat,
             events = state.events + event
         )
     }
@@ -77,9 +83,14 @@ object GameReducer {
         val bySeat = target.seat?.let { seat ->
             state.outsidePlayedBySeat + (seat to state.playedBy(seat).minus(target.cards))
         } ?: state.outsidePlayedBySeat
+        val countBySeat = target.seat?.let { seat ->
+            state.outsidePlayedCountBySeat + (seat to state.playedCountBy(seat) - target.cardCount)
+        } ?: state.outsidePlayedCountBySeat
         return state.copy(
             outsidePlayed = state.outsidePlayed.minus(target.cards),
+            outsidePlayedCount = state.outsidePlayedCount - target.cardCount,
             outsidePlayedBySeat = bySeat,
+            outsidePlayedCountBySeat = countBySeat,
             revertedEventIds = state.revertedEventIds + target.id,
             events = state.events + event
         )

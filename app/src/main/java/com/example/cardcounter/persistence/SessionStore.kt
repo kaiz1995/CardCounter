@@ -43,6 +43,7 @@ class SessionStore(context: Context) {
                 is GameEvent.OutsideCardsPlayed -> {
                     json.put("cards", encodeCounts(event.cards))
                     event.seat?.let { json.put("seat", it.name) }
+                    json.put("cardCount", event.cardCount)
                 }
                 is GameEvent.SelfCardsPlayed -> json.put("cards", encodeCounts(event.cards))
                 is GameEvent.Reverted -> json.put("target", event.targetEventId)
@@ -60,7 +61,8 @@ class SessionStore(context: Context) {
                 decodeCounts(json.getJSONObject("cards")),
                 id,
                 json.optString("seat").takeIf { it.isNotEmpty() }
-                    ?.let { OutsideSeat.valueOf(it) }
+                    ?.let { OutsideSeat.valueOf(it) },
+                json.optInt("cardCount", decodeCounts(json.getJSONObject("cards")).total())
             )
             "SelfCardsPlayed" -> GameEvent.SelfCardsPlayed(decodeCounts(json.getJSONObject("cards")), id)
             "Reverted" -> GameEvent.Reverted(json.getString("target"), id)

@@ -18,7 +18,8 @@ sealed interface GameEvent {
     data class OutsideCardsPlayed(
         val cards: RankCounts,
         override val id: String = UUID.randomUUID().toString(),
-        val seat: OutsideSeat? = null
+        val seat: OutsideSeat? = null,
+        val cardCount: Int = cards.total()
     ) : GameEvent
 
     /** 自己出牌只做事件边界记录，绝不扣外面剩余。 */

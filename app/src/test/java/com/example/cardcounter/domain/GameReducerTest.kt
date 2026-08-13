@@ -129,6 +129,26 @@ class GameReducerTest {
     }
 
     @Test
+    fun outsideCardCountIsIndependentFromRankClassification() {
+        val active = GameReducer.apply(
+            GameReducer.newSession(),
+            GameEvent.SelfHandLocked(hand)
+        )
+        val state = GameReducer.apply(
+            active,
+            GameEvent.OutsideCardsPlayed(
+                cards = RankCounts.of(mapOf(Rank.ACE to 1)),
+                seat = OutsideSeat.TOP,
+                cardCount = 3
+            )
+        )
+
+        assertEquals(3, state.outsidePlayedCount)
+        assertEquals(3, state.playedCountBy(OutsideSeat.TOP))
+        assertEquals(1, state.outsidePlayed[Rank.ACE])
+    }
+
+    @Test
     fun revertingOutsidePlayAlsoRevertsItsSeatLedger() {
         val active = GameReducer.apply(
             GameReducer.newSession(),
