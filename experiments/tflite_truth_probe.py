@@ -51,7 +51,11 @@ def detect(it, frame, zone):
     for conf,cid,_ in keep:
         raw=LABELS[cid]; rank='BIG_JOKER' if raw=='D' else 'SMALL_JOKER' if raw=='X' else raw[1:]
         counts[rank]=counts.get(rank,0)+1
-    return counts, len(keep), max((c[0] for c in keep), default=0.0)
+    boxes=[]
+    for conf,cid,b in keep:
+        raw=LABELS[cid]; rank='BIG_JOKER' if raw=='D' else 'SMALL_JOKER' if raw=='X' else raw[1:]
+        boxes.append({'rank':rank,'conf':round(float(conf),4),'cx':round(float(b[0]),4),'cy':round(float(b[1]),4),'w':round(float(b[2]),4),'h':round(float(b[3]),4)})
+    return counts, len(keep), max((c[0] for c in keep), default=0.0), boxes
 
 def main():
     base=Path(__file__).parents[1]; truth=base/'experiments/results/truth_102658_516_536.csv'
@@ -59,10 +63,10 @@ def main():
     cap=cv2.VideoCapture(str(base/'source/SVID_20260810_102658_1.mp4')); rows=[]
     for e in csv.DictReader(truth.open(encoding='utf-8')):
         cap.set(cv2.CAP_PROP_POS_MSEC,float(e['time_s'])*1000); ok,fr=cap.read()
-        pred,n,conf=detect(it,fr,e['zone']) if ok else ({},0,0)
+        pred,n,conf,boxes=detect(it,fr,e['zone']) if ok else ({},0,0,[])
         truth_cards = parse_truth_cards(e['cards'])
         rows.append({**e,'predicted':json.dumps(pred,ensure_ascii=False),'truth_counts':truth_cards,
-                     'exact_match':pred == truth_cards,'detections':n,'max_confidence':round(conf,4)})
+                     'exact_match':pred == truth_cards,'detections':n,'max_confidence':round(conf,4),'boxes':boxes})
     cap.release(); out=base/'experiments/results/tflite_truth_probe_102658.json'
     summary={'exact':sum(r['exact_match'] for r in rows),'total':len(rows)}
     out.write_text(json.dumps({'summary':summary,'rows':rows},ensure_ascii=False,indent=2),encoding='utf-8'); print(json.dumps(summary,ensure_ascii=False))
