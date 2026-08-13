@@ -39,6 +39,38 @@ internal class IssueSampleStore(context: Context) : AutoCloseable {
         }
     }
 
+    fun saveAceAudit(
+        bitmaps: List<Bitmap>,
+        zone: PlayZone,
+        candidates: List<RankCountsCandidate>,
+        templateCards: com.example.cardcounter.domain.RankCounts,
+        winner: com.example.cardcounter.domain.RankCounts,
+        generation: Long
+    ) {
+        val copies = bitmaps.take(3).map { it.copy(Bitmap.Config.ARGB_8888, false) }
+        executor.execute {
+            runCatching {
+                root.mkdirs(); trim()
+                val directory = File(root, "${System.currentTimeMillis()}_${zone.name}_LEFT_BOTTOM_ACE_AUDIT")
+                check(directory.mkdirs()) { "无法创建ACE审计目录" }
+                copies.forEachIndexed { index, copy ->
+                    File(directory, "roi_$index.png").outputStream().use { out ->
+                        check(copy.compress(Bitmap.CompressFormat.PNG, 100, out)) { "无法写入审计ROI" }
+                    }
+                }
+                JSONObject()
+                    .put("zone", zone.name)
+                    .put("reason", "LEFT_BOTTOM_ACE_AUDIT")
+                    .put("generation", generation)
+                    .put("templateCards", templateCards.toString())
+                    .put("winner", winner.toString())
+                    .put("candidates", candidates.joinToString { it.toString() })
+                    .toString().let { File(directory, "meta.json").writeText(it) }
+            }.onFailure { Log.w(TAG, "ACE_AUDIT_SAVE_FAILED", it) }
+            copies.forEach(Bitmap::recycle)
+        }
+    }
+
     private fun trim() {
         val directories = root.listFiles()?.filter(File::isDirectory)
             ?.sortedBy(File::lastModified).orEmpty()

@@ -134,5 +134,8 @@ internal fun canFastConfirmPlay(cards: RankCounts, minimumConfidence: Float): Bo
 internal fun fuseSinglePublicPlay(model: RankCounts, template: RankCounts): RankCounts =
     if (model.total() == 1 && template.total() == 1) template else model
 
+internal fun shouldAuditAce(zone: PlayZone, cards: RankCounts): Boolean =
+    zone == PlayZone.LEFT_BOTTOM && cards[com.example.cardcounter.domain.Rank.ACE] > 0
+
 /** 牌桌动画会短暂露出无法识别的牌面；连续三次才按未知牌暂停。 */
 internal fun isStableUnknownPlay(samples: Int): Boolean = samples >= 3

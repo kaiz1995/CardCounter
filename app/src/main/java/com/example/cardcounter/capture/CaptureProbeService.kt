@@ -68,6 +68,7 @@ class CaptureProbeService : Service() {
     private val roiEventCache = RoiPlayEventCache<RoiFrame>(discard = { it.bitmap.recycle() })
     private var lastRoiSampleAt = 0L
     private var restartPrimeDeadlineAt = 0L
+    private var lastAceAuditAccepted: RankCounts? = null
     @Volatile private var captureGeneration = 0L
     @Volatile private var handRevision = 0L
     @Volatile private var firstPlayArmed = false
@@ -510,6 +511,13 @@ class CaptureProbeService : Service() {
                 entry.value.size >= 2 || canFastConfirmPlay(it, entry.value.first().minimumConfidence)
             }
             }
+            if (cards != null && shouldAuditAce(finalized.zone, cards) && cards != lastAceAuditAccepted) {
+                lastAceAuditAccepted = cards
+                issueSampleStore.saveAceAudit(
+                    finalized.frames.map { it.bitmap }, finalized.zone, candidates,
+                    templateCards, cards, finalized.generation
+                )
+            }
             if (cards == null) {
                 saveIssue(finalized, "NO_CONSENSUS", candidates)
                 Log.w(TAG, "ROI_NO_CONSENSUS zone=${finalized.zone} candidates=$candidates")
@@ -673,6 +681,7 @@ class CaptureProbeService : Service() {
             stableRankCandidates = 0
             rankRevision = -1L
             stablePlayGate.reset()
+            lastAceAuditAccepted = null
             PlayZone.entries.forEach {
                 unknownPlaySamples[it] = 0
                 lastPlayCandidates[it] = null

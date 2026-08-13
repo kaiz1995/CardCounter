@@ -174,6 +174,14 @@ class StablePlayGateTest {
     }
 
     @Test
+    fun auditsAceOnlyForLeftBottom() {
+        val ace = RankCounts.of(mapOf(Rank.ACE to 1))
+        assertTrue(shouldAuditAce(PlayZone.LEFT_BOTTOM, ace))
+        assertFalse(shouldAuditAce(PlayZone.TOP, ace))
+        assertFalse(shouldAuditAce(PlayZone.LEFT_BOTTOM, RankCounts.of(mapOf(Rank.KING to 1))))
+    }
+
+    @Test
     fun keepsOverlappingPublicCardsSeparate() {
         val matches = listOf(
             HandRankMatcher.Match(100, Rank.SEVEN, 1.0),
