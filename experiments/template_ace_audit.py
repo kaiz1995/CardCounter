@@ -1,8 +1,6 @@
 import argparse,json
 from pathlib import Path
 import cv2,numpy as np
-from tflite_crop_ab_probe import crop_variant,detect_image
-from ai_edge_litert.interpreter import Interpreter
 
 W,H=1280,578; LEFT,RIGHT=round(W*.141),round(W*.281); RANKY=round(H*.429)
 ROOT=Path(__file__).parents[1]
@@ -45,6 +43,8 @@ def self_check():
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument('--self-check',action='store_true'); ap.add_argument('--duration',type=float,default=20); ap.add_argument('--video'); ap.add_argument('--start',type=float,default=697.2); ap.add_argument('--output'); a=ap.parse_args()
     if a.self_check: print(json.dumps({'self_check':self_check()})); return
+    from tflite_crop_ab_probe import crop_variant,detect_image
+    from ai_edge_litert.interpreter import Interpreter
     video=Path(a.video) if a.video else ROOT/'source/SVID_20260810_143651_1.mp4'; cap=cv2.VideoCapture(str(video)); it=Interpreter(model_path=str(ROOT/'app/src/main/assets/poker_yolo11_320.tflite'));it.allocate_tensors(); rows=[]; t=a.start
     while t<a.start+a.duration:
         cap.set(cv2.CAP_PROP_POS_MSEC,t*1000); ok,fr=cap.read()
