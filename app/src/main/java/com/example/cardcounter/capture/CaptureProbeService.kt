@@ -466,7 +466,16 @@ class CaptureProbeService : Service() {
         PlayZone.entries.forEach { zone ->
             val visible = tableVisible && isPlayVisible(visibleZones[zone] == true)
             if (takeSample && tableVisible && !visible) {
-                rankHandler.post { stablePlayGate.update(zone, RankCounts.zero()) }
+                rankHandler.post {
+                    stablePlayGate.update(zone, RankCounts.zero())
+                    if (zone.source == PlaySource.OUTSIDE) {
+                        dispatchCountedPlays(
+                            publicPlayCountAggregator.offer(
+                                zone, generation, now, RankCounts.zero(), 0
+                            )
+                        )
+                    }
+                }
             }
             val frame = if (visible && takeSample && roiEventCache.needsFrame(zone, generation)) {
                 val bitmap = publicPlayBitmap(image, zone)
@@ -521,6 +530,10 @@ class CaptureProbeService : Service() {
             val repository = SessionRepository(this)
             if (repository.state.phase != SessionPhase.ACTIVE) return
             val stable = stablePlayGate.acceptStable(finalized.zone, cards, winner!!.value.first().cardCount) ?: return
+            if (stable.zone.source == PlaySource.SELF) {
+                dispatchGameEvent(GameEvent.SelfCardsPlayed(stable.cards))
+                return
+            }
             val counted = publicPlayCountAggregator.offer(
                 finalized.zone,
                 finalized.generation,
@@ -528,24 +541,38 @@ class CaptureProbeService : Service() {
                 stable.cards,
                 stable.cardCount
             ).firstOrNull() ?: return
-            val event = when (stable.zone.source) {
-                PlaySource.SELF -> GameEvent.SelfCardsPlayed(stable.cards)
-                PlaySource.OUTSIDE -> GameEvent.OutsideCardsPlayed(counted.cards, seat = requireNotNull(counted.zone.seat), cardCount = counted.cardCount)
-            }
-            runCatching { repository.dispatch(event) }
-                .onSuccess {
-                    OverlayService.refresh(this)
-                    Log.i(TAG, "FORMAL_PLAY source=${finalized.zone.source} zone=${finalized.zone} cards=$cards")
-                }
-                .onFailure {
-                    saveIssue(finalized, "REDUCER_REJECTED", candidates)
-                    OverlayService.refresh(this)
-                    Log.w(TAG, "PLAY_REJECTED reason=OUT_OF_STOCK", it)
-                }
+            dispatchCountedPlays(listOf(counted))
         } finally {
             if (finalized.early) roiEventCache.completeEarly(finalized.zone, finalized.generation)
             finalized.frames.forEach { it.bitmap.recycle() }
         }
+    }
+
+    private fun dispatchCountedPlays(plays: List<CountedPlay>) {
+        if (captureGeneration <= 0L) return
+        val repository = SessionRepository(this)
+        if (repository.state.phase != SessionPhase.ACTIVE) return
+        plays.forEach { play ->
+            if (play.zone.source != PlaySource.OUTSIDE) return@forEach
+            runCatching {
+                repository.dispatch(
+                    GameEvent.OutsideCardsPlayed(
+                        play.cards,
+                        seat = requireNotNull(play.zone.seat),
+                        cardCount = play.cardCount
+                    )
+                )
+            }.onSuccess { OverlayService.refresh(this) }
+                .onFailure { Log.w(TAG, "PLAY_REJECTED reason=OUT_OF_STOCK", it) }
+        }
+    }
+
+    private fun dispatchGameEvent(event: GameEvent) {
+        val repository = SessionRepository(this)
+        if (repository.state.phase != SessionPhase.ACTIVE) return
+        runCatching { repository.dispatch(event) }
+            .onSuccess { OverlayService.refresh(this) }
+            .onFailure { Log.w(TAG, "PLAY_REJECTED reason=OUT_OF_STOCK", it) }
     }
 
     private fun saveIssue(

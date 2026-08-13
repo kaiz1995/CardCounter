@@ -35,4 +35,11 @@ class PublicPlayCountAggregatorTest {
         repeat(6) { a.offer(PlayZone.TOP, 2, 700L + it, RankCounts.zero(), 0) }
         assertEquals(emptyList<CountedPlay>(), a.offer(PlayZone.TOP, 2, 800, four, 4))
     }
+
+    @Test fun flushesPendingAfterSixEmptySamplesOnly() {
+        val a = PublicPlayCountAggregator(); val four = cards(Rank.FOUR to 4)
+        a.offer(PlayZone.TOP, 1, 0, four, 4)
+        repeat(5) { assertEquals(emptyList<CountedPlay>(), a.offer(PlayZone.TOP, 1, 10L + it, RankCounts.zero(), 0)) }
+        assertEquals(4, a.offer(PlayZone.TOP, 1, 20, RankCounts.zero(), 0).single().cardCount)
+    }
 }
