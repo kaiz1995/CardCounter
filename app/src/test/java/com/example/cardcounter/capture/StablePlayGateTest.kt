@@ -174,6 +174,12 @@ class StablePlayGateTest {
     }
 
     @Test
+    fun carriesIndependentStableCardCount() {
+        val cards = RankCounts.of(mapOf(Rank.ACE to 3))
+        assertEquals(StablePlay(PlayZone.TOP, cards, 3), StablePlay(PlayZone.TOP, cards, 3))
+    }
+
+    @Test
     fun keepsOverlappingPublicCardsSeparate() {
         val matches = listOf(
             HandRankMatcher.Match(100, Rank.SEVEN, 1.0),

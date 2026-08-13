@@ -58,5 +58,6 @@ internal class IssueSampleStore(context: Context) : AutoCloseable {
 
 internal data class RankCountsCandidate(
     val cards: com.example.cardcounter.domain.RankCounts,
-    val minimumConfidence: Float
+    val minimumConfidence: Float,
+    val cardCount: Int
 )

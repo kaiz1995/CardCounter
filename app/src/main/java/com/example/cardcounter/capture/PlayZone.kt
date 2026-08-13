@@ -44,7 +44,7 @@ data class PlayCrop(val left: Int, val top: Int, val width: Int, val height: Int
 
 enum class PlaySource { SELF, OUTSIDE }
 
-internal data class StablePlay(val zone: PlayZone, val cards: RankCounts)
+internal data class StablePlay(val zone: PlayZone, val cards: RankCounts, val cardCount: Int = cards.total())
 
 /** 同一区连续两次相同候选才接收；清空两次后允许下一组相同牌再次出现。 */
 internal class StablePlayGate {
@@ -82,12 +82,13 @@ internal class StablePlayGate {
     }
 
     /** Caller already established a stable batch; apply only accepted-value deduplication. */
-    fun acceptStable(zone: PlayZone, cards: RankCounts): StablePlay? {
+    fun acceptStable(zone: PlayZone, cards: RankCounts, cardCount: Int = cards.total()): StablePlay? {
         if (cards.total() == 0) return null
+        require(cardCount > 0)
         val before = states.getValue(zone)
         if (before.accepted == cards) return null
         states[zone] = before.copy(candidate = cards, stableSamples = 0, emptySamples = 0, accepted = cards)
-        return StablePlay(zone, cards)
+        return StablePlay(zone, cards, cardCount)
     }
 
     fun reset() {

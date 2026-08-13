@@ -495,7 +495,8 @@ class CaptureProbeService : Service() {
                     detectYoloCards(frame.bitmap, publicPlay = true)?.let {
                         RankCountsCandidate(
                             cards = fuseSinglePublicPlay(it.cards, templateCards),
-                            minimumConfidence = it.minimumConfidence
+                            minimumConfidence = it.minimumConfidence,
+                            cardCount = it.cardCount
                         )
                     }
                 }
@@ -507,7 +508,8 @@ class CaptureProbeService : Service() {
                         .thenBy { entry -> entry.value.minOf { it.minimumConfidence } }
                 )
             val cards = winner?.let { entry -> entry.key.takeIf {
-                entry.value.size >= 2 || canFastConfirmPlay(it, entry.value.first().minimumConfidence)
+                entry.value.map { it.cardCount }.distinct().size == 1 &&
+                    (entry.value.size >= 2 || canFastConfirmPlay(it, entry.value.first().minimumConfidence))
             }
             }
             if (cards == null) {
@@ -517,10 +519,10 @@ class CaptureProbeService : Service() {
             }
             val repository = SessionRepository(this)
             if (repository.state.phase != SessionPhase.ACTIVE) return
-            val stable = stablePlayGate.acceptStable(finalized.zone, cards) ?: return
+            val stable = stablePlayGate.acceptStable(finalized.zone, cards, winner!!.value.first().cardCount) ?: return
             val event = when (stable.zone.source) {
                 PlaySource.SELF -> GameEvent.SelfCardsPlayed(stable.cards)
-                PlaySource.OUTSIDE -> GameEvent.OutsideCardsPlayed(stable.cards, seat = requireNotNull(stable.zone.seat))
+                PlaySource.OUTSIDE -> GameEvent.OutsideCardsPlayed(stable.cards, seat = requireNotNull(stable.zone.seat), cardCount = stable.cardCount)
             }
             runCatching { repository.dispatch(event) }
                 .onSuccess {
@@ -571,10 +573,10 @@ class CaptureProbeService : Service() {
         detections.forEach { detection ->
             counts[detection.rank] = counts.getValue(detection.rank) + 1
         }
-        YoloCards(RankCounts.of(counts), detections.minOfOrNull { it.confidence } ?: 0f)
+        YoloCards(RankCounts.of(counts), detections.minOfOrNull { it.confidence } ?: 0f, detections.size)
     }.onFailure { Log.w(TAG, "YOLO_PLAY_FAILED", it) }.getOrNull()
 
-    private data class YoloCards(val cards: RankCounts, val minimumConfidence: Float)
+    private data class YoloCards(val cards: RankCounts, val minimumConfidence: Float, val cardCount: Int)
 
     private fun publicPlayBitmap(image: Image, zone: PlayZone): Bitmap {
         val crop = zone.yoloCrop(1_280, 578)
