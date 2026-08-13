@@ -1,0 +1,538 @@
+{
+  "predicted": 20,
+  "tp": 19,
+  "fp": 1,
+  "fn": 0,
+  "precision": 0.95,
+  "recall": 1.0,
+  "events": [
+    {
+      "time_s": 414.060544,
+      "zone": "RIGHT_BOTTOM",
+      "cards": {
+        "8": 2
+      }
+    },
+    {
+      "time_s": 415.1036,
+      "zone": "RIGHT_TOP",
+      "cards": {
+        "J": 1,
+        "2": 1
+      }
+    },
+    {
+      "time_s": 416.102544,
+      "zone": "TOP",
+      "cards": {
+        "A": 2
+      }
+    },
+    {
+      "time_s": 420.6674,
+      "zone": "RIGHT_BOTTOM",
+      "cards": {
+        "10": 4
+      }
+    },
+    {
+      "time_s": 426.158322,
+      "zone": "LEFT_TOP",
+      "cards": {
+        "J": 4
+      }
+    },
+    {
+      "time_s": 427.157944,
+      "zone": "RIGHT_BOTTOM",
+      "cards": {
+        "Q": 4
+      }
+    },
+    {
+      "time_s": 429.205567,
+      "zone": "RIGHT_BOTTOM",
+      "cards": {
+        "4": 2
+      }
+    },
+    {
+      "time_s": 430.200678,
+      "zone": "RIGHT_TOP",
+      "cards": {
+        "6": 2
+      }
+    },
+    {
+      "time_s": 431.204389,
+      "zone": "TOP",
+      "cards": {
+        "8": 2
+      }
+    },
+    {
+      "time_s": 432.267489,
+      "zone": "LEFT_TOP",
+      "cards": {
+        "A": 2
+      }
+    },
+    {
+      "time_s": 433.267389,
+      "zone": "RIGHT_BOTTOM",
+      "cards": {
+        "2": 2
+      }
+    },
+    {
+      "time_s": 435.267956,
+      "zone": "RIGHT_BOTTOM",
+      "cards": {
+        "5": 2
+      }
+    },
+    {
+      "time_s": 436.314489,
+      "zone": "RIGHT_TOP",
+      "cards": {
+        "8": 1,
+        "2": 1
+      }
+    },
+    {
+      "time_s": 437.309,
+      "zone": "TOP",
+      "cards": {
+        "9": 2
+      }
+    },
+    {
+      "time_s": 445.001433,
+      "zone": "RIGHT_BOTTOM",
+      "cards": {
+        "6": 1
+      }
+    },
+    {
+      "time_s": 446.000189,
+      "zone": "RIGHT_TOP",
+      "cards": {
+        "A": 1
+      }
+    },
+    {
+      "time_s": 447.001189,
+      "zone": "TOP",
+      "cards": {
+        "2": 1
+      }
+    },
+    {
+      "time_s": 452.009467,
+      "zone": "RIGHT_BOTTOM",
+      "cards": {
+        "9": 2
+      }
+    },
+    {
+      "time_s": 458.667711,
+      "zone": "RIGHT_BOTTOM",
+      "cards": {
+        "7": 1
+      }
+    },
+    {
+      "time_s": 459.665356,
+      "zone": "RIGHT_TOP",
+      "cards": {
+        "2": 1
+      }
+    }
+  ],
+  "matches": [
+    {
+      "event": {
+        "time_s": 414.060544,
+        "zone": "RIGHT_BOTTOM",
+        "cards": {
+          "8": 2
+        }
+      },
+      "truth": {
+        "event_id": "E001",
+        "time_s": 414.0,
+        "zone": "RIGHT_BOTTOM",
+        "cards": "2x8",
+        "counts": {
+          "8": 2
+        }
+      },
+      "cards_match": true
+    },
+    {
+      "event": {
+        "time_s": 415.1036,
+        "zone": "RIGHT_TOP",
+        "cards": {
+          "J": 1,
+          "2": 1
+        }
+      },
+      "truth": {
+        "event_id": "E002",
+        "time_s": 415.0,
+        "zone": "RIGHT_TOP",
+        "cards": "2+SMALL_JOKER",
+        "counts": {
+          "2": 1,
+          "SMALL_JOKER": 1
+        }
+      },
+      "cards_match": false
+    },
+    {
+      "event": {
+        "time_s": 416.102544,
+        "zone": "TOP",
+        "cards": {
+          "A": 2
+        }
+      },
+      "truth": {
+        "event_id": "E003",
+        "time_s": 416.0,
+        "zone": "TOP",
+        "cards": "2xA",
+        "counts": {
+          "A": 2
+        }
+      },
+      "cards_match": true
+    },
+    {
+      "event": {
+        "time_s": 420.6674,
+        "zone": "RIGHT_BOTTOM",
+        "cards": {
+          "10": 4
+        }
+      },
+      "truth": {
+        "event_id": "E004",
+        "time_s": 420.5,
+        "zone": "RIGHT_BOTTOM",
+        "cards": "4x10",
+        "counts": {
+          "10": 4
+        }
+      },
+      "cards_match": true
+    },
+    {
+      "event": {
+        "time_s": 426.158322,
+        "zone": "LEFT_TOP",
+        "cards": {
+          "J": 4
+        }
+      },
+      "truth": {
+        "event_id": "E005",
+        "time_s": 426.0,
+        "zone": "LEFT_TOP",
+        "cards": "4xJ",
+        "counts": {
+          "J": 4
+        }
+      },
+      "cards_match": true
+    },
+    {
+      "event": {
+        "time_s": 427.157944,
+        "zone": "RIGHT_BOTTOM",
+        "cards": {
+          "Q": 4
+        }
+      },
+      "truth": {
+        "event_id": "E006",
+        "time_s": 427.0,
+        "zone": "RIGHT_BOTTOM",
+        "cards": "4xQ",
+        "counts": {
+          "Q": 4
+        }
+      },
+      "cards_match": true
+    },
+    {
+      "event": {
+        "time_s": 429.205567,
+        "zone": "RIGHT_BOTTOM",
+        "cards": {
+          "4": 2
+        }
+      },
+      "truth": {
+        "event_id": "E007",
+        "time_s": 429.25,
+        "zone": "RIGHT_BOTTOM",
+        "cards": "2x4",
+        "counts": {
+          "4": 2
+        }
+      },
+      "cards_match": true
+    },
+    {
+      "event": {
+        "time_s": 430.200678,
+        "zone": "RIGHT_TOP",
+        "cards": {
+          "6": 2
+        }
+      },
+      "truth": {
+        "event_id": "E008",
+        "time_s": 430.5,
+        "zone": "RIGHT_TOP",
+        "cards": "2x6",
+        "counts": {
+          "6": 2
+        }
+      },
+      "cards_match": true
+    },
+    {
+      "event": {
+        "time_s": 431.204389,
+        "zone": "TOP",
+        "cards": {
+          "8": 2
+        }
+      },
+      "truth": {
+        "event_id": "E009",
+        "time_s": 431.25,
+        "zone": "TOP",
+        "cards": "2x8",
+        "counts": {
+          "8": 2
+        }
+      },
+      "cards_match": true
+    },
+    {
+      "event": {
+        "time_s": 432.267489,
+        "zone": "LEFT_TOP",
+        "cards": {
+          "A": 2
+        }
+      },
+      "truth": {
+        "event_id": "E010",
+        "time_s": 432.25,
+        "zone": "LEFT_TOP",
+        "cards": "2xA",
+        "counts": {
+          "A": 2
+        }
+      },
+      "cards_match": true
+    },
+    {
+      "event": {
+        "time_s": 433.267389,
+        "zone": "RIGHT_BOTTOM",
+        "cards": {
+          "2": 2
+        }
+      },
+      "truth": {
+        "event_id": "E011",
+        "time_s": 433.25,
+        "zone": "RIGHT_BOTTOM",
+        "cards": "2x2",
+        "counts": {
+          "2": 2
+        }
+      },
+      "cards_match": true
+    },
+    {
+      "event": {
+        "time_s": 435.267956,
+        "zone": "RIGHT_BOTTOM",
+        "cards": {
+          "5": 2
+        }
+      },
+      "truth": {
+        "event_id": "E012",
+        "time_s": 435.25,
+        "zone": "RIGHT_BOTTOM",
+        "cards": "2x5",
+        "counts": {
+          "5": 2
+        }
+      },
+      "cards_match": true
+    },
+    {
+      "event": {
+        "time_s": 436.314489,
+        "zone": "RIGHT_TOP",
+        "cards": {
+          "8": 1,
+          "2": 1
+        }
+      },
+      "truth": {
+        "event_id": "E013",
+        "time_s": 436.25,
+        "zone": "RIGHT_TOP",
+        "cards": "2+8",
+        "counts": {
+          "2": 1,
+          "8": 1
+        }
+      },
+      "cards_match": true
+    },
+    {
+      "event": {
+        "time_s": 437.309,
+        "zone": "TOP",
+        "cards": {
+          "9": 2
+        }
+      },
+      "truth": {
+        "event_id": "E014",
+        "time_s": 437.25,
+        "zone": "TOP",
+        "cards": "2x9",
+        "counts": {
+          "9": 2
+        }
+      },
+      "cards_match": true
+    },
+    {
+      "event": {
+        "time_s": 445.001433,
+        "zone": "RIGHT_BOTTOM",
+        "cards": {
+          "6": 1
+        }
+      },
+      "truth": {
+        "event_id": "E015",
+        "time_s": 445.0,
+        "zone": "RIGHT_BOTTOM",
+        "cards": "6",
+        "counts": {
+          "6": 1
+        }
+      },
+      "cards_match": true
+    },
+    {
+      "event": {
+        "time_s": 446.000189,
+        "zone": "RIGHT_TOP",
+        "cards": {
+          "A": 1
+        }
+      },
+      "truth": {
+        "event_id": "E016",
+        "time_s": 446.0,
+        "zone": "RIGHT_TOP",
+        "cards": "A",
+        "counts": {
+          "A": 1
+        }
+      },
+      "cards_match": true
+    },
+    {
+      "event": {
+        "time_s": 447.001189,
+        "zone": "TOP",
+        "cards": {
+          "2": 1
+        }
+      },
+      "truth": {
+        "event_id": "E017",
+        "time_s": 447.0,
+        "zone": "TOP",
+        "cards": "2",
+        "counts": {
+          "2": 1
+        }
+      },
+      "cards_match": true
+    },
+    {
+      "event": {
+        "time_s": 452.009467,
+        "zone": "RIGHT_BOTTOM",
+        "cards": {
+          "9": 2
+        }
+      },
+      "truth": {
+        "event_id": "E018",
+        "time_s": 452.0,
+        "zone": "RIGHT_BOTTOM",
+        "cards": "2x9",
+        "counts": {
+          "9": 2
+        }
+      },
+      "cards_match": true
+    },
+    {
+      "event": {
+        "time_s": 458.667711,
+        "zone": "RIGHT_BOTTOM",
+        "cards": {
+          "7": 1
+        }
+      },
+      "truth": {
+        "event_id": "E019",
+        "time_s": 458.5,
+        "zone": "RIGHT_BOTTOM",
+        "cards": "7",
+        "counts": {
+          "7": 1
+        }
+      },
+      "cards_match": true
+    },
+    {
+      "event": {
+        "time_s": 459.665356,
+        "zone": "RIGHT_TOP",
+        "cards": {
+          "2": 1
+        }
+      },
+      "truth": {
+        "event_id": "E020",
+        "time_s": 459.5,
+        "zone": "RIGHT_TOP",
+        "cards": "2",
+        "counts": {
+          "2": 1
+        }
+      },
+      "cards_match": true
+    }
+  ]
+}
