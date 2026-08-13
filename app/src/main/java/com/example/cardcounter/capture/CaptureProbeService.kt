@@ -63,6 +63,7 @@ class CaptureProbeService : Service() {
     private var rankRevision = -1L
     private val rankProbeGate = SingleFlightGate()
     private val stablePlayGate = StablePlayGate()
+    private val publicPlayCountAggregator = PublicPlayCountAggregator()
     private val unknownPlaySamples = PlayZone.entries.associateWith { 0 }.toMutableMap()
     private val lastPlayCandidates = PlayZone.entries.associateWith<PlayZone, RankCounts?> { null }.toMutableMap()
     private val roiEventCache = RoiPlayEventCache<RoiFrame>(discard = { it.bitmap.recycle() })
@@ -520,9 +521,16 @@ class CaptureProbeService : Service() {
             val repository = SessionRepository(this)
             if (repository.state.phase != SessionPhase.ACTIVE) return
             val stable = stablePlayGate.acceptStable(finalized.zone, cards, winner!!.value.first().cardCount) ?: return
+            val counted = publicPlayCountAggregator.offer(
+                finalized.zone,
+                finalized.generation,
+                SystemClock.elapsedRealtime(),
+                stable.cards,
+                stable.cardCount
+            ).firstOrNull() ?: return
             val event = when (stable.zone.source) {
                 PlaySource.SELF -> GameEvent.SelfCardsPlayed(stable.cards)
-                PlaySource.OUTSIDE -> GameEvent.OutsideCardsPlayed(stable.cards, seat = requireNotNull(stable.zone.seat), cardCount = stable.cardCount)
+                PlaySource.OUTSIDE -> GameEvent.OutsideCardsPlayed(counted.cards, seat = requireNotNull(counted.zone.seat), cardCount = counted.cardCount)
             }
             runCatching { repository.dispatch(event) }
                 .onSuccess {
@@ -675,6 +683,7 @@ class CaptureProbeService : Service() {
             stableRankCandidates = 0
             rankRevision = -1L
             stablePlayGate.reset()
+            publicPlayCountAggregator.reset()
             PlayZone.entries.forEach {
                 unknownPlaySamples[it] = 0
                 lastPlayCandidates[it] = null
