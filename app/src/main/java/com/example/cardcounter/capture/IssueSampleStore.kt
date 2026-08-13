@@ -61,8 +61,8 @@ internal class IssueSampleStore(context: Context) : AutoCloseable {
                     }
                 }
                 val model = aceAuditMetadata(zone, generation, timeMs, winner, candidates)
-                JSONObject().put("zone", model.zone).put("reason", "LEFT_BOTTOM_ACE_AUDIT").put("generation", model.generation).put("timeMs", model.timeMs).put("winner", model.winner).put("candidates", JSONArray().apply {
-                    model.candidates.forEach { c -> put(JSONObject().put("fusedCards", c.fusedCards).put("yoloCards", c.yoloCards).put("templateCards", c.templateCards).put("minimumConfidence", c.minimumConfidence).put("cardCount", c.cardCount)) }
+                JSONObject().put("zone", model.zone).put("reason", "LEFT_BOTTOM_ACE_AUDIT").put("generation", model.generation).put("timeMs", model.timeMs).put("winner", rankCountsJson(model.winner)).put("candidates", JSONArray().apply {
+                    model.candidates.forEach { c -> put(JSONObject().put("fusedCards", rankCountsJson(c.fusedCards)).put("yoloCards", rankCountsJson(c.yoloCards)).put("templateCards", rankCountsJson(c.templateCards)).put("minimumConfidence", c.minimumConfidence).put("cardCount", c.cardCount)) }
                 })
                     .toString().let { File(directory, "meta.json").writeText(it) }
             }.onFailure { Log.w(TAG, "ACE_AUDIT_SAVE_FAILED", it) }
@@ -91,12 +91,18 @@ internal fun aceAuditMetadata(
     zone: PlayZone, generation: Long, timeMs: Long,
     winner: com.example.cardcounter.domain.RankCounts,
     candidates: List<RankCountsCandidate>
-): AceAuditMetadata = AceAuditMetadata(zone.name, generation, timeMs, winner.toString(), candidates.map {
-    AceAuditCandidateMetadata(it.cards.toString(), it.yoloCards.toString(), it.templateCards.toString(), it.minimumConfidence, it.cardCount)
+): AceAuditMetadata = AceAuditMetadata(zone.name, generation, timeMs, winner, candidates.map {
+    AceAuditCandidateMetadata(it.cards, it.yoloCards, it.templateCards, it.minimumConfidence, it.cardCount)
 })
 
-internal data class AceAuditMetadata(val zone: String, val generation: Long, val timeMs: Long, val winner: String, val candidates: List<AceAuditCandidateMetadata>)
-internal data class AceAuditCandidateMetadata(val fusedCards: String, val yoloCards: String, val templateCards: String, val minimumConfidence: Float, val cardCount: Int)
+internal data class AceAuditMetadata(val zone: String, val generation: Long, val timeMs: Long, val winner: com.example.cardcounter.domain.RankCounts, val candidates: List<AceAuditCandidateMetadata>)
+internal data class AceAuditCandidateMetadata(val fusedCards: com.example.cardcounter.domain.RankCounts, val yoloCards: com.example.cardcounter.domain.RankCounts, val templateCards: com.example.cardcounter.domain.RankCounts, val minimumConfidence: Float, val cardCount: Int)
+
+internal fun rankCountsJson(cards: com.example.cardcounter.domain.RankCounts): JSONObject =
+    JSONObject(rankCountsMap(cards))
+
+internal fun rankCountsMap(cards: com.example.cardcounter.domain.RankCounts): Map<String, Int> =
+    cards.asMap().mapKeys { it.key.name }
 
 internal data class RankCountsCandidate(
     val cards: com.example.cardcounter.domain.RankCounts,

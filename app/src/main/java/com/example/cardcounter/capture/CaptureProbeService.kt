@@ -68,7 +68,6 @@ class CaptureProbeService : Service() {
     private val roiEventCache = RoiPlayEventCache<RoiFrame>(discard = { it.bitmap.recycle() })
     private var lastRoiSampleAt = 0L
     private var restartPrimeDeadlineAt = 0L
-    private var lastAceAuditAccepted: RankCounts? = null
     @Volatile private var captureGeneration = 0L
     @Volatile private var handRevision = 0L
     @Volatile private var firstPlayArmed = false
@@ -495,7 +494,7 @@ class CaptureProbeService : Service() {
                 .mapNotNull { frame ->
                     detectYoloCards(frame.bitmap, publicPlay = true)?.let {
                         RankCountsCandidate(
-                            cards = fuseSinglePublicPlay(it.cards, templateCards), minimumConfidence = it.minimumConfidence,
+                            cards = fuseSinglePublicPlay(finalized.zone, it.cards, templateCards), minimumConfidence = it.minimumConfidence,
                             yoloCards = it.cards, templateCards = templateCards, cardCount = it.cards.total()
                         )
                     }
@@ -519,8 +518,7 @@ class CaptureProbeService : Service() {
             val repository = SessionRepository(this)
             if (repository.state.phase != SessionPhase.ACTIVE) return
             val stable = stablePlayGate.acceptStable(finalized.zone, cards) ?: return
-            if (shouldAuditAce(finalized.zone, stable.cards) && stable.cards != lastAceAuditAccepted) {
-                lastAceAuditAccepted = stable.cards
+            if (shouldAuditAce(finalized.zone, stable.cards)) {
                 issueSampleStore.saveAceAudit(finalized.frames.map { it.bitmap }, finalized.zone, candidates,
                     templateCards, stable.cards, finalized.generation, SystemClock.elapsedRealtime())
             }
@@ -679,7 +677,6 @@ class CaptureProbeService : Service() {
             stableRankCandidates = 0
             rankRevision = -1L
             stablePlayGate.reset()
-            lastAceAuditAccepted = null
             PlayZone.entries.forEach {
                 unknownPlaySamples[it] = 0
                 lastPlayCandidates[it] = null
