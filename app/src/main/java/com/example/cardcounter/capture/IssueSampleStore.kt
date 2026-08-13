@@ -46,6 +46,7 @@ internal class IssueSampleStore(context: Context) : AutoCloseable {
         templateCards: com.example.cardcounter.domain.RankCounts,
         winner: com.example.cardcounter.domain.RankCounts,
         generation: Long
+        ,timeMs: Long
     ) {
         val copies = bitmaps.take(3).map { it.copy(Bitmap.Config.ARGB_8888, false) }
         executor.execute {
@@ -62,6 +63,7 @@ internal class IssueSampleStore(context: Context) : AutoCloseable {
                     .put("zone", zone.name)
                     .put("reason", "LEFT_BOTTOM_ACE_AUDIT")
                     .put("generation", generation)
+                    .put("timeMs", timeMs)
                     .put("templateCards", templateCards.toString())
                     .put("winner", winner.toString())
                     .put("candidates", candidates.joinToString { it.toString() })
@@ -90,5 +92,8 @@ internal class IssueSampleStore(context: Context) : AutoCloseable {
 
 internal data class RankCountsCandidate(
     val cards: com.example.cardcounter.domain.RankCounts,
-    val minimumConfidence: Float
+    val minimumConfidence: Float,
+    val yoloCards: com.example.cardcounter.domain.RankCounts,
+    val templateCards: com.example.cardcounter.domain.RankCounts,
+    val cardCount: Int
 )

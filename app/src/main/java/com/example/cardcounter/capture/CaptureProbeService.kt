@@ -495,8 +495,8 @@ class CaptureProbeService : Service() {
                 .mapNotNull { frame ->
                     detectYoloCards(frame.bitmap, publicPlay = true)?.let {
                         RankCountsCandidate(
-                            cards = fuseSinglePublicPlay(it.cards, templateCards),
-                            minimumConfidence = it.minimumConfidence
+                            cards = fuseSinglePublicPlay(it.cards, templateCards), minimumConfidence = it.minimumConfidence,
+                            yoloCards = it.cards, templateCards = templateCards, cardCount = it.cards.total()
                         )
                     }
                 }
@@ -515,7 +515,7 @@ class CaptureProbeService : Service() {
                 lastAceAuditAccepted = cards
                 issueSampleStore.saveAceAudit(
                     finalized.frames.map { it.bitmap }, finalized.zone, candidates,
-                    templateCards, cards, finalized.generation
+                    templateCards, cards, finalized.generation, SystemClock.elapsedRealtime()
                 )
             }
             if (cards == null) {
