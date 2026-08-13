@@ -182,6 +182,18 @@ class StablePlayGateTest {
     }
 
     @Test
+    fun aceAuditMetadataContainsFusionFields() {
+        val ace = RankCounts.of(mapOf(Rank.ACE to 1))
+        val metadata = aceAuditMetadata(PlayZone.LEFT_BOTTOM, 3, 42, ace,
+            listOf(RankCountsCandidate(ace, .8f, ace, ace, 1)))
+        val candidate = metadata.candidates.single()
+        assertEquals("LEFT_BOTTOM", metadata.zone); assertEquals(3, metadata.generation); assertEquals(42, metadata.timeMs)
+        assertEquals(ace.toString(), candidate.fusedCards); assertEquals(ace.toString(), candidate.yoloCards)
+        assertEquals(ace.toString(), candidate.templateCards); assertEquals(.8f, candidate.minimumConfidence)
+        assertEquals(1, candidate.cardCount)
+    }
+
+    @Test
     fun keepsOverlappingPublicCardsSeparate() {
         val matches = listOf(
             HandRankMatcher.Match(100, Rank.SEVEN, 1.0),

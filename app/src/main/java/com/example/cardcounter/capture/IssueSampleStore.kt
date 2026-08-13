@@ -6,6 +6,7 @@ import android.util.Log
 import java.io.File
 import java.util.concurrent.Executors
 import org.json.JSONObject
+import org.json.JSONArray
 
 /** 只留存无法自动确认的公开牌 ROI，供后续人工标注；绝不保存整屏。 */
 internal class IssueSampleStore(context: Context) : AutoCloseable {
@@ -45,8 +46,8 @@ internal class IssueSampleStore(context: Context) : AutoCloseable {
         candidates: List<RankCountsCandidate>,
         templateCards: com.example.cardcounter.domain.RankCounts,
         winner: com.example.cardcounter.domain.RankCounts,
-        generation: Long
-        ,timeMs: Long
+        generation: Long,
+        timeMs: Long
     ) {
         val copies = bitmaps.take(3).map { it.copy(Bitmap.Config.ARGB_8888, false) }
         executor.execute {
@@ -59,14 +60,10 @@ internal class IssueSampleStore(context: Context) : AutoCloseable {
                         check(copy.compress(Bitmap.CompressFormat.PNG, 100, out)) { "无法写入审计ROI" }
                     }
                 }
-                JSONObject()
-                    .put("zone", zone.name)
-                    .put("reason", "LEFT_BOTTOM_ACE_AUDIT")
-                    .put("generation", generation)
-                    .put("timeMs", timeMs)
-                    .put("templateCards", templateCards.toString())
-                    .put("winner", winner.toString())
-                    .put("candidates", candidates.joinToString { it.toString() })
+                val model = aceAuditMetadata(zone, generation, timeMs, winner, candidates)
+                JSONObject().put("zone", model.zone).put("reason", "LEFT_BOTTOM_ACE_AUDIT").put("generation", model.generation).put("timeMs", model.timeMs).put("winner", model.winner).put("candidates", JSONArray().apply {
+                    model.candidates.forEach { c -> put(JSONObject().put("fusedCards", c.fusedCards).put("yoloCards", c.yoloCards).put("templateCards", c.templateCards).put("minimumConfidence", c.minimumConfidence).put("cardCount", c.cardCount)) }
+                })
                     .toString().let { File(directory, "meta.json").writeText(it) }
             }.onFailure { Log.w(TAG, "ACE_AUDIT_SAVE_FAILED", it) }
             copies.forEach(Bitmap::recycle)
@@ -89,6 +86,17 @@ internal class IssueSampleStore(context: Context) : AutoCloseable {
         const val TAG = "CaptureProbe"
     }
 }
+
+internal fun aceAuditMetadata(
+    zone: PlayZone, generation: Long, timeMs: Long,
+    winner: com.example.cardcounter.domain.RankCounts,
+    candidates: List<RankCountsCandidate>
+): AceAuditMetadata = AceAuditMetadata(zone.name, generation, timeMs, winner.toString(), candidates.map {
+    AceAuditCandidateMetadata(it.cards.toString(), it.yoloCards.toString(), it.templateCards.toString(), it.minimumConfidence, it.cardCount)
+})
+
+internal data class AceAuditMetadata(val zone: String, val generation: Long, val timeMs: Long, val winner: String, val candidates: List<AceAuditCandidateMetadata>)
+internal data class AceAuditCandidateMetadata(val fusedCards: String, val yoloCards: String, val templateCards: String, val minimumConfidence: Float, val cardCount: Int)
 
 internal data class RankCountsCandidate(
     val cards: com.example.cardcounter.domain.RankCounts,
