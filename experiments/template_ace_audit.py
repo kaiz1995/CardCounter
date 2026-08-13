@@ -1,4 +1,4 @@
-import argparse,json
+import argparse,json,csv
 from pathlib import Path
 import cv2,numpy as np
 
@@ -41,17 +41,16 @@ def self_check():
     print(json.dumps({'ace_direct_score':direct,'best':result[:3]}))
     return direct==1.0 and any(m['rank']=='ace' for m in result)
 def main():
-    ap=argparse.ArgumentParser(); ap.add_argument('--self-check',action='store_true'); ap.add_argument('--duration',type=float,default=20); ap.add_argument('--video'); ap.add_argument('--start',type=float,default=697.2); ap.add_argument('--output'); a=ap.parse_args()
+    ap=argparse.ArgumentParser(); ap.add_argument('--self-check',action='store_true'); ap.add_argument('--duration',type=float,default=20); ap.add_argument('--video'); ap.add_argument('--start',type=float,default=697.2); ap.add_argument('--output'); ap.add_argument('--truth'); a=ap.parse_args()
     if a.self_check: print(json.dumps({'self_check':self_check()})); return
     from tflite_crop_ab_probe import crop_variant,detect_image
     from ai_edge_litert.interpreter import Interpreter
-    video=Path(a.video) if a.video else ROOT/'source/SVID_20260810_143651_1.mp4'; cap=cv2.VideoCapture(str(video)); it=Interpreter(model_path=str(ROOT/'app/src/main/assets/poker_yolo11_320.tflite'));it.allocate_tensors(); rows=[]; t=a.start
-    while t<a.start+a.duration:
+    video=Path(a.video) if a.video else ROOT/'source/SVID_20260810_143651_1.mp4'; cap=cv2.VideoCapture(str(video)); it=Interpreter(model_path=str(ROOT/'app/src/main/assets/poker_yolo11_320.tflite'));it.allocate_tensors(); rows=[]
+    times=[float(r['time_s'])+d for r in csv.DictReader(open(a.truth,encoding='utf-8')) if r['zone']=='LEFT_BOTTOM' for d in np.arange(-.3,.301,.05)] if a.truth else np.arange(a.start,a.start+a.duration,.05)
+    for t in times:
         cap.set(cv2.CAP_PROP_POS_MSEC,t*1000); ok,fr=cap.read()
         if ok:
             fr=cv2.resize(fr,(W,H)); tm=detect_template(ink(fr));
-            if any(x['rank']=='ace' for x in tm):
-                y=detect_image(it,crop_variant(fr,'LEFT_BOTTOM','C')); rows.append({'time_s':round(t,3),'template':tm,'yolo':y,'fusion_candidate':len(y)==1 and y[0] if y else None})
-        t+=.05
+            y=detect_image(it,crop_variant(fr,'LEFT_BOTTOM','C')); rows.append({'time_s':round(t,3),'template':tm,'yolo':y,'false_ace':any(x['rank']=='ace' for x in tm)})
     cap.release(); out=Path(a.output) if a.output else ROOT/'experiments/results/template_ace_audit_143651.json'; out.parent.mkdir(parents=True,exist_ok=True); out.write_text(json.dumps({'video':str(video),'start':a.start,'duration':a.duration,'rows':rows},ensure_ascii=False,indent=2)); print(json.dumps({'rows':len(rows)}))
 if __name__=='__main__': main()
