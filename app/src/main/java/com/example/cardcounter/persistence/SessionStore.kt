@@ -40,11 +40,14 @@ class SessionStore(context: Context) {
         .also { json ->
             when (event) {
                 is GameEvent.SelfHandLocked -> json.put("cards", encodeCounts(event.cards))
+                    .put("cardCount", event.cardCount)
                 is GameEvent.OutsideCardsPlayed -> {
                     json.put("cards", encodeCounts(event.cards))
+                    json.put("cardCount", event.cardCount)
                     event.seat?.let { json.put("seat", it.name) }
                 }
                 is GameEvent.SelfCardsPlayed -> json.put("cards", encodeCounts(event.cards))
+                    .put("cardCount", event.cardCount)
                 is GameEvent.Reverted -> json.put("target", event.targetEventId)
                 is GameEvent.SessionPaused -> json.put("reason", event.reason.name)
                 else -> Unit
@@ -55,14 +58,21 @@ class SessionStore(context: Context) {
         val id = json.getString("id")
         return when (json.getString("type")) {
             "NewSession" -> GameEvent.NewSession(id)
-            "SelfHandLocked" -> GameEvent.SelfHandLocked(decodeCounts(json.getJSONObject("cards")), id)
+            "SelfHandLocked" -> GameEvent.SelfHandLocked(
+                decodeCounts(json.getJSONObject("cards")), id,
+                json.optInt("cardCount", decodeCounts(json.getJSONObject("cards")).total())
+            )
             "OutsideCardsPlayed" -> GameEvent.OutsideCardsPlayed(
                 decodeCounts(json.getJSONObject("cards")),
                 id,
                 json.optString("seat").takeIf { it.isNotEmpty() }
-                    ?.let { OutsideSeat.valueOf(it) }
+                    ?.let { OutsideSeat.valueOf(it) },
+                json.optInt("cardCount", decodeCounts(json.getJSONObject("cards")).total())
             )
-            "SelfCardsPlayed" -> GameEvent.SelfCardsPlayed(decodeCounts(json.getJSONObject("cards")), id)
+            "SelfCardsPlayed" -> GameEvent.SelfCardsPlayed(
+                decodeCounts(json.getJSONObject("cards")), id,
+                json.optInt("cardCount", decodeCounts(json.getJSONObject("cards")).total())
+            )
             "Reverted" -> GameEvent.Reverted(json.getString("target"), id)
             "SessionPaused" -> GameEvent.SessionPaused(
                 PauseReason.valueOf(json.getString("reason")), id

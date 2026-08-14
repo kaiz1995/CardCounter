@@ -89,9 +89,7 @@ class OverlayService : Service() {
     private fun installResetLongPress(view: View) {
         val handler = Handler(Looper.getMainLooper())
         val reset = Runnable {
-            val state = SessionRepository(this).newGame()
-            CaptureProbeService.resetSession(this)
-            counter?.render(state)
+            CaptureProbeService.requestNewGame(this)
         }
         view.setOnTouchListener { _, event ->
             when (event.actionMasked) {

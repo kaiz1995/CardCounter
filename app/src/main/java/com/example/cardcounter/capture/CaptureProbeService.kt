@@ -60,6 +60,9 @@ class CaptureProbeService : Service() {
     private var maxHandChangePercent = 0.0
     private var lastRankCandidate: RankCounts? = null
     private var stableRankCandidates = 0
+    private var selfHandCountCandidate: Int? = null
+    private var stableSelfHandCounts = 0
+    private var lastStableSelfHandCount: Int? = null
     private var rankRevision = -1L
     private val rankProbeGate = SingleFlightGate()
     private val stablePlayGate = StablePlayGate()
@@ -71,6 +74,7 @@ class CaptureProbeService : Service() {
     @Volatile private var captureGeneration = 0L
     @Volatile private var handRevision = 0L
     @Volatile private var firstPlayArmed = false
+    @Volatile private var manualNewGameRequested = false
     @Volatile private var lastStablePrePlayHand: RankCounts? = null
     @Volatile private var primeSamplesRemaining = 0
     private val firstPlayGate = FirstPlayBoundaryGate()
@@ -91,10 +95,19 @@ class CaptureProbeService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForegroundCompat()
-        if (intent?.action == ACTION_RESET_SESSION) {
+        if (intent?.action == ACTION_REQUEST_NEW_GAME) {
             callbackHandler.post {
                 resetSessionTracking(firstPlayIsArmed = false)
-                Log.i(TAG, "SESSION_TRACKING_RESET")
+                manualNewGameRequested = true
+                Log.i(TAG, "MANUAL_NEW_GAME_REQUESTED")
+                callbackHandler.postDelayed({
+                    if (!manualNewGameRequested) return@postDelayed
+                    manualNewGameRequested = false
+                    CaptureProbeStatus.manualNewGameFailed()
+                    updateNotification(CaptureProbeStatus.snapshot().summary())
+                    OverlayService.refresh(this)
+                    Log.w(TAG, "MANUAL_NEW_GAME_FAILED")
+                }, MANUAL_NEW_GAME_TIMEOUT_MS)
             }
             return START_NOT_STICKY
         }
@@ -213,6 +226,11 @@ class CaptureProbeService : Service() {
                 lastHandSignature = signature
                 lastHandSampleAt = now
 
+                if (firstPlayArmed) {
+                    val luma = handCardPositionDetector.snapshot(image)
+                    rankHandler.post { observeSelfHandCount(luma) }
+                }
+
                 when (firstPlayGate.update(signals, lastStablePrePlayHand != null)) {
                     FirstPlayBoundary.LOCK -> {
                         firstPlayArmed = true
@@ -244,6 +262,10 @@ class CaptureProbeService : Service() {
                                 stableRankCandidates = 0
                             }
                             val positionCount = handCardPositionDetector.detect(luma)
+                            stableSelfHandCounts = if (positionCount != null &&
+                                positionCount == selfHandCountCandidate
+                            ) stableSelfHandCounts + 1 else 1
+                            selfHandCountCandidate = positionCount
                             val templateCards = handRankMatcher.detect(frame)
                             val yoloCards = handYoloFrame?.let(::detectYoloCards)
                             val cards = yoloCards?.cards?.takeIf { isValidBaseline(positionCount, it) } ?: templateCards
@@ -254,6 +276,12 @@ class CaptureProbeService : Service() {
                                 cards
                             )
                             lastRankCandidate = cards.takeIf { it.total() > 0 }
+                            if (manualNewGameRequested && positionCount != null &&
+                                stableSelfHandCounts >= STABLE_HAND_COUNT_SAMPLES
+                            ) {
+                                completeManualNewGame(cards, positionCount)
+                                return@post
+                            }
                             if (cards.total() == 0) {
                                 Log.i(TAG, "HAND_CANDIDATE_EMPTY positionCount=$positionCount")
                                 return@post
@@ -381,6 +409,58 @@ class CaptureProbeService : Service() {
         Log.i(TAG, "SELF_HAND_LOCKED total=${cards.total()} cards=$cards")
     }
 
+    /** 手动新局先拿稳定几何数量，再把牌面候选作为显示猜测锁入新会话。 */
+    private fun completeManualNewGame(cards: RankCounts, handCount: Int) {
+        if (!manualNewGameRequested || handCount <= 0) return
+        manualNewGameRequested = false
+        val repository = SessionRepository(this)
+        repository.newGame()
+        repository.dispatch(GameEvent.SelfHandLocked(cards, cardCount = handCount))
+        lastStableSelfHandCount = handCount
+        callbackHandler.post {
+            resetSessionTracking(firstPlayIsArmed = true)
+            lastStableSelfHandCount = handCount
+        }
+        OverlayService.refresh(this)
+        Log.i(TAG, "MANUAL_NEW_GAME_LOCKED count=$handCount rankTotal=${cards.total()}")
+    }
+
+    /** 只采用稳定的自己手牌几何数量；减少才入账，回升冻结会话暴露错误。 */
+    private fun observeSelfHandCount(luma: IntArray) {
+        val count = handCardPositionDetector.detect(luma)
+        if (count == null) {
+            selfHandCountCandidate = null
+            stableSelfHandCounts = 0
+            return
+        }
+        stableSelfHandCounts = if (count == selfHandCountCandidate) stableSelfHandCounts + 1 else 1
+        selfHandCountCandidate = count
+        if (stableSelfHandCounts < STABLE_HAND_COUNT_SAMPLES) return
+        val previous = lastStableSelfHandCount ?: run {
+            lastStableSelfHandCount = count
+            return
+        }
+        if (count == previous) return
+        val repository = SessionRepository(this)
+        if (repository.state.phase != SessionPhase.ACTIVE) return
+        if (count > previous) {
+            repository.dispatch(GameEvent.SessionPaused(PauseReason.NEW_GAME_UNCLEAR))
+            OverlayService.refresh(this)
+            Log.w(TAG, "SELF_HAND_COUNT_INCREASE previous=$previous current=$count")
+            return
+        }
+        runCatching {
+            repository.dispatch(GameEvent.SelfCardsPlayed(RankCounts.zero(), cardCount = previous - count))
+        }.onSuccess {
+            lastStableSelfHandCount = count
+            OverlayService.refresh(this)
+            Log.i(TAG, "SELF_HAND_DIFF previous=$previous current=$count")
+        }.onFailure {
+            OverlayService.refresh(this)
+            Log.w(TAG, "SELF_HAND_DIFF_REJECTED", it)
+        }
+    }
+
     /** 可用初版1：牌仍可见时连续两次相同候选即记账。 */
     private fun detectFormalPlays(
         ink: HandRankMatcher.InkFrame,
@@ -424,7 +504,7 @@ class CaptureProbeService : Service() {
             }
             val play = stablePlayGate.update(zone, cards) ?: return@forEach
             val event = when (play.zone.source) {
-                PlaySource.SELF -> GameEvent.SelfCardsPlayed(play.cards)
+                PlaySource.SELF -> return@forEach
                 PlaySource.OUTSIDE -> GameEvent.OutsideCardsPlayed(
                     play.cards,
                     seat = requireNotNull(play.zone.seat)
@@ -519,7 +599,7 @@ class CaptureProbeService : Service() {
             if (repository.state.phase != SessionPhase.ACTIVE) return
             val stable = stablePlayGate.acceptStable(finalized.zone, cards) ?: return
             val event = when (stable.zone.source) {
-                PlaySource.SELF -> GameEvent.SelfCardsPlayed(stable.cards)
+                PlaySource.SELF -> return
                 PlaySource.OUTSIDE -> GameEvent.OutsideCardsPlayed(stable.cards, seat = requireNotNull(stable.zone.seat))
             }
             runCatching { repository.dispatch(event) }
@@ -667,6 +747,13 @@ class CaptureProbeService : Service() {
         lastRoiSampleAt = 0L
         firstPlayArmed = firstPlayIsArmed
         lastStablePrePlayHand = null
+        selfHandCountCandidate = null
+        stableSelfHandCounts = 0
+        lastStableSelfHandCount = if (firstPlayIsArmed) {
+            SessionRepository(this).state.selfLockedHandCount
+        } else {
+            null
+        }
         firstPlayGate.reset()
         rankHandler.post {
             lastRankCandidate = null
@@ -703,13 +790,15 @@ class CaptureProbeService : Service() {
         private const val NOTIFICATION_ID = 1002
         private const val EXTRA_RESULT_CODE = "result_code"
         private const val EXTRA_DATA = "projection_data"
-        private const val ACTION_RESET_SESSION = "com.example.cardcounter.RESET_CAPTURE_SESSION"
+        private const val ACTION_REQUEST_NEW_GAME = "com.example.cardcounter.REQUEST_NEW_GAME"
         private const val REPORT_INTERVAL_MS = 1_000L
         private const val HAND_SAMPLE_INTERVAL_MS = 250L
         private const val STABLE_CHANGE_PERCENT = 1.5
         private const val HAND_SIGNATURE_COLUMNS = 12
         private const val HAND_SIGNATURE_ROWS = 8
         private const val RANK_PROBE_INTERVAL_MS = 250L
+        private const val STABLE_HAND_COUNT_SAMPLES = 2
+        private const val MANUAL_NEW_GAME_TIMEOUT_MS = 3_000L
         private const val PLAY_VISIBILITY_STEP = 8
         private const val PLAY_WHITE_LIMIT = 190
         private const val UNKNOWN_SKIP_SAMPLES = 3
@@ -731,11 +820,11 @@ class CaptureProbeService : Service() {
             ContextCompat.startForegroundService(context, intent)
         }
 
-        fun resetSession(context: Context) {
+        fun requestNewGame(context: Context) {
             if (!CaptureProbeStatus.snapshot().running) return
             ContextCompat.startForegroundService(
                 context,
-                Intent(context, CaptureProbeService::class.java).setAction(ACTION_RESET_SESSION)
+                Intent(context, CaptureProbeService::class.java).setAction(ACTION_REQUEST_NEW_GAME)
             )
         }
     }

@@ -61,17 +61,17 @@ class GameReducerTest {
     }
 
     @Test
-    fun selfPlayDoesNotChangeOutsideRemaining() {
+    fun selfPlayAccumulatesPositiveLedgerAndDerivesRemaining() {
         val state = GameReducer.apply(
             GameReducer.newSession(),
             GameEvent.SelfHandLocked(hand)
         )
-        val before = state.outsideRemaining
         val next = GameReducer.apply(
             state,
-            GameEvent.SelfCardsPlayed(RankCounts.of(mapOf(Rank.ACE to 1)))
+            GameEvent.SelfCardsPlayed(RankCounts.zero(), cardCount = 3)
         )
-        assertEquals(before, next.outsideRemaining)
+        assertEquals(3, next.selfPlayedCount)
+        assertEquals(hand.total() - 3, next.selfRemainingCount)
     }
 
     @Test
@@ -161,5 +161,58 @@ class GameReducerTest {
 
         assertEquals(1, state.outsidePlayed[Rank.FIVE])
         assertEquals(0, OutsideSeat.entries.sumOf { state.playedBy(it).total() })
+    }
+
+    @Test
+    fun newSessionDropsOldPositiveLedgers() {
+        val active = GameReducer.apply(GameReducer.newSession(), GameEvent.SelfHandLocked(hand))
+        val played = GameReducer.apply(
+            active,
+            GameEvent.OutsideCardsPlayed(RankCounts.of(mapOf(Rank.ACE to 1)), seat = OutsideSeat.TOP)
+        )
+
+        val fresh = GameReducer.apply(played, GameEvent.NewSession("fresh"))
+
+        assertEquals(SessionPhase.PRE_PLAY, fresh.phase)
+        assertEquals(0, fresh.outsidePlayedCount)
+        assertEquals(0, fresh.selfPlayedCount)
+    }
+
+    @Test
+    fun wrongRankStillUsesReportedCardCount() {
+        val active = GameReducer.apply(GameReducer.newSession(), GameEvent.SelfHandLocked(hand))
+        val state = GameReducer.apply(
+            active,
+            GameEvent.OutsideCardsPlayed(
+                RankCounts.of(mapOf(Rank.BIG_JOKER to 1)),
+                seat = OutsideSeat.TOP,
+                cardCount = 3
+            )
+        )
+
+        assertEquals(3, state.outsidePlayedCount)
+        assertEquals(3, state.playedCountBy(OutsideSeat.TOP))
+        assertEquals(1, state.playedBy(OutsideSeat.TOP)[Rank.BIG_JOKER])
+    }
+
+    @Test
+    fun conservationViolationPausesInsteadOfClampingRankGuess() {
+        val locked = GameReducer.apply(
+            GameReducer.newSession(),
+            GameEvent.SelfHandLocked(RankCounts.zero(), cardCount = 198)
+        )
+
+        val state = GameReducer.apply(
+            locked,
+            GameEvent.OutsideCardsPlayed(
+                RankCounts.of(mapOf(Rank.ACE to 1)),
+                seat = OutsideSeat.TOP,
+                cardCount = 1
+            )
+        )
+
+        assertEquals(SessionPhase.PAUSED, state.phase)
+        assertEquals(PauseReason.NEW_GAME_UNCLEAR, state.pauseReason)
+        assertEquals(0, state.outsidePlayedCount)
     }
 }
