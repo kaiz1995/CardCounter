@@ -2,7 +2,6 @@ package com.example.cardcounter.persistence
 
 import android.content.Context
 import com.example.cardcounter.domain.GameEvent
-import com.example.cardcounter.domain.GameReducer
 import com.example.cardcounter.domain.GameState
 
 class SessionRepository(context: Context) {
@@ -10,18 +9,16 @@ class SessionRepository(context: Context) {
 
     var state: GameState = store.migratePositiveCountSessionIfNeeded()
         ?: store.load()
-        ?: GameReducer.newSession().also(store::save)
+        ?: store.replaceWithNewSession()
         private set
 
     fun dispatch(event: GameEvent): GameState {
-        state = GameReducer.apply(state, event)
-        store.save(state)
+        state = store.apply(event)
         return state
     }
 
     fun newGame(): GameState {
-        state = GameReducer.newSession()
-        store.save(state)
+        state = store.replaceWithNewSession()
         return state
     }
 }

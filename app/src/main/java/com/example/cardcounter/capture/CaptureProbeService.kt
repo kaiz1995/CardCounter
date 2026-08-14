@@ -532,7 +532,7 @@ class CaptureProbeService : Service() {
             if (repository.state.phase != SessionPhase.ACTIVE) return
             val stable = stablePlayGate.acceptStable(finalized.zone, cards, winner!!.value.first().cardCount) ?: return
             if (stable.zone.source == PlaySource.SELF) {
-                dispatchGameEvent(GameEvent.SelfCardsPlayed(stable.cards))
+                dispatchGameEvent(GameEvent.SelfCardsPlayed(stable.cards), stable.zone, stable.cardCount)
                 return
             }
             val offeredAt = SystemClock.elapsedRealtime()
@@ -570,16 +570,35 @@ class CaptureProbeService : Service() {
                         cardCount = play.cardCount
                     )
                 )
-            }.onSuccess { OverlayService.refresh(this) }
+            }.onSuccess {
+                OverlayService.refresh(this)
+                Log.i(
+                    TAG,
+                    "FORMAL_PLAY source=${play.zone.source} zone=${play.zone} seat=${play.zone.seat} " +
+                        "cardCount=${play.cardCount} cardsTotal=${play.cards.total()} generation=${play.generation}"
+                )
+            }
                 .onFailure { Log.w(TAG, "PLAY_REJECTED reason=OUT_OF_STOCK", it) }
         }
     }
 
-    private fun dispatchGameEvent(event: GameEvent) {
+    private fun dispatchGameEvent(event: GameEvent, zone: PlayZone, cardCount: Int) {
         val repository = SessionRepository(this)
         if (repository.state.phase != SessionPhase.ACTIVE) return
         runCatching { repository.dispatch(event) }
-            .onSuccess { OverlayService.refresh(this) }
+            .onSuccess {
+                OverlayService.refresh(this)
+                val cardsTotal = when (event) {
+                    is GameEvent.SelfCardsPlayed -> event.cards.total()
+                    is GameEvent.OutsideCardsPlayed -> event.cards.total()
+                    else -> 0
+                }
+                Log.i(
+                    TAG,
+                    "FORMAL_PLAY source=${zone.source} zone=$zone seat=${zone.seat} " +
+                        "cardCount=$cardCount cardsTotal=$cardsTotal generation=$captureGeneration"
+                )
+            }
             .onFailure { Log.w(TAG, "PLAY_REJECTED reason=OUT_OF_STOCK", it) }
     }
 

@@ -65,6 +65,43 @@ class SessionStoreTest {
     }
 
     @Test
+    fun appliesAgainstCurrentPersistedStateRatherThanStaleRepositorySnapshot() {
+        val active = GameReducer.apply(
+            GameReducer.newSession(),
+            GameEvent.SelfHandLocked(RankCounts.of(mapOf(Rank.ACE to 1)))
+        )
+        val staleA = active
+        val playB = GameEvent.OutsideCardsPlayed(
+            RankCounts.of(mapOf(Rank.KING to 1)), "B", OutsideSeat.TOP, cardCount = 1
+        )
+        val playA = GameEvent.OutsideCardsPlayed(
+            RankCounts.of(mapOf(Rank.QUEEN to 1)), "A", OutsideSeat.LEFT_TOP, cardCount = 1
+        )
+
+        val afterB = applyPersistedEvent(active, playB)
+        val afterA = applyPersistedEvent(afterB, playA)
+
+        assertEquals(active, staleA)
+        assertEquals(2, afterA.outsidePlayedCount)
+        assertTrue(afterA.events.any { it.id == "A" })
+        assertTrue(afterA.events.any { it.id == "B" })
+    }
+
+    @Test
+    fun newSessionReplacementDropsPriorEvents() {
+        val active = GameReducer.apply(
+            GameReducer.newSession(),
+            GameEvent.SelfHandLocked(RankCounts.of(mapOf(Rank.ACE to 1)))
+        )
+
+        val replacement = GameReducer.newSession()
+
+        assertEquals(SessionPhase.ACTIVE, active.phase)
+        assertEquals(SessionPhase.PRE_PLAY, replacement.phase)
+        assertEquals(1, replacement.events.size)
+    }
+
+    @Test
     fun removesOnlyTrailingRecoverablePause() {
         val start = GameEvent.NewSession("start")
         val pause = GameEvent.SessionPaused(PauseReason.RANK_UNSTABLE, "pause")

@@ -16,22 +16,32 @@ class SessionStore(context: Context) {
     private val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
 
     /** 首次进入正向累计版时，替换旧事件日志并在同一次持久化中写入迁移标记。 */
-    fun migratePositiveCountSessionIfNeeded(): GameState? = synchronized(MIGRATION_LOCK) {
+    fun migratePositiveCountSessionIfNeeded(): GameState? = synchronized(SESSION_LOCK) {
         val bootstrap = positiveCountSessionBootstrap(
             preferences.getBoolean(KEY_POSITIVE_COUNT_MIGRATION, false),
-            load()
+            loadUnlocked()
         )
         if (!bootstrap.migrated) return@synchronized null
-        check(
-            preferences.edit()
-                .putString(KEY_EVENTS, encodeEvents(bootstrap.state))
-                .putBoolean(KEY_POSITIVE_COUNT_MIGRATION, true)
-                .commit()
-        ) { "无法保存正向累计会话迁移" }
+        writeCommitted(bootstrap.state, writeMigrationMarker = true)
         bootstrap.state
     }
 
-    fun load(): GameState? {
+    fun load(): GameState? = synchronized(SESSION_LOCK) { loadUnlocked() }
+
+    /** 在同一进程锁内重新读取完整事件日志，再归约并提交，避免旧 Repository 覆盖新事件。 */
+    fun apply(event: GameEvent): GameState = synchronized(SESSION_LOCK) {
+        val next = applyPersistedEvent(loadUnlocked() ?: GameReducer.newSession(), event)
+        writeCommitted(next)
+        next
+    }
+
+    fun replaceWithNewSession(): GameState = synchronized(SESSION_LOCK) {
+        GameReducer.newSession().also(::writeCommitted)
+    }
+
+    fun save(state: GameState) = synchronized(SESSION_LOCK) { writeCommitted(state) }
+
+    private fun loadUnlocked(): GameState? {
         val raw = preferences.getString(KEY_EVENTS, null) ?: return null
         return runCatching {
             val array = JSONArray(raw)
@@ -44,8 +54,10 @@ class SessionStore(context: Context) {
         }.getOrNull()
     }
 
-    fun save(state: GameState) {
-        preferences.edit().putString(KEY_EVENTS, encodeEvents(state)).apply()
+    private fun writeCommitted(state: GameState, writeMigrationMarker: Boolean = false) {
+        val editor = preferences.edit().putString(KEY_EVENTS, encodeEvents(state))
+        if (writeMigrationMarker) editor.putBoolean(KEY_POSITIVE_COUNT_MIGRATION, true)
+        check(editor.commit()) { "无法保存会话事件" }
     }
 
     private fun encodeEvents(state: GameState): String = JSONArray().also { array ->
@@ -104,7 +116,7 @@ class SessionStore(context: Context) {
         const val PREFERENCES = "card_counter_session"
         const val KEY_EVENTS = "events"
         const val KEY_POSITIVE_COUNT_MIGRATION = "positive_count_session_migration_v1"
-        val MIGRATION_LOCK = Any()
+        val SESSION_LOCK = Any()
     }
 }
 
@@ -118,6 +130,9 @@ internal fun positiveCountSessionBootstrap(
 } else {
     PositiveCountSessionBootstrap(GameReducer.newSession(), migrated = true)
 }
+
+internal fun applyPersistedEvent(current: GameState, event: GameEvent): GameState =
+    GameReducer.apply(current, event)
 
 internal fun List<GameEvent>.withoutRecoverablePause(): List<GameEvent> =
     if (lastOrNull() is GameEvent.SessionPaused &&
