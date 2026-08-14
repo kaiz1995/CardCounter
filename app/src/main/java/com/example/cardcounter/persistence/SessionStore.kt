@@ -15,6 +15,22 @@ import org.json.JSONObject
 class SessionStore(context: Context) {
     private val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
 
+    /** 首次进入正向累计版时，替换旧事件日志并在同一次持久化中写入迁移标记。 */
+    fun migratePositiveCountSessionIfNeeded(): GameState? = synchronized(MIGRATION_LOCK) {
+        val bootstrap = positiveCountSessionBootstrap(
+            preferences.getBoolean(KEY_POSITIVE_COUNT_MIGRATION, false),
+            load()
+        )
+        if (!bootstrap.migrated) return@synchronized null
+        check(
+            preferences.edit()
+                .putString(KEY_EVENTS, encodeEvents(bootstrap.state))
+                .putBoolean(KEY_POSITIVE_COUNT_MIGRATION, true)
+                .commit()
+        ) { "无法保存正向累计会话迁移" }
+        bootstrap.state
+    }
+
     fun load(): GameState? {
         val raw = preferences.getString(KEY_EVENTS, null) ?: return null
         return runCatching {
@@ -29,10 +45,12 @@ class SessionStore(context: Context) {
     }
 
     fun save(state: GameState) {
-        val array = JSONArray()
-        state.events.forEach { array.put(encodeEvent(it)) }
-        preferences.edit().putString(KEY_EVENTS, array.toString()).apply()
+        preferences.edit().putString(KEY_EVENTS, encodeEvents(state)).apply()
     }
+
+    private fun encodeEvents(state: GameState): String = JSONArray().also { array ->
+        state.events.forEach { array.put(encodeEvent(it)) }
+    }.toString()
 
     private fun encodeEvent(event: GameEvent): JSONObject = JSONObject()
         .put("id", event.id)
@@ -85,7 +103,20 @@ class SessionStore(context: Context) {
     private companion object {
         const val PREFERENCES = "card_counter_session"
         const val KEY_EVENTS = "events"
+        const val KEY_POSITIVE_COUNT_MIGRATION = "positive_count_session_migration_v1"
+        val MIGRATION_LOCK = Any()
     }
+}
+
+internal data class PositiveCountSessionBootstrap(val state: GameState, val migrated: Boolean)
+
+internal fun positiveCountSessionBootstrap(
+    markerPresent: Boolean,
+    stored: GameState?
+): PositiveCountSessionBootstrap = if (markerPresent) {
+    PositiveCountSessionBootstrap(stored ?: GameReducer.newSession(), migrated = false)
+} else {
+    PositiveCountSessionBootstrap(GameReducer.newSession(), migrated = true)
 }
 
 internal fun List<GameEvent>.withoutRecoverablePause(): List<GameEvent> =

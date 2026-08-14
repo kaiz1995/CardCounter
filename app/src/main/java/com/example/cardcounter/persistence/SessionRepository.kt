@@ -8,12 +8,10 @@ import com.example.cardcounter.domain.GameState
 class SessionRepository(context: Context) {
     private val store = SessionStore(context.applicationContext)
 
-    var state: GameState = store.load() ?: GameReducer.newSession()
+    var state: GameState = store.migratePositiveCountSessionIfNeeded()
+        ?: store.load()
+        ?: GameReducer.newSession().also(store::save)
         private set
-
-    init {
-        store.save(state)
-    }
 
     fun dispatch(event: GameEvent): GameState {
         state = GameReducer.apply(state, event)
