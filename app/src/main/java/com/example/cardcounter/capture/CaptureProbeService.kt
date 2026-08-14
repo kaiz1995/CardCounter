@@ -535,6 +535,8 @@ class CaptureProbeService : Service() {
                 dispatchGameEvent(GameEvent.SelfCardsPlayed(stable.cards), stable.zone, stable.cardCount)
                 return
             }
+            // 留存实际入账的公开牌 ROI；仅供下一局逐张核验，不影响计数。
+            saveIssue(finalized, "ACCEPTED", candidates)
             val offeredAt = SystemClock.elapsedRealtime()
             val offered = publicPlayCountAggregator.offer(
                 finalized.zone,
