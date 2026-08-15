@@ -1,5 +1,6 @@
 package com.example.cardcounter.capture
 
+import com.example.cardcounter.domain.GameEvent
 import com.example.cardcounter.domain.RankCounts
 import com.example.cardcounter.domain.OutsideSeat
 import kotlin.math.roundToInt
@@ -45,6 +46,12 @@ data class PlayCrop(val left: Int, val top: Int, val width: Int, val height: Int
 enum class PlaySource { SELF, OUTSIDE }
 
 internal data class StablePlay(val zone: PlayZone, val cards: RankCounts)
+
+/** Stable SELF and outside plays share one dispatch path; card count stays independent from rank identity. */
+internal fun StablePlay.toGameEvent(): GameEvent = when (zone.source) {
+    PlaySource.SELF -> GameEvent.SelfCardsPlayed(cards, cardCount = cards.total())
+    PlaySource.OUTSIDE -> GameEvent.OutsideCardsPlayed(cards, seat = requireNotNull(zone.seat))
+}
 
 /** 同一区连续两次相同候选才接收；清空两次后允许下一组相同牌再次出现。 */
 internal class StablePlayGate {

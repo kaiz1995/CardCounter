@@ -2,6 +2,7 @@ package com.example.cardcounter.capture
 
 import com.example.cardcounter.domain.Rank
 import com.example.cardcounter.domain.RankCounts
+import com.example.cardcounter.domain.GameEvent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -44,6 +45,18 @@ class StablePlayGateTest {
         repeat(6) { assertNull(gate.update(PlayZone.SELF, RankCounts.zero())) }
         assertNull(gate.update(PlayZone.SELF, fives))
         assertEquals(StablePlay(PlayZone.SELF, fives), gate.update(PlayZone.SELF, fives))
+    }
+
+    @Test
+    fun stableSelfZonePlayCreatesSelfEventWithDetectedCardCount() {
+        val cards = RankCounts.of(mapOf(Rank.THREE to 1, Rank.FIVE to 2))
+
+        val event = StablePlay(PlayZone.SELF, cards).toGameEvent()
+
+        assertTrue(event is GameEvent.SelfCardsPlayed)
+        event as GameEvent.SelfCardsPlayed
+        assertEquals(cards, event.cards)
+        assertEquals(3, event.cardCount)
     }
 
     @Test
