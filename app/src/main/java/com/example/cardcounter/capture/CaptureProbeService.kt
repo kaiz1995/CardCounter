@@ -71,7 +71,10 @@ class CaptureProbeService : Service() {
     private val stablePlayGate = StablePlayGate()
     private val unknownPlaySamples = PlayZone.entries.associateWith { 0 }.toMutableMap()
     private val lastPlayCandidates = PlayZone.entries.associateWith<PlayZone, RankCounts?> { null }.toMutableMap()
-    private val roiEventCache = RoiPlayEventCache<RoiFrame>(discard = { it.bitmap.recycle() })
+    private val roiEventCache = RoiPlayEventCache<RoiFrame>(
+        isStill = { previous, current -> roiFramesAreStill(previous.bitmap, current.bitmap) },
+        discard = { it.bitmap.recycle() }
+    )
     private var lastRoiSampleAt = 0L
     private var restartPrimeDeadlineAt = 0L
     @Volatile private var captureGeneration = 0L
@@ -504,7 +507,7 @@ class CaptureProbeService : Service() {
         }
     }
 
-    /** 截屏回调只缓存小 ROI；MNN 推理与记账均在清桌后进行。 */
+    /** 截屏回调仅缓存小 ROI；牌面连续停稳后才推理，清桌是未停稳的兜底。 */
     private fun captureRoiEvents(image: Image) {
         val tableVisible = gameTableVisible(image)
         val visibleZones = if (tableVisible) playZoneVisibility(image) else emptyMap()
@@ -532,7 +535,7 @@ class CaptureProbeService : Service() {
                 null
             }
             roiEventCache.observe(zone, tableVisible, visible, frame, generation)?.let { finalized ->
-                Log.i(TAG, "ROI_FINALIZED zone=${finalized.zone} frames=${finalized.frames.size} early=${finalized.early}")
+                Log.i(TAG, "ROI_FINALIZED zone=${finalized.zone} frames=${finalized.frames.size}")
                 rankHandler.post { finalizeRoiEvent(finalized) }
             }
         }
@@ -587,7 +590,6 @@ class CaptureProbeService : Service() {
                     Log.w(TAG, "PLAY_REJECTED reason=OUT_OF_STOCK", it)
                 }
         } finally {
-            if (finalized.early) roiEventCache.completeEarly(finalized.zone, finalized.generation)
             finalized.frames.forEach { it.bitmap.recycle() }
         }
     }
@@ -610,6 +612,24 @@ class CaptureProbeService : Service() {
             quality += kotlin.math.abs(android.graphics.Color.red(color) - android.graphics.Color.red(left))
         }
         return quality
+    }
+
+    private fun roiFramesAreStill(previous: Bitmap, current: Bitmap): Boolean {
+        if (previous.width != current.width || previous.height != current.height) return false
+        var samples = 0
+        var changed = 0
+        for (y in 0 until current.height step ROI_MOTION_SAMPLE_STEP) {
+            for (x in 0 until current.width step ROI_MOTION_SAMPLE_STEP) {
+                val before = previous.getPixel(x, y)
+                val after = current.getPixel(x, y)
+                if (kotlin.math.abs(android.graphics.Color.red(before) - android.graphics.Color.red(after)) > ROI_MOTION_CHANNEL_DELTA ||
+                    kotlin.math.abs(android.graphics.Color.green(before) - android.graphics.Color.green(after)) > ROI_MOTION_CHANNEL_DELTA ||
+                    kotlin.math.abs(android.graphics.Color.blue(before) - android.graphics.Color.blue(after)) > ROI_MOTION_CHANNEL_DELTA
+                ) changed += 1
+                samples += 1
+            }
+        }
+        return changed.toFloat() / samples < ROI_STILL_CHANGED_PIXEL_RATIO
     }
 
     private data class RoiFrame(
@@ -779,6 +799,9 @@ class CaptureProbeService : Service() {
         private const val UNKNOWN_SKIP_SAMPLES = 3
         private const val RESTART_PRIME_SAMPLES = 3
         private const val ROI_SAMPLE_INTERVAL_MS = 50L
+        private const val ROI_MOTION_SAMPLE_STEP = 3
+        private const val ROI_MOTION_CHANNEL_DELTA = 12
+        private const val ROI_STILL_CHANGED_PIXEL_RATIO = 0.03f
         private const val FINALIZE_FRAME_COUNT = 3
         private const val RESTART_TABLE_GRACE_MS = 2_000L
         private const val HAND_YOLO_LEFT = 180

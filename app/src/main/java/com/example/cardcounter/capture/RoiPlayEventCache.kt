@@ -1,24 +1,24 @@
 package com.example.cardcounter.capture
 
-/** 稳定可见即交出 ROI；清桌仍是低置信场景的兜底。 */
+/** 仅在牌面连续停稳后交出 ROI；交出后锁区，清桌才允许下一手。 */
 internal class RoiPlayEventCache<T>(
     private val maxFrames: Int = 8,
     private val clearSamples: Int = 6,
-    private val earlyFrames: Int = 3,
+    private val stableSamples: Int = 15,
+    private val isStill: (T, T) -> Boolean = { _, _ -> false },
     private val discard: (T) -> Unit = {}
 ) {
     data class Finalized<T>(
         val zone: PlayZone,
         val frames: List<T>,
-        val generation: Long,
-        val early: Boolean
+        val generation: Long
     )
 
     private data class State<T>(
         val frames: ArrayDeque<T> = ArrayDeque(),
         var emptySamples: Int = 0,
+        var stableSamples: Int = 0,
         var primed: Boolean = false,
-        var earlyInFlight: Boolean = false,
         var reported: Boolean = false,
         var generation: Long = 0L
     )
@@ -28,11 +28,8 @@ internal class RoiPlayEventCache<T>(
     @Synchronized
     fun reset(generation: Long, primeExistingTable: Boolean) {
         states.values.forEach { state ->
-            state.frames.forEach(discard)
-            state.frames.clear()
-            state.emptySamples = 0
+            clear(state)
             state.primed = primeExistingTable
-            state.earlyInFlight = false
             state.reported = false
             state.generation = generation
         }
@@ -50,19 +47,7 @@ internal class RoiPlayEventCache<T>(
     @Synchronized
     fun needsFrame(zone: PlayZone, generation: Long): Boolean {
         val state = states.getValue(zone)
-        return state.generation == generation && !state.primed && !state.earlyInFlight && !state.reported
-    }
-
-    /** 提前识别完成后解锁本区；若桌面已清空，下一手可立刻采样。 */
-    @Synchronized
-    fun completeEarly(zone: PlayZone, generation: Long) {
-        val state = states.getValue(zone)
-        if (state.generation != generation || !state.earlyInFlight) return
-        state.earlyInFlight = false
-        if (state.emptySamples >= clearSamples) {
-            state.emptySamples = 0
-            state.reported = false
-        }
+        return state.generation == generation && !state.primed && !state.reported
     }
 
     @Synchronized
@@ -76,40 +61,40 @@ internal class RoiPlayEventCache<T>(
         if (!tableVisible) return null
         val state = states.getValue(zone)
         if (state.generation != generation) {
-            state.frames.forEach(discard)
-            state.frames.clear()
-            state.emptySamples = 0
+            clear(state)
             state.primed = false
-            state.earlyInFlight = false
             state.reported = false
             state.generation = generation
         }
         if (cardVisible) {
             state.emptySamples = 0
-            if (!state.primed && !state.earlyInFlight && !state.reported && frame != null) {
-                while (state.frames.size >= maxFrames) discard(state.frames.removeFirst())
-                state.frames.addLast(frame)
-                if (state.frames.size >= earlyFrames) {
-                    val frames = state.frames.toList()
-                    state.frames.clear()
-                    state.earlyInFlight = true
-                    return Finalized(zone, frames, generation, early = true)
-                }
-            } else if (frame != null) {
-                discard(frame)
+            if (state.primed || state.reported || frame == null) {
+                frame?.let(discard)
+                return null
             }
-            return null
+            while (state.frames.size >= maxFrames) discard(state.frames.removeFirst())
+            state.frames.addLast(frame)
+            state.stableSamples = if (state.frames.size > 1 && isStill(state.frames.elementAt(state.frames.size - 2), frame)) {
+                state.stableSamples + 1
+            } else 0
+            if (state.stableSamples < stableSamples) return null
+
+            val frames = state.frames.toList()
+            state.frames.clear()
+            state.stableSamples = 0
+            state.reported = true
+            return Finalized(zone, frames, generation)
         }
 
         state.emptySamples = (state.emptySamples + 1).coerceAtMost(clearSamples)
         if (state.emptySamples < clearSamples) return null
+        state.emptySamples = 0
+        state.stableSamples = 0
         if (state.primed) {
-            state.emptySamples = 0
             state.primed = false
+            clear(state)
             return null
         }
-        if (state.earlyInFlight) return null
-        state.emptySamples = 0
         if (state.reported) {
             state.reported = false
             return null
@@ -117,6 +102,13 @@ internal class RoiPlayEventCache<T>(
         if (state.frames.isEmpty()) return null
         val frames = state.frames.toList()
         state.frames.clear()
-        return Finalized(zone, frames, generation, early = false)
+        return Finalized(zone, frames, generation)
+    }
+
+    private fun clear(state: State<T>) {
+        state.frames.forEach(discard)
+        state.frames.clear()
+        state.emptySamples = 0
+        state.stableSamples = 0
     }
 }
