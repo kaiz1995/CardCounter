@@ -1,6 +1,7 @@
 package com.example.cardcounter.domain
 
 enum class SessionPhase {
+    PRE_PLAY,
     ACTIVE,
     PAUSED,
     CLOSED
@@ -8,6 +9,7 @@ enum class SessionPhase {
 
 data class GameState(
     val phase: SessionPhase,
+    val selfLockedHand: RankCounts? = null,
     val selfPlayed: RankCounts = RankCounts.zero(),
     val selfPlayedCount: Int = 0,
     val outsidePlayed: RankCounts = RankCounts.zero(),
@@ -20,9 +22,9 @@ data class GameState(
     val pauseReason: PauseReason? = null,
     val events: List<GameEvent> = emptyList()
 ) {
-    /** 外面剩余 = 固定库存 - 自己已出 - 外面已出；全部正数累加，不依赖开局锁手牌。 */
-    val outsideRemaining: RankCounts
-        get() = Rank.initialInventory.minus(selfPlayed).minus(outsidePlayed)
+    /** 外面剩余 = 固定库存 - 开局手牌快照 H0 - 外面已出；selfPlayed 只做审计，不参与。 */
+    val outsideRemaining: RankCounts?
+        get() = selfLockedHand?.let { Rank.initialInventory.minus(it).minus(outsidePlayed) }
 
     fun playedBy(seat: OutsideSeat): RankCounts =
         outsidePlayedBySeat[seat] ?: RankCounts.zero()
@@ -41,12 +43,23 @@ data class GameState(
         check(selfPlayedCount >= 0)
         check(outsidePlayedCountBySeat.values.all { it >= 0 })
         check(outsidePlayedCountBySeat.values.sum() <= outsidePlayedCount)
-        val remaining = outsideRemaining
-        Rank.entries.forEach { rank ->
-            check(
-                Rank.initialInventory[rank] ==
-                    selfPlayed[rank] + outsidePlayed[rank] + remaining[rank]
-            )
+        when (val locked = selfLockedHand) {
+            null -> {
+                check(selfPlayed == RankCounts.zero()) { "未锁定手牌时不允许自己出牌" }
+                check(outsidePlayed == RankCounts.zero()) { "未锁定手牌时不允许外面出牌" }
+            }
+            else -> {
+                check(locked.fitsWithin(Rank.initialInventory))
+                val availableOutside = Rank.initialInventory.minus(locked)
+                check(outsidePlayed.fitsWithin(availableOutside)) { "外面已出超过锁定后剩余" }
+                val remaining = availableOutside.minus(outsidePlayed)
+                Rank.entries.forEach { rank ->
+                    check(
+                        Rank.initialInventory[rank] ==
+                            locked[rank] + outsidePlayed[rank] + remaining[rank]
+                    )
+                }
+            }
         }
     }
 }

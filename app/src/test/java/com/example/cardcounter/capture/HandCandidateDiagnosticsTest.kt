@@ -37,9 +37,18 @@ class HandCandidateDiagnosticsTest {
             true,
             isValidBaseline(35, RankCounts.of(mapOf(Rank.TEN to 16, Rank.NINE to 16, Rank.THREE to 3)))
         )
+        // 任意张数门槛：位置检测计数不再参与，33 张或非 33 张手牌都只要求非空且在库存内。
+        assertEquals(
+            true,
+            isValidBaseline(33, RankCounts.of(mapOf(Rank.TEN to 16, Rank.NINE to 16, Rank.THREE to 3)))
+        )
+        assertEquals(
+            true,
+            isValidBaseline(22, RankCounts.of(mapOf(Rank.ACE to 16, Rank.KING to 6)))
+        )
         assertEquals(
             false,
-            isValidBaseline(33, RankCounts.of(mapOf(Rank.TEN to 16, Rank.NINE to 16, Rank.THREE to 3)))
+            isValidBaseline(22, RankCounts.zero())
         )
     }
 

@@ -2,7 +2,7 @@ package com.example.cardcounter.domain
 
 object GameReducer {
     fun newSession(event: GameEvent.NewSession = GameEvent.NewSession()): GameState =
-        GameState(phase = SessionPhase.ACTIVE, events = listOf(event)).also {
+        GameState(phase = SessionPhase.PRE_PLAY, events = listOf(event)).also {
             it.requireInvariant()
         }
 
@@ -10,8 +10,7 @@ object GameReducer {
         require(event.id !in state.events.map { it.id }) { "重复事件" }
         val next = when (event) {
             is GameEvent.NewSession -> newSession(event)
-            // 已废弃：旧日志兼容，不再锁定开局手牌，也不改变会计状态。
-            is GameEvent.SelfHandLocked -> state
+            is GameEvent.SelfHandLocked -> lockHand(state, event)
             is GameEvent.OutsideCardsPlayed -> addOutsidePlay(state, event)
             is GameEvent.SelfCardsPlayed -> addSelfPlay(state, event)
             is GameEvent.Reverted -> revert(state, event)
@@ -37,10 +36,23 @@ object GameReducer {
         }
     }
 
+    /** 开局手牌快照 H0（任意张数，交贡/买3/买4 后、首手前锁定一次）。 */
+    private fun lockHand(state: GameState, event: GameEvent.SelfHandLocked): GameState {
+        require(state.phase == SessionPhase.PRE_PLAY) { "当前不能锁定手牌" }
+        require(event.cards.total() > 0) { "自己手牌不能为空" }
+        require(event.cards.fitsWithin(Rank.initialInventory)) { "自己手牌超过固定库存" }
+        return state.copy(
+            phase = SessionPhase.ACTIVE,
+            selfLockedHand = event.cards,
+            events = state.events + event
+        )
+    }
+
     private fun addOutsidePlay(state: GameState, event: GameEvent.OutsideCardsPlayed): GameState {
         require(state.phase == SessionPhase.ACTIVE) { "当前不接受自动出牌事件" }
         require(event.cardCount > 0) { "出牌张数必须为正数" }
-        require(event.cards.fitsWithin(state.outsideRemaining)) { "外面已出超过剩余库存" }
+        val remaining = state.outsideRemaining ?: error("未锁定自己手牌")
+        require(event.cards.fitsWithin(remaining)) { "外面已出超过剩余库存" }
         val bySeat = event.seat?.let { seat ->
             state.outsidePlayedBySeat + (seat to state.playedBy(seat).plus(event.cards))
         } ?: state.outsidePlayedBySeat
@@ -59,7 +71,9 @@ object GameReducer {
     private fun addSelfPlay(state: GameState, event: GameEvent.SelfCardsPlayed): GameState {
         require(state.phase == SessionPhase.ACTIVE) { "当前不接受自己出牌事件" }
         require(event.cards.total() > 0) { "自己出牌张数必须为正数" }
-        require(event.cards.fitsWithin(state.outsideRemaining)) { "自己出牌超过剩余库存" }
+        val handRemaining = state.selfLockedHand?.minus(state.selfPlayed)
+            ?: error("未锁定自己手牌")
+        require(event.cards.fitsWithin(handRemaining)) { "自己出牌超过剩余手牌" }
         return state.copy(
             selfPlayed = state.selfPlayed.plus(event.cards),
             selfPlayedCount = state.selfPlayedCount + event.cards.total(),

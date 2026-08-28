@@ -217,7 +217,7 @@ class CaptureProbeService : Service() {
                 when (firstPlayGate.update(signals, lastStablePrePlayHand != null)) {
                     FirstPlayBoundary.LOCK -> {
                         firstPlayArmed = true
-                        Log.i(TAG, "FIRST_PLAY_ARMED")
+                        lockPrePlayHand()
                     }
                     FirstPlayBoundary.NONE -> Unit
                 }
@@ -371,6 +371,16 @@ class CaptureProbeService : Service() {
         val y = canonicalY * image.height / 578
         val offset = y * plane.rowStride + x * plane.pixelStride
         return IntArray(3) { plane.buffer.get(offset + it).toInt() and 0xff }
+    }
+
+    /** 首手出牌前把最后稳定手牌快照锁定为 H0（任意张数，不要求 33）。 */
+    private fun lockPrePlayHand() {
+        val cards = lastStablePrePlayHand ?: return
+        val repository = SessionRepository(this)
+        if (repository.state.phase != SessionPhase.PRE_PLAY) return
+        repository.dispatch(GameEvent.SelfHandLocked(cards))
+        OverlayService.refresh(this)
+        Log.i(TAG, "SELF_HAND_LOCKED total=${cards.total()} cards=$cards")
     }
 
     /** 可用初版1：牌仍可见时连续两次相同候选即记账。 */

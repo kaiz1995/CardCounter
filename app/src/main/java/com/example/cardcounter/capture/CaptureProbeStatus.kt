@@ -82,9 +82,9 @@ internal fun stableRankCandidateCount(
     else -> 1
 }
 
+/** 手牌快照门槛：只要求非空且在库存内，接受任意张数（不再要求与位置检测一致或 33 张）。 */
 internal fun isValidBaseline(positionCount: Int?, cards: RankCounts): Boolean =
-    positionCount != null && kotlin.math.abs(positionCount - cards.total()) <= 1 &&
-        cards.total() > 0 && cards.fitsWithin(Rank.initialInventory)
+    cards.total() > 0 && cards.fitsWithin(Rank.initialInventory)
 
 internal fun shouldInvalidatePrePlayHand(
     firstPlayArmed: Boolean,

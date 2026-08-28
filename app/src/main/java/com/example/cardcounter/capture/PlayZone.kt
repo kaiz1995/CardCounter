@@ -127,9 +127,10 @@ internal fun isPublicRankBand(centerY: Float): Boolean = centerY < 0.85f
 internal fun shouldProbeRanks(firstPlayArmed: Boolean, stableHandSamples: Int): Boolean =
     firstPlayArmed || stableHandSamples >= 3
 
-/** 多张且每张都很确定时不等待下一帧，避免开点动画清桌前丢失整手。 */
+/** 3 张以上且整体高置信时不等待下一帧；1-2 张也允许高置信单帧确认，避免动画清桌前丢失。 */
 internal fun canFastConfirmPlay(cards: RankCounts, minimumConfidence: Float): Boolean =
-    cards.total() >= 3 && minimumConfidence >= 0.60f
+    (cards.total() >= 3 && minimumConfidence >= 0.60f) ||
+        (cards.total() in 1..2 && minimumConfidence >= 0.85f)
 
 /** 单张以全屏固定牌角模板为准；ROI 模板未校准，不能参与此处融合。 */
 internal fun fuseSinglePublicPlay(model: RankCounts, template: RankCounts): RankCounts =

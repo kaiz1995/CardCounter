@@ -1,6 +1,7 @@
 package com.example.cardcounter.domain
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Test
 
@@ -14,62 +15,132 @@ class GameReducerTest {
     }
 
     @Test
-    fun newSessionStartsActiveWithFullRemaining() {
+    fun newSessionStartsPrePlayWithNoRemaining() {
         val state = GameReducer.newSession()
-        assertEquals(SessionPhase.ACTIVE, state.phase)
-        assertEquals(Rank.initialInventory, state.outsideRemaining)
+        assertEquals(SessionPhase.PRE_PLAY, state.phase)
+        assertNull(state.outsideRemaining)
+        assertEquals(RankCounts.zero(), state.selfPlayed)
+        assertEquals(RankCounts.zero(), state.outsidePlayed)
     }
 
     @Test
-    fun outsideRemainingSubtractsSelfAndOutsideOnce() {
-        val afterSelf = GameReducer.apply(
+    fun prePlayRejectsSelfAndOutsidePlays() {
+        val fresh = GameReducer.newSession()
+        assertThrows(IllegalArgumentException::class.java) {
+            GameReducer.apply(
+                fresh,
+                GameEvent.SelfCardsPlayed(RankCounts.of(mapOf(Rank.ACE to 1)))
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            GameReducer.apply(
+                fresh,
+                GameEvent.OutsideCardsPlayed(RankCounts.of(mapOf(Rank.ACE to 1)))
+            )
+        }
+    }
+
+    @Test
+    fun lockHandAcceptsAnyCountNotJust33() {
+        // 35 张：A 16 + K 16 + Q 3
+        val locked = GameReducer.apply(
             GameReducer.newSession(),
+            GameEvent.SelfHandLocked(
+                RankCounts.of(mapOf(Rank.ACE to 16, Rank.KING to 16, Rank.QUEEN to 3))
+            )
+        )
+        assertEquals(SessionPhase.ACTIVE, locked.phase)
+        assertEquals(35, locked.selfLockedHand?.total())
+        assertEquals(163, locked.outsideRemaining?.total())
+        assertEquals(0, locked.outsideRemaining?.get(Rank.ACE))
+    }
+
+    @Test
+    fun lockHandAcceptsTwentyTwo() {
+        val lock22 = GameReducer.apply(
+            GameReducer.newSession(),
+            GameEvent.SelfHandLocked(RankCounts.of(mapOf(Rank.ACE to 16, Rank.KING to 6)))
+        )
+        assertEquals(22, lock22.selfLockedHand?.total())
+        assertEquals(176, lock22.outsideRemaining?.total())
+    }
+
+    @Test
+    fun lockHandRejectsEmptyOrOutOfInventory() {
+        assertThrows(IllegalArgumentException::class.java) {
+            GameReducer.apply(
+                GameReducer.newSession(),
+                GameEvent.SelfHandLocked(RankCounts.zero())
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            GameReducer.apply(
+                GameReducer.newSession(),
+                GameEvent.SelfHandLocked(RankCounts.of(mapOf(Rank.ACE to 17)))
+            )
+        }
+    }
+
+    @Test
+    fun outsideRemainingIgnoresSelfAndOnlyTracksOutside() {
+        val locked = lock(mapOf(Rank.ACE to 1))
+        val afterSelf = GameReducer.apply(
+            locked,
             GameEvent.SelfCardsPlayed(RankCounts.of(mapOf(Rank.ACE to 1)))
         )
-        assertEquals(15, afterSelf.outsideRemaining[Rank.ACE])
+        assertEquals(15, afterSelf.outsideRemaining?.get(Rank.ACE))
         assertEquals(1, afterSelf.selfPlayed[Rank.ACE])
+        assertEquals(1, afterSelf.selfPlayedCount)
+    }
+
+    @Test
+    fun outsidePlayStillTracksAfterSelfPlay() {
+        val locked = lock(mapOf(Rank.ACE to 1))
+        val afterSelf = GameReducer.apply(
+            locked,
+            GameEvent.SelfCardsPlayed(RankCounts.of(mapOf(Rank.ACE to 1)))
+        )
         val afterOutside = GameReducer.apply(
             afterSelf,
             GameEvent.OutsideCardsPlayed(RankCounts.of(mapOf(Rank.ACE to 2)))
         )
-        assertEquals(13, afterOutside.outsideRemaining[Rank.ACE])
-        assertEquals(1, afterOutside.selfPlayedCount)
+        assertEquals(13, afterOutside.outsideRemaining?.get(Rank.ACE))
         assertEquals(2, afterOutside.outsidePlayedCount)
+        assertEquals(1, afterOutside.selfPlayedCount)
     }
 
     @Test
-    fun selfPlaysAccumulatePositively() {
+    fun selfPlaysAccumulateForAuditWithoutTouchingRemaining() {
+        val locked = lock(mapOf(Rank.ACE to 5))
         val state = GameReducer.apply(
             GameReducer.apply(
-                GameReducer.newSession(),
+                locked,
                 GameEvent.SelfCardsPlayed(RankCounts.of(mapOf(Rank.ACE to 1)))
             ),
             GameEvent.SelfCardsPlayed(RankCounts.of(mapOf(Rank.ACE to 3)))
         )
         assertEquals(4, state.selfPlayed[Rank.ACE])
         assertEquals(4, state.selfPlayedCount)
-        assertEquals(12, state.outsideRemaining[Rank.ACE])
+        assertEquals(11, state.outsideRemaining?.get(Rank.ACE))
     }
 
     @Test
-    fun rejectsSelfPlayBeyondInventoryConservation() {
+    fun rejectsSelfPlayBeyondLockedHandConservation() {
+        val locked = lock(mapOf(Rank.ACE to 2))
         assertThrows(IllegalArgumentException::class.java) {
             GameReducer.apply(
-                GameReducer.newSession(),
-                GameEvent.SelfCardsPlayed(RankCounts.of(mapOf(Rank.ACE to 17)))
+                locked,
+                GameEvent.SelfCardsPlayed(RankCounts.of(mapOf(Rank.ACE to 3)))
             )
         }
     }
 
     @Test
     fun rejectsOutsidePlayBeyondRemainingConservationInsteadOfClamping() {
-        val afterSelf = GameReducer.apply(
-            GameReducer.newSession(),
-            GameEvent.SelfCardsPlayed(RankCounts.of(mapOf(Rank.ACE to 15)))
-        )
+        val locked = lock(mapOf(Rank.ACE to 15))
         assertThrows(IllegalArgumentException::class.java) {
             GameReducer.apply(
-                afterSelf,
+                locked,
                 GameEvent.OutsideCardsPlayed(RankCounts.of(mapOf(Rank.ACE to 2)))
             )
         }
@@ -78,7 +149,7 @@ class GameReducerTest {
     @Test
     fun pausedSessionRejectsAutomaticEvents() {
         val paused = GameReducer.apply(
-            GameReducer.newSession(),
+            lock(mapOf(Rank.ACE to 1)),
             GameEvent.SessionPaused(PauseReason.ZONE_AMBIGUOUS)
         )
         assertThrows(IllegalArgumentException::class.java) {
@@ -93,38 +164,67 @@ class GameReducerTest {
     fun replayMatchesLiveState() {
         val events = listOf(
             GameEvent.NewSession("s"),
+            GameEvent.SelfHandLocked(RankCounts.of(mapOf(Rank.ACE to 2)), "h"),
             GameEvent.SelfCardsPlayed(RankCounts.of(mapOf(Rank.ACE to 1)), "self"),
-            GameEvent.OutsideCardsPlayed(RankCounts.of(mapOf(Rank.ACE to 2)), "p")
+            GameEvent.OutsideCardsPlayed(RankCounts.of(mapOf(Rank.ACE to 1)), "p")
         )
         val state = GameReducer.replay(events)
-        assertEquals(13, state.outsideRemaining[Rank.ACE])
+        assertEquals(13, state.outsideRemaining?.get(Rank.ACE))
         assertEquals(events, state.events)
     }
 
     @Test
+    fun legacyLockEventAppliesDuringReplay() {
+        val events = listOf(
+            GameEvent.NewSession("s"),
+            GameEvent.SelfHandLocked(RankCounts.of(mapOf(Rank.ACE to 1)), "h"),
+            GameEvent.OutsideCardsPlayed(RankCounts.of(mapOf(Rank.ACE to 1)), "p")
+        )
+        val state = GameReducer.replay(events)
+        assertEquals(SessionPhase.ACTIVE, state.phase)
+        assertEquals(14, state.outsideRemaining?.get(Rank.ACE))
+        assertEquals(events, state.events)
+    }
+
+    @Test
+    fun legacyLocklessLogReplaysAsCorruptedPaused() {
+        val events = listOf(
+            GameEvent.NewSession("s"),
+            GameEvent.OutsideCardsPlayed(RankCounts.of(mapOf(Rank.FIVE to 1)), "legacy")
+        )
+        val state = GameReducer.replay(events)
+        assertEquals(SessionPhase.PAUSED, state.phase)
+        assertEquals(PauseReason.CORRUPTED_SESSION, state.pauseReason)
+    }
+
+    @Test
     fun outsidePlaysAccumulateBySeatAndStillFeedGlobalRemaining() {
-        val active = GameReducer.newSession()
-        val topPlay = RankCounts.of(mapOf(Rank.ACE to 2))
-        val leftPlay = RankCounts.of(mapOf(Rank.KING to 1))
+        val active = lock(mapOf(Rank.KING to 1))
         val afterTop = GameReducer.apply(
             active,
-            GameEvent.OutsideCardsPlayed(topPlay, seat = OutsideSeat.TOP)
+            GameEvent.OutsideCardsPlayed(
+                RankCounts.of(mapOf(Rank.ACE to 2)),
+                seat = OutsideSeat.TOP
+            )
         )
         val state = GameReducer.apply(
             afterTop,
-            GameEvent.OutsideCardsPlayed(leftPlay, seat = OutsideSeat.LEFT_TOP)
+            GameEvent.OutsideCardsPlayed(
+                RankCounts.of(mapOf(Rank.KING to 1)),
+                seat = OutsideSeat.LEFT_TOP
+            )
         )
         assertEquals(2, state.playedBy(OutsideSeat.TOP)[Rank.ACE])
         assertEquals(1, state.playedBy(OutsideSeat.LEFT_TOP)[Rank.KING])
         assertEquals(0, state.playedBy(OutsideSeat.RIGHT_TOP).total())
-        assertEquals(14, state.outsideRemaining[Rank.ACE])
-        assertEquals(15, state.outsideRemaining[Rank.KING])
+        assertEquals(14, state.outsideRemaining?.get(Rank.ACE))
+        assertEquals(14, state.outsideRemaining?.get(Rank.KING))
     }
 
     @Test
     fun outsideCardCountIsIndependentFromRankClassification() {
         val state = GameReducer.apply(
-            GameReducer.newSession(),
+            lock(mapOf(Rank.ACE to 1)),
             GameEvent.OutsideCardsPlayed(
                 cards = RankCounts.of(mapOf(Rank.ACE to 1)),
                 seat = OutsideSeat.TOP,
@@ -138,7 +238,7 @@ class GameReducerTest {
 
     @Test
     fun revertingOutsidePlayAlsoRevertsItsSeatLedger() {
-        val active = GameReducer.newSession()
+        val active = lock(mapOf(Rank.SEVEN to 2))
         val play = GameEvent.OutsideCardsPlayed(
             RankCounts.of(mapOf(Rank.SEVEN to 2)),
             id = "seat-play",
@@ -150,31 +250,8 @@ class GameReducerTest {
         assertEquals(active.outsideRemaining, reverted.outsideRemaining)
     }
 
-    @Test
-    fun legacyOutsidePlayKeepsGlobalCountWithoutInventingSeat() {
-        val state = GameReducer.replay(
-            listOf(
-                GameEvent.NewSession("s"),
-                GameEvent.OutsideCardsPlayed(
-                    RankCounts.of(mapOf(Rank.FIVE to 1)),
-                    "legacy"
-                )
-            )
-        )
-        assertEquals(1, state.outsidePlayed[Rank.FIVE])
-        assertEquals(0, OutsideSeat.entries.sumOf { state.playedBy(it).total() })
-    }
-
-    @Test
-    fun legacySelfHandLockedEventIsIgnoredDuringReplay() {
-        val events = listOf(
-            GameEvent.NewSession("s"),
-            GameEvent.SelfHandLocked(RankCounts.of(mapOf(Rank.ACE to 1)), "h"),
-            GameEvent.OutsideCardsPlayed(RankCounts.of(mapOf(Rank.ACE to 1)), "p")
-        )
-        val state = GameReducer.replay(events)
-        assertEquals(SessionPhase.ACTIVE, state.phase)
-        assertEquals(15, state.outsideRemaining[Rank.ACE])
-        assertEquals(listOf(events[0], events[2]), state.events)
-    }
+    private fun lock(hand: Map<Rank, Int>): GameState = GameReducer.apply(
+        GameReducer.newSession(),
+        GameEvent.SelfHandLocked(RankCounts.of(hand))
+    )
 }

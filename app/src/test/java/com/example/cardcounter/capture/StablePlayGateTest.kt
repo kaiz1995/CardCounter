@@ -161,7 +161,11 @@ class StablePlayGateTest {
     fun fastConfirmsOnlyConfidentMultiCardPlays() {
         assertTrue(canFastConfirmPlay(fives, minimumConfidence = 0.60f))
         assertFalse(canFastConfirmPlay(fives, minimumConfidence = 0.59f))
-        assertFalse(canFastConfirmPlay(RankCounts.of(mapOf(Rank.TWO to 1)), minimumConfidence = 0.99f))
+        // 1-2 张高置信（>=0.85）也允许单帧确认，避免开点动画清桌前丢失。
+        assertTrue(canFastConfirmPlay(RankCounts.of(mapOf(Rank.TWO to 1)), minimumConfidence = 0.88f))
+        assertTrue(canFastConfirmPlay(RankCounts.of(mapOf(Rank.TWO to 2)), minimumConfidence = 0.85f))
+        assertFalse(canFastConfirmPlay(RankCounts.of(mapOf(Rank.TWO to 1)), minimumConfidence = 0.84f))
+        assertFalse(canFastConfirmPlay(RankCounts.of(mapOf(Rank.TWO to 2)), minimumConfidence = 0.84f))
 
     }
 
