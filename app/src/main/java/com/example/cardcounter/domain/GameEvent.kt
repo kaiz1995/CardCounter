@@ -10,6 +10,8 @@ sealed interface GameEvent {
         override val id: String = UUID.randomUUID().toString()
     ) : GameEvent
 
+    /** 已废弃：不再锁定开局手牌；保留类型仅为读取旧事件日志。 */
+    /** 已废弃：不再锁定开局手牌；保留类型仅为读取旧事件日志。 */
     data class SelfHandLocked(
         val cards: RankCounts,
         override val id: String = UUID.randomUUID().toString()

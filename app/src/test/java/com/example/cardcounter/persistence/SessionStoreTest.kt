@@ -13,39 +13,26 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SessionStoreTest {
+    private val played = GameEvent.OutsideCardsPlayed(
+        RankCounts.of(mapOf(Rank.KING to 1)),
+        seat = OutsideSeat.TOP
+    )
+
     @Test
-    fun migratesOldActiveSessionToEmptyPrePlayOnce() {
-        val active = GameReducer.apply(
-            GameReducer.apply(
-                GameReducer.newSession(),
-                GameEvent.SelfHandLocked(RankCounts.of(mapOf(Rank.ACE to 1)))
-            ),
-            GameEvent.OutsideCardsPlayed(
-                RankCounts.of(mapOf(Rank.KING to 1)),
-                seat = OutsideSeat.TOP
-            )
-        )
+    fun migratesOldActiveSessionToEmptyActiveOnce() {
+        val active = GameReducer.apply(GameReducer.newSession(), played)
 
         val migrated = positiveCountSessionBootstrap(markerPresent = false, stored = active)
 
         assertTrue(migrated.migrated)
-        assertEquals(SessionPhase.PRE_PLAY, migrated.state.phase)
+        assertEquals(SessionPhase.ACTIVE, migrated.state.phase)
         assertEquals(0, migrated.state.outsidePlayedCount)
         assertEquals(0, OutsideSeat.entries.sumOf { migrated.state.playedCountBy(it) })
     }
 
     @Test
     fun preservesExistingSessionWhenMigrationMarkerExists() {
-        val active = GameReducer.apply(
-            GameReducer.apply(
-                GameReducer.newSession(),
-                GameEvent.SelfHandLocked(RankCounts.of(mapOf(Rank.ACE to 1)))
-            ),
-            GameEvent.OutsideCardsPlayed(
-                RankCounts.of(mapOf(Rank.KING to 1)),
-                seat = OutsideSeat.TOP
-            )
-        )
+        val active = GameReducer.apply(GameReducer.newSession(), played)
 
         val restored = positiveCountSessionBootstrap(markerPresent = true, stored = active)
 
@@ -66,10 +53,7 @@ class SessionStoreTest {
 
     @Test
     fun appliesAgainstCurrentPersistedStateRatherThanStaleRepositorySnapshot() {
-        val active = GameReducer.apply(
-            GameReducer.newSession(),
-            GameEvent.SelfHandLocked(RankCounts.of(mapOf(Rank.ACE to 1)))
-        )
+        val active = GameReducer.newSession()
         val staleA = active
         val playB = GameEvent.OutsideCardsPlayed(
             RankCounts.of(mapOf(Rank.KING to 1)), "B", OutsideSeat.TOP, cardCount = 1
@@ -89,15 +73,12 @@ class SessionStoreTest {
 
     @Test
     fun newSessionReplacementDropsPriorEvents() {
-        val active = GameReducer.apply(
-            GameReducer.newSession(),
-            GameEvent.SelfHandLocked(RankCounts.of(mapOf(Rank.ACE to 1)))
-        )
+        val active = GameReducer.apply(GameReducer.newSession(), played)
 
         val replacement = GameReducer.newSession()
 
         assertEquals(SessionPhase.ACTIVE, active.phase)
-        assertEquals(SessionPhase.PRE_PLAY, replacement.phase)
+        assertEquals(SessionPhase.ACTIVE, replacement.phase)
         assertEquals(1, replacement.events.size)
     }
 

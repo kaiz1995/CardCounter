@@ -119,7 +119,6 @@ class MainActivity : Activity() {
 
     private fun renderStatus() {
         val sessionStatus = when (repository.state.phase) {
-            SessionPhase.PRE_PLAY -> "准备中：等待自动识别交换后的自己手牌。"
             SessionPhase.ACTIVE -> "本局记牌中。"
             SessionPhase.PAUSED -> "本局停记：${repository.state.pauseReason?.displayName ?: "未知原因"}"
             SessionPhase.CLOSED -> "会话已结束。"
