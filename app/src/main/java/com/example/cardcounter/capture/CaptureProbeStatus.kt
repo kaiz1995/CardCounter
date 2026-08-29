@@ -82,9 +82,19 @@ internal fun stableRankCandidateCount(
     else -> 1
 }
 
-/** 手牌快照门槛：只要求非空且在库存内，接受任意张数（不再要求与位置检测一致或 33 张）。 */
+/** 桌面判定：最近有出牌活动即豁免；否则要求绿点占比 >=60% 才视为可见。 */
+internal fun isTableVisibleBySamples(
+    greenPixels: Int,
+    totalPixels: Int,
+    hasRecentActivity: Boolean
+): Boolean = hasRecentActivity || greenPixels * 10 >= totalPixels * 6
+
+/** 手牌快照门槛：牌位检测张数与牌面识别张数一致（宽容 ±2）且在库存内；识别漏检时不得锁定 H0。 */
 internal fun isValidBaseline(positionCount: Int?, cards: RankCounts): Boolean =
-    cards.total() > 0 && cards.fitsWithin(Rank.initialInventory)
+    positionCount != null &&
+        kotlin.math.abs(positionCount - cards.total()) <= 2 &&
+        cards.total() > 0 &&
+        cards.fitsWithin(Rank.initialInventory)
 
 internal fun shouldInvalidatePrePlayHand(
     firstPlayArmed: Boolean,

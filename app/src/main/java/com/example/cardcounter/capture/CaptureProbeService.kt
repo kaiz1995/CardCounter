@@ -73,6 +73,8 @@ class CaptureProbeService : Service() {
     @Volatile private var handRevision = 0L
     @Volatile private var firstPlayArmed = false
     @Volatile private var lastStablePrePlayHand: RankCounts? = null
+    @Volatile private var lastStablePositionCount: Int = 0
+    @Volatile private var lastPlayRecordedAt = 0L
     @Volatile private var primeSamplesRemaining = 0
     private val firstPlayGate = FirstPlayBoundaryGate()
 
@@ -262,6 +264,7 @@ class CaptureProbeService : Service() {
                             val baselineValid = isValidBaseline(positionCount, cards)
                             if (stableRankCandidates >= 2 && baselineValid) {
                                 lastStablePrePlayHand = cards
+                                lastStablePositionCount = positionCount ?: 0
                             }
                             Log.i(
                                 TAG,
@@ -373,14 +376,14 @@ class CaptureProbeService : Service() {
         return IntArray(3) { plane.buffer.get(offset + it).toInt() and 0xff }
     }
 
-    /** 首手出牌前把最后稳定手牌快照锁定为 H0（任意张数，不要求 33）。 */
+    /** 首手出牌前把最后稳定手牌快照锁定为 H0（张数与牌位检测一致，宽容 ±2）。 */
     private fun lockPrePlayHand() {
         val cards = lastStablePrePlayHand ?: return
         val repository = SessionRepository(this)
         if (repository.state.phase != SessionPhase.PRE_PLAY) return
         repository.dispatch(GameEvent.SelfHandLocked(cards))
         OverlayService.refresh(this)
-        Log.i(TAG, "SELF_HAND_LOCKED total=${cards.total()} cards=$cards")
+        Log.i(TAG, "SELF_HAND_LOCKED total=${cards.total()} positionCount=$lastStablePositionCount cards=$cards")
     }
 
     /** 可用初版1：牌仍可见时连续两次相同候选即记账。 */
@@ -451,7 +454,7 @@ class CaptureProbeService : Service() {
 
     /** 截屏回调只缓存小 ROI；MNN 推理与记账均在清桌后进行。 */
     private fun captureRoiEvents(image: Image) {
-        val tableVisible = gameTableVisible(image)
+        val tableVisible = gameTableVisible(image, SystemClock.elapsedRealtime())
         val visibleZones = if (tableVisible) playZoneVisibility(image) else emptyMap()
         val generation = captureGeneration
         val now = SystemClock.elapsedRealtime()
@@ -574,6 +577,7 @@ class CaptureProbeService : Service() {
                     )
                 )
             }.onSuccess {
+                lastPlayRecordedAt = SystemClock.elapsedRealtime()
                 OverlayService.refresh(this)
                 Log.i(
                     TAG,
@@ -581,7 +585,14 @@ class CaptureProbeService : Service() {
                         "cardCount=${play.cardCount} cardsTotal=${play.cards.total()} generation=${play.generation}"
                 )
             }
-                .onFailure { Log.w(TAG, "PLAY_REJECTED reason=OUT_OF_STOCK", it) }
+                .onFailure {
+                    Log.w(
+                        TAG,
+                        "PLAY_REJECTED reason=OUT_OF_STOCK zone=${play.zone} seat=${play.zone.seat} " +
+                            "cards=${play.cards} cardCount=${play.cardCount}",
+                        it
+                    )
+                }
         }
     }
 
@@ -590,6 +601,7 @@ class CaptureProbeService : Service() {
         if (repository.state.phase != SessionPhase.ACTIVE) return
         runCatching { repository.dispatch(event) }
             .onSuccess {
+                lastPlayRecordedAt = SystemClock.elapsedRealtime()
                 OverlayService.refresh(this)
                 val cardsTotal = when (event) {
                     is GameEvent.SelfCardsPlayed -> event.cards.total()
@@ -602,7 +614,19 @@ class CaptureProbeService : Service() {
                         "cardCount=$cardCount cardsTotal=$cardsTotal generation=$captureGeneration"
                 )
             }
-            .onFailure { Log.w(TAG, "PLAY_REJECTED reason=OUT_OF_STOCK", it) }
+            .onFailure {
+                val rejectedCards = when (event) {
+                    is GameEvent.SelfCardsPlayed -> event.cards
+                    is GameEvent.OutsideCardsPlayed -> event.cards
+                    else -> RankCounts.zero()
+                }
+                Log.w(
+                    TAG,
+                    "PLAY_REJECTED reason=OUT_OF_STOCK zone=$zone seat=${zone.seat} " +
+                        "cards=$rejectedCards cardCount=$cardCount",
+                    it
+                )
+            }
     }
 
     private fun saveIssue(
@@ -710,11 +734,23 @@ class CaptureProbeService : Service() {
         hasVisibleCardArea(white, samples)
     }
 
-    private fun gameTableVisible(image: Image): Boolean =
-        listOf(500 to 200, 800 to 200).all { (x, y) ->
+    /** 桌面判定：多点采样中央桌面区域，绿点占比 >=60%，或最近 5 秒内有出牌活动即视为可见。 */
+    private fun gameTableVisible(image: Image, now: Long): Boolean {
+        val samplePoints = listOf(
+            480 to 170, 640 to 170, 800 to 170,
+            420 to 240, 640 to 240, 860 to 240,
+            520 to 310, 760 to 310
+        )
+        val greenCount = samplePoints.count { (x, y) ->
             val color = rgb(image, x, y)
             isTableGreen(color[0], color[1], color[2])
         }
+        return isTableVisibleBySamples(
+            greenCount,
+            samplePoints.size,
+            now - lastPlayRecordedAt <= TABLE_ACTIVITY_GRACE_MS
+        )
+    }
 
     private fun resetSessionTracking(firstPlayIsArmed: Boolean) {
         if (!firstPlayIsArmed) primeSamplesRemaining = 0
@@ -734,6 +770,8 @@ class CaptureProbeService : Service() {
         lastRoiSampleAt = 0L
         firstPlayArmed = firstPlayIsArmed
         lastStablePrePlayHand = null
+        lastStablePositionCount = 0
+        lastPlayRecordedAt = 0L
         firstPlayGate.reset()
         rankHandler.post {
             lastRankCandidate = null
@@ -785,6 +823,7 @@ class CaptureProbeService : Service() {
         private const val ROI_SAMPLE_INTERVAL_MS = 50L
         private const val FINALIZE_FRAME_COUNT = 3
         private const val RESTART_TABLE_GRACE_MS = 2_000L
+        private const val TABLE_ACTIVITY_GRACE_MS = 5_000L
         private const val HAND_YOLO_LEFT = 180
         private const val HAND_YOLO_RIGHT = 1_050
         private const val HAND_YOLO_TOP = 350
