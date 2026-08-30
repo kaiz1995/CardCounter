@@ -74,6 +74,29 @@ class StablePlayGateTest {
     }
 
     @Test
+    fun acceptsSameCardsAgainOutsideFiveHundredMsWindow() {
+        val gate = StablePlayGate()
+        assertEquals(StablePlay(PlayZone.TOP, fives, 4), gate.acceptStable(PlayZone.TOP, fives, 4, 1_000L))
+        assertNull(gate.acceptStable(PlayZone.TOP, fives, 4, 1_499L))
+        assertEquals(StablePlay(PlayZone.TOP, fives, 4), gate.acceptStable(PlayZone.TOP, fives, 4, 1_500L))
+    }
+
+    @Test
+    fun arbitratesSelfPlayToMatchingRecentOutsideZone() {
+        val recent = mapOf(
+            PlayZone.LEFT_TOP to (fives to 1_000L),
+            PlayZone.RIGHT_BOTTOM to (RankCounts.of(mapOf(Rank.KING to 1)) to 800L)
+        )
+        assertEquals(PlayZone.LEFT_TOP, arbitrateSelfPlay(fives, recent, nowMs = 1_200L))
+        // 无匹配牌面
+        assertNull(arbitrateSelfPlay(RankCounts.of(mapOf(Rank.NINE to 1)), recent, nowMs = 1_200L))
+        // 超过 300ms 窗口
+        assertNull(arbitrateSelfPlay(fives, recent, nowMs = 1_301L))
+        // 无候选记录
+        assertNull(arbitrateSelfPlay(fives, emptyMap(), nowMs = 1_000L))
+    }
+
+    @Test
     fun acceptsCorrectedTopReplacementSequenceWithoutMergingDifferentCandidates() {
         val gate = StablePlayGate()
         val sequence = listOf(

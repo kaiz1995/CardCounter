@@ -100,6 +100,12 @@ class MainActivity : Activity() {
             )
         })
 
+        addView(button("重新识别手牌") {
+            CaptureProbeService.relockHand(this@MainActivity)
+            OverlayService.refresh(this@MainActivity)
+            renderStatus()
+        })
+
         addView(button("新局重置") {
             repository.newGame()
             CaptureProbeService.resetSession(this@MainActivity)

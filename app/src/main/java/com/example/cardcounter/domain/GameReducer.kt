@@ -11,6 +11,7 @@ object GameReducer {
         val next = when (event) {
             is GameEvent.NewSession -> newSession(event)
             is GameEvent.SelfHandLocked -> lockHand(state, event)
+            is GameEvent.SelfHandRelocked -> relockHand(state, event)
             is GameEvent.OutsideCardsPlayed -> addOutsidePlay(state, event)
             is GameEvent.SelfCardsPlayed -> addSelfPlay(state, event)
             is GameEvent.Reverted -> revert(state, event)
@@ -48,6 +49,17 @@ object GameReducer {
         )
     }
 
+    /** 对局中重锁 H0：只替换基线手牌，保留外出与自己出牌账目。 */
+    private fun relockHand(state: GameState, event: GameEvent.SelfHandRelocked): GameState {
+        require(state.phase == SessionPhase.ACTIVE) { "仅在记牌中可重锁手牌" }
+        require(event.cards.total() > 0) { "自己手牌不能为空" }
+        require(event.cards.fitsWithin(Rank.initialInventory)) { "自己手牌超过固定库存" }
+        return state.copy(
+            selfLockedHand = event.cards,
+            events = state.events + event
+        )
+    }
+
     private fun addOutsidePlay(state: GameState, event: GameEvent.OutsideCardsPlayed): GameState {
         require(state.phase == SessionPhase.ACTIVE) { "当前不接受自动出牌事件" }
         require(event.cardCount > 0) { "出牌张数必须为正数" }
@@ -71,9 +83,6 @@ object GameReducer {
     private fun addSelfPlay(state: GameState, event: GameEvent.SelfCardsPlayed): GameState {
         require(state.phase == SessionPhase.ACTIVE) { "当前不接受自己出牌事件" }
         require(event.cards.total() > 0) { "自己出牌张数必须为正数" }
-        val handRemaining = state.selfLockedHand?.minus(state.selfPlayed)
-            ?: error("未锁定自己手牌")
-        require(event.cards.fitsWithin(handRemaining)) { "自己出牌超过剩余手牌" }
         return state.copy(
             selfPlayed = state.selfPlayed.plus(event.cards),
             selfPlayedCount = state.selfPlayedCount + event.cards.total(),

@@ -16,6 +16,12 @@ sealed interface GameEvent {
         override val id: String = UUID.randomUUID().toString()
     ) : GameEvent
 
+    /** 对局中重新识别自己手牌并重锁 H0；只更新基线，不清外出账目。 */
+    data class SelfHandRelocked(
+        val cards: RankCounts,
+        override val id: String = UUID.randomUUID().toString()
+    ) : GameEvent
+
     data class OutsideCardsPlayed(
         val cards: RankCounts,
         override val id: String = UUID.randomUUID().toString(),

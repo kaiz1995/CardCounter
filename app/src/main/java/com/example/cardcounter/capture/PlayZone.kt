@@ -52,7 +52,8 @@ internal class StablePlayGate {
         val candidate: RankCounts? = null,
         val stableSamples: Int = 0,
         val emptySamples: Int = 0,
-        val accepted: RankCounts? = null
+        val accepted: RankCounts? = null,
+        val lastAcceptedAtMs: Long = 0L
     )
 
     private val states = PlayZone.entries.associateWith { ZoneState() }.toMutableMap()
@@ -81,13 +82,24 @@ internal class StablePlayGate {
         }
     }
 
-    /** Caller already established a stable batch; apply only accepted-value deduplication. */
-    fun acceptStable(zone: PlayZone, cards: RankCounts, cardCount: Int = cards.total()): StablePlay? {
+    /** Caller already established a stable batch; suppress only the same batch re-finalized within 500ms. */
+    fun acceptStable(
+        zone: PlayZone,
+        cards: RankCounts,
+        cardCount: Int = cards.total(),
+        nowMs: Long = 0L
+    ): StablePlay? {
         if (cards.total() == 0) return null
         require(cardCount > 0)
         val before = states.getValue(zone)
-        if (before.accepted == cards) return null
-        states[zone] = before.copy(candidate = cards, stableSamples = 0, emptySamples = 0, accepted = cards)
+        if (before.accepted == cards && nowMs - before.lastAcceptedAtMs < SAME_BATCH_WINDOW_MS) return null
+        states[zone] = before.copy(
+            candidate = cards,
+            stableSamples = 0,
+            emptySamples = 0,
+            accepted = cards,
+            lastAcceptedAtMs = nowMs
+        )
         return StablePlay(zone, cards, cardCount)
     }
 
@@ -102,8 +114,19 @@ internal class StablePlayGate {
 
     private companion object {
         const val CLEAR_SAMPLES = 6
+        const val SAME_BATCH_WINDOW_MS = 500L
     }
 }
+
+/** SELF 区检测到的牌若与最近外部区入账牌完全一致且在时间窗内，判定为对家牌误入 SELF 区。 */
+internal fun arbitrateSelfPlay(
+    selfCards: RankCounts,
+    recentOutside: Map<PlayZone, Pair<RankCounts, Long>>,
+    nowMs: Long,
+    windowMs: Long = 300
+): PlayZone? = recentOutside.entries
+    .firstOrNull { it.value.first == selfCards && nowMs - it.value.second <= windowMs }
+    ?.key
 
 internal fun stableUnknownCount(previous: Int, cardsVisible: Boolean, cards: RankCounts): Int = when {
     !cardsVisible || cards.total() > 0 -> 0

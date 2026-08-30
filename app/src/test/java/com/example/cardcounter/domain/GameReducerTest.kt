@@ -125,14 +125,41 @@ class GameReducerTest {
     }
 
     @Test
-    fun rejectsSelfPlayBeyondLockedHandConservation() {
+    fun selfPlayBeyondLockedHandIsAuditedNotRejected() {
         val locked = lock(mapOf(Rank.ACE to 2))
-        assertThrows(IllegalArgumentException::class.java) {
+        val state = GameReducer.apply(
+            locked,
+            GameEvent.SelfCardsPlayed(RankCounts.of(mapOf(Rank.ACE to 3)))
+        )
+        // 自己出牌只做审计，即使超过 H0 某 rank 也照常入账，不做库存闸门。
+        assertEquals(3, state.selfPlayed[Rank.ACE])
+        assertEquals(3, state.selfPlayedCount)
+        assertEquals(14, state.outsideRemaining?.get(Rank.ACE))
+    }
+
+    @Test
+    fun relockHandInActivePhaseKeepsLedgersAndRecomputesRemaining() {
+        val active = lock(mapOf(Rank.ACE to 2))
+        val played = GameReducer.apply(
             GameReducer.apply(
-                locked,
-                GameEvent.SelfCardsPlayed(RankCounts.of(mapOf(Rank.ACE to 3)))
+                active,
+                GameEvent.SelfCardsPlayed(RankCounts.of(mapOf(Rank.ACE to 1)), "relock-self")
+            ),
+            GameEvent.OutsideCardsPlayed(
+                RankCounts.of(mapOf(Rank.ACE to 2)),
+                id = "relock-outside"
             )
-        }
+        )
+        val relocked = GameReducer.apply(
+            played,
+            GameEvent.SelfHandRelocked(RankCounts.of(mapOf(Rank.ACE to 2)), "relock-h0")
+        )
+        // 重锁只换 H0 基线，外出与自出审计保留，outsideRemaining 按新 H0 重算。
+        assertEquals(SessionPhase.ACTIVE, relocked.phase)
+        assertEquals(2, relocked.selfLockedHand?.get(Rank.ACE))
+        assertEquals(1, relocked.selfPlayed[Rank.ACE])
+        assertEquals(2, relocked.outsidePlayed[Rank.ACE])
+        assertEquals(12, relocked.outsideRemaining?.get(Rank.ACE))
     }
 
     @Test

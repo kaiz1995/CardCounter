@@ -70,6 +70,7 @@ class SessionStore(context: Context) {
         .also { json ->
             when (event) {
                 is GameEvent.SelfHandLocked -> json.put("cards", encodeCounts(event.cards))
+                is GameEvent.SelfHandRelocked -> json.put("cards", encodeCounts(event.cards))
                 is GameEvent.OutsideCardsPlayed -> {
                     json.put("cards", encodeCounts(event.cards))
                     event.seat?.let { json.put("seat", it.name) }
@@ -87,6 +88,7 @@ class SessionStore(context: Context) {
         return when (json.getString("type")) {
             "NewSession" -> GameEvent.NewSession(id)
             "SelfHandLocked" -> GameEvent.SelfHandLocked(decodeCounts(json.getJSONObject("cards")), id)
+            "SelfHandRelocked" -> GameEvent.SelfHandRelocked(decodeCounts(json.getJSONObject("cards")), id)
             "OutsideCardsPlayed" -> GameEvent.OutsideCardsPlayed(
                 decodeCounts(json.getJSONObject("cards")),
                 id,

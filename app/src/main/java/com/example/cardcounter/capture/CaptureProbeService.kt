@@ -76,6 +76,7 @@ class CaptureProbeService : Service() {
     @Volatile private var lastStablePositionCount: Int = 0
     @Volatile private var lastPlayRecordedAt = 0L
     @Volatile private var primeSamplesRemaining = 0
+    @Volatile private var lastOutsideFinalized = emptyMap<PlayZone, Pair<RankCounts, Long>>()
     private val firstPlayGate = FirstPlayBoundaryGate()
 
     override fun onCreate() {
@@ -98,6 +99,13 @@ class CaptureProbeService : Service() {
             callbackHandler.post {
                 resetSessionTracking(firstPlayIsArmed = false)
                 Log.i(TAG, "SESSION_TRACKING_RESET")
+            }
+            return START_NOT_STICKY
+        }
+        if (intent?.action == ACTION_RELOCK_HAND) {
+            callbackHandler.post {
+                resetSessionTracking(firstPlayIsArmed = false)
+                Log.i(TAG, "HAND_RELOCK_REQUESTED")
             }
             return START_NOT_STICKY
         }
@@ -380,10 +388,14 @@ class CaptureProbeService : Service() {
     private fun lockPrePlayHand() {
         val cards = lastStablePrePlayHand ?: return
         val repository = SessionRepository(this)
-        if (repository.state.phase != SessionPhase.PRE_PLAY) return
-        repository.dispatch(GameEvent.SelfHandLocked(cards))
+        val relock = repository.state.phase == SessionPhase.ACTIVE
+        if (repository.state.phase != SessionPhase.PRE_PLAY && !relock) return
+        repository.dispatch(
+            if (relock) GameEvent.SelfHandRelocked(cards) else GameEvent.SelfHandLocked(cards)
+        )
         OverlayService.refresh(this)
-        Log.i(TAG, "SELF_HAND_LOCKED total=${cards.total()} positionCount=$lastStablePositionCount cards=$cards")
+        val tag = if (relock) "SELF_HAND_RELOCKED" else "SELF_HAND_LOCKED"
+        Log.i(TAG, "$tag total=${cards.total()} positionCount=$lastStablePositionCount cards=$cards")
     }
 
     /** 可用初版1：牌仍可见时连续两次相同候选即记账。 */
@@ -499,7 +511,18 @@ class CaptureProbeService : Service() {
 
     private fun finalizeRoiEvent(finalized: RoiPlayEventCache.Finalized<RoiFrame>) {
         try {
-            if (finalized.generation != captureGeneration || !firstPlayArmed) return
+            if (finalized.generation != captureGeneration || !firstPlayArmed) {
+                if (finalized.generation != captureGeneration) {
+                    Log.i(
+                        TAG,
+                        "FINALIZE_SKIP reason=GENERATION_MISMATCH zone=${finalized.zone} " +
+                            "generation=${finalized.generation} current=$captureGeneration"
+                    )
+                } else {
+                    Log.i(TAG, "FINALIZE_SKIP reason=NOT_ARMED zone=${finalized.zone}")
+                }
+                return
+            }
             val templateCards = finalized.frames.maxByOrNull(RoiFrame::quality)?.let { frame ->
                 handRankMatcher.detectPlay(handRankMatcher.prepare(frame.templateInk), finalized.zone)
             } ?: RankCounts.zero()
@@ -533,13 +556,36 @@ class CaptureProbeService : Service() {
                 return
             }
             val repository = SessionRepository(this)
-            if (repository.state.phase != SessionPhase.ACTIVE) return
-            val stable = stablePlayGate.acceptStable(finalized.zone, cards, winner!!.value.first().cardCount) ?: return
+            if (repository.state.phase != SessionPhase.ACTIVE) {
+                Log.i(
+                    TAG,
+                    "DISPATCH_SKIP reason=NOT_ACTIVE phase=${repository.state.phase} zone=${finalized.zone}"
+                )
+                return
+            }
+            val stable = stablePlayGate.acceptStable(
+                finalized.zone,
+                cards,
+                winner!!.value.first().cardCount,
+                SystemClock.elapsedRealtime()
+            )
+            if (stable == null) {
+                Log.i(TAG, "FINALIZE_SKIP reason=DEDUP_HIT zone=${finalized.zone} cards=${cards}")
+                return
+            }
+            val nowMs = SystemClock.elapsedRealtime()
             if (stable.zone.source == PlaySource.SELF) {
+                val outsideZone = arbitrateSelfPlay(stable.cards, lastOutsideFinalized, nowMs)
+                if (outsideZone != null) {
+                    // 对家牌误入 SELF 区且外部区已入账：丢弃本次 SELF 幻影，避免重复扣外面。
+                    Log.i(TAG, "ARBITRATED_DROP source=SELF->$outsideZone cards=${stable.cards}")
+                    return
+                }
                 dispatchGameEvent(GameEvent.SelfCardsPlayed(stable.cards), stable.zone, stable.cardCount)
                 return
             }
             // 留存实际入账的公开牌 ROI；仅供下一局逐张核验，不影响计数。
+            lastOutsideFinalized = lastOutsideFinalized + (finalized.zone to (stable.cards to nowMs))
             saveIssue(finalized, "ACCEPTED", candidates)
             val offeredAt = SystemClock.elapsedRealtime()
             val offered = publicPlayCountAggregator.offer(
@@ -564,7 +610,10 @@ class CaptureProbeService : Service() {
     private fun dispatchCountedPlays(plays: List<CountedPlay>) {
         if (captureGeneration <= 0L) return
         val repository = SessionRepository(this)
-        if (repository.state.phase != SessionPhase.ACTIVE) return
+        if (repository.state.phase != SessionPhase.ACTIVE) {
+            Log.i(TAG, "DISPATCH_SKIP reason=NOT_ACTIVE phase=${repository.state.phase}")
+            return
+        }
         plays.forEach { play ->
             if (play.generation != captureGeneration) return@forEach
             if (play.zone.source != PlaySource.OUTSIDE) return@forEach
@@ -598,7 +647,10 @@ class CaptureProbeService : Service() {
 
     private fun dispatchGameEvent(event: GameEvent, zone: PlayZone, cardCount: Int) {
         val repository = SessionRepository(this)
-        if (repository.state.phase != SessionPhase.ACTIVE) return
+        if (repository.state.phase != SessionPhase.ACTIVE) {
+            Log.i(TAG, "DISPATCH_SKIP reason=NOT_ACTIVE phase=${repository.state.phase} zone=$zone")
+            return
+        }
         runCatching { repository.dispatch(event) }
             .onSuccess {
                 lastPlayRecordedAt = SystemClock.elapsedRealtime()
@@ -772,6 +824,7 @@ class CaptureProbeService : Service() {
         lastStablePrePlayHand = null
         lastStablePositionCount = 0
         lastPlayRecordedAt = 0L
+        lastOutsideFinalized = emptyMap()
         firstPlayGate.reset()
         rankHandler.post {
             lastRankCandidate = null
@@ -810,6 +863,7 @@ class CaptureProbeService : Service() {
         private const val EXTRA_RESULT_CODE = "result_code"
         private const val EXTRA_DATA = "projection_data"
         private const val ACTION_RESET_SESSION = "com.example.cardcounter.RESET_CAPTURE_SESSION"
+        private const val ACTION_RELOCK_HAND = "com.example.cardcounter.RELOCK_HAND"
         private const val REPORT_INTERVAL_MS = 1_000L
         private const val HAND_SAMPLE_INTERVAL_MS = 250L
         private const val STABLE_CHANGE_PERCENT = 1.5
@@ -843,6 +897,15 @@ class CaptureProbeService : Service() {
             ContextCompat.startForegroundService(
                 context,
                 Intent(context, CaptureProbeService::class.java).setAction(ACTION_RESET_SESSION)
+            )
+        }
+
+        /** 触发重新识别手牌：只重启用探测并重锁 H0，不 newGame、不清账。 */
+        fun relockHand(context: Context) {
+            if (!CaptureProbeStatus.snapshot().running) return
+            ContextCompat.startForegroundService(
+                context,
+                Intent(context, CaptureProbeService::class.java).setAction(ACTION_RELOCK_HAND)
             )
         }
     }
