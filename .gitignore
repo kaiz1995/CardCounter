@@ -14,3 +14,5 @@ releases/**/*-source.zip
 g2-analysis/
 *.mp4
 *.jpg
+.tmp*
+*.tmp
