@@ -82,7 +82,7 @@ internal class StablePlayGate {
         }
     }
 
-    /** Caller already established a stable batch; suppress only the same batch re-finalized within 500ms. */
+    /** Caller already established a stable batch; suppress the same batch until the zone clears. */
     fun acceptStable(
         zone: PlayZone,
         cards: RankCounts,
@@ -92,7 +92,7 @@ internal class StablePlayGate {
         if (cards.total() == 0) return null
         require(cardCount > 0)
         val before = states.getValue(zone)
-        if (before.accepted == cards && nowMs - before.lastAcceptedAtMs < SAME_BATCH_WINDOW_MS) return null
+        if (before.accepted == cards) return null
         states[zone] = before.copy(
             candidate = cards,
             stableSamples = 0,
@@ -114,7 +114,6 @@ internal class StablePlayGate {
 
     private companion object {
         const val CLEAR_SAMPLES = 6
-        const val SAME_BATCH_WINDOW_MS = 500L
     }
 }
 

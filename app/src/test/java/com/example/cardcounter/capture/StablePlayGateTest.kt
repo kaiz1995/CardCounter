@@ -74,11 +74,16 @@ class StablePlayGateTest {
     }
 
     @Test
-    fun acceptsSameCardsAgainOutsideFiveHundredMsWindow() {
+    fun suppressesSameCardsUntilZoneClearsRegardlessOfTimeWindow() {
         val gate = StablePlayGate()
         assertEquals(StablePlay(PlayZone.TOP, fives, 4), gate.acceptStable(PlayZone.TOP, fives, 4, 1_000L))
         assertNull(gate.acceptStable(PlayZone.TOP, fives, 4, 1_499L))
-        assertEquals(StablePlay(PlayZone.TOP, fives, 4), gate.acceptStable(PlayZone.TOP, fives, 4, 1_500L))
+        // 同牌停留超过 500ms 仍不应再次入账
+        assertNull(gate.acceptStable(PlayZone.TOP, fives, 4, 1_500L))
+        assertNull(gate.acceptStable(PlayZone.TOP, fives, 4, 10_000L))
+        // 经历一次完整清空(CLEAR_SAMPLES 次空帧)后再现,才能再次入账
+        repeat(6) { gate.update(PlayZone.TOP, RankCounts.zero()) }
+        assertEquals(StablePlay(PlayZone.TOP, fives, 4), gate.acceptStable(PlayZone.TOP, fives, 4, 11_000L))
     }
 
     @Test

@@ -257,7 +257,13 @@ class CaptureProbeService : Service() {
                             val positionCount = handCardPositionDetector.detect(luma)
                             val templateCards = handRankMatcher.detect(frame)
                             val yoloCards = handYoloFrame?.let(::detectYoloCards)
-                            val cards = yoloCards?.cards?.takeIf { isValidBaseline(positionCount, it) } ?: templateCards
+                            // H0 只信 YOLO:有效则用,无效则不锁定(宁可不锁,不锁错基线)。
+                            // YOLO 不可用时才回退模板兜底。
+                            val cards = if (yoloCards != null) {
+                                yoloCards.cards.takeIf { isValidBaseline(positionCount, it) } ?: RankCounts.zero()
+                            } else {
+                                templateCards
+                            }
                             if (revision != handRevision) return@post
                             stableRankCandidates = stableRankCandidateCount(
                                 lastRankCandidate,
@@ -552,6 +558,7 @@ class CaptureProbeService : Service() {
             }
             if (cards == null) {
                 saveIssue(finalized, "NO_CONSENSUS", candidates)
+                roiEventCache.retry(finalized.zone, finalized.generation)
                 Log.w(TAG, "ROI_NO_CONSENSUS zone=${finalized.zone} candidates=$candidates")
                 return
             }

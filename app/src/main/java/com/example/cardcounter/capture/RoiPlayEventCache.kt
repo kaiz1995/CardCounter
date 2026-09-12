@@ -65,6 +65,14 @@ internal class RoiPlayEventCache<T>(
         }
     }
 
+    /** 识别未达成共识后允许该区重新采样重试，避免一手牌被永久跳过。 */
+    @Synchronized
+    fun retry(zone: PlayZone, generation: Long) {
+        val state = states.getValue(zone)
+        if (state.generation != generation) return
+        state.reported = false
+    }
+
     @Synchronized
     fun observe(
         zone: PlayZone,
@@ -93,6 +101,7 @@ internal class RoiPlayEventCache<T>(
                     val frames = state.frames.toList()
                     state.frames.clear()
                     state.earlyInFlight = true
+                    state.reported = true
                     return Finalized(zone, frames, generation, early = true)
                 }
             } else if (frame != null) {
