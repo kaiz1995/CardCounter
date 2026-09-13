@@ -57,25 +57,54 @@
   - 已 push 至远端（`bf8e172..b48d18f`）
   - 预演报告：`plans/merge-main-preview-20260913.md`
 
+### 已完成（2026-09-13 补充）
+
+- **交付物补齐**：`releases/数量正向累计版/` 已补全三件套（APK + source.zip + README）：
+  - `card-counter-count-accuracy-debug.apk`（47,024,003 B）
+    SHA256 `81464A09403E55698CE674D45A51F2B81C8A0A161828F01E3306C8E438480A81`
+  - `cardcounter-数量正向累计版-source.zip`（35,279,529 B，`app/src` 全量 106 文件）
+    SHA256 `A237756A8A49E7938309FA4811787497835157F3D67E9949FC7D89367BD67112`
+  - README 补入交付物清单与校验；**README 已并入 main**（`11ae0c6`），
+    分支侧同步（`3dc9d9f` on `codex/count-accuracy`）
+- **`releases/上家误A证据版/`** APK 从 `rank-accuracy` worktree 复制到主仓库磁盘
+  （SHA256 与 README 记录一致：`8D0FE963...`）；该版本无 source.zip（原设计）
+- **备份归档**：`_git-rescue-20260913/release-数量正向累计版/` 与
+  `release-上家误A证据版/`（含 `SHA256SUMS.txt`）
+- **releases 现状（5 版）**：
+  | 版本 | README 入库 | 二进制在磁盘 |
+  |---|---|---|
+  | 可用初版1 | ✅ | ✅ APK + source.zip |
+  | 可用初版2 | ✅ | ✅ APK + source.zip |
+  | 可用识别提升版 | ✅ | ✅ APK + source.zip（源包 328MB 异常大，含 build 产物） |
+  | 上家误A证据版 | ✅ | ✅ APK（无源包） |
+  | 数量正向累计版 | ✅ | ✅ APK + source.zip |
+
+> ⚠️ **注意**：所有 `.apk` / `-source.zip` 均被 `.gitignore`
+> （`releases/**/*.apk`、`releases/**/*-source.zip`）排除，**不入版本控制**，
+> 仅存本地磁盘。README 是入库的唯一记录，SHA256 用于完整性校验。
+
 ### 未完成
 
-1. **真机整局验证**：装 `b48d18f` 的 APK 跑一局，验证 `FORMAL_PLAY` 数 = 实际出牌次数。
+1. **真机整局验证**：装 `11ae0c6` 的 APK 跑一局，验证 `FORMAL_PLAY` 数 = 实际出牌次数。
 2. **G4 六区完整牌局验证**：未完成。
 3. **G5 生命周期整局验证**：未完成。
 4. **G6 真机完整牌局（15 Rank 最终正确率）**：未开始。
 5. **验收门槛未达成**：`handoff.md` 要求 30 局独立验证集 / 3000 标注事件，
    实际开发集仅 9 局。
 6. **老问题未修**：大王识别（`v0.3.0` 即记「大王完全没有被识别」）。
-7. **补交付物**：`releases/数量正向累计版/` 缺 APK + source.zip。
-8. **架构不一致**：`OverlayLayout.seatPanels`（v5 五座位全宽框）与 PlayZone 归一化六区
+7. **架构不一致**：`OverlayLayout.seatPanels`（v5 五座位全宽框）与 PlayZone 归一化六区
    两套坐标系并存。
+8. **主 worktree 索引异常**：索引指向空树（`git status` 显示大量 `A`），
+   但 173 条目与工作区文件完好，无数据风险。
+9. **`可用识别提升版` 源包异常**：328MB，含 build 产物与 `.git` 类内容，
+   与另两版的 `src/` 结构不一致，建议重打包。
 
 ### 下一步顺序
 
-1. 装 `b48d18f` 的 APK 跑一局真机，验证 `FORMAL_PLAY` 数 = 实际出牌次数。
-2. 补 `releases/数量正向累计版` 的 APK + source.zip。
-3. 清理合并用 worktree `_merge-main` 与主 worktree 的索引异常。
-4. 推进 G4 六区完整牌局验证。
+1. 装 `11ae0c6` 的 APK 跑一局真机，验证 `FORMAL_PLAY` 数 = 实际出牌次数。
+2. 推进 G4 六区完整牌局验证。
+3. 统一 `OverlayLayout.seatPanels` 与 PlayZone 两套坐标系。
+4. 修复主 worktree 索引异常；重打包 `可用识别提升版` 源包。
 
 ## 历史记录（2026-08-01 及以前，保留原口径）
 
