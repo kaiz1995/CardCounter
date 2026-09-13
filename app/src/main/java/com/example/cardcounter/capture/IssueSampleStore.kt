@@ -6,6 +6,7 @@ import android.util.Log
 import java.io.File
 import java.util.concurrent.Executors
 import org.json.JSONObject
+import org.json.JSONArray
 
 /** 只留存无法自动确认的公开牌 ROI，供后续人工标注；绝不保存整屏。 */
 internal class IssueSampleStore(context: Context) : AutoCloseable {
@@ -39,6 +40,36 @@ internal class IssueSampleStore(context: Context) : AutoCloseable {
         }
     }
 
+    fun saveAceAudit(
+        bitmaps: List<Bitmap>,
+        zone: PlayZone,
+        candidates: List<RankCountsCandidate>,
+        templateCards: com.example.cardcounter.domain.RankCounts,
+        winner: com.example.cardcounter.domain.RankCounts,
+        generation: Long,
+        timeMs: Long
+    ) {
+        val copies = bitmaps.take(3).map { it.copy(Bitmap.Config.ARGB_8888, false) }
+        executor.execute {
+            runCatching {
+                root.mkdirs(); trim()
+                val directory = File(root, "${System.currentTimeMillis()}_${zone.name}_LEFT_BOTTOM_ACE_AUDIT")
+                check(directory.mkdirs()) { "无法创建ACE审计目录" }
+                copies.forEachIndexed { index, copy ->
+                    File(directory, "roi_$index.png").outputStream().use { out ->
+                        check(copy.compress(Bitmap.CompressFormat.PNG, 100, out)) { "无法写入审计ROI" }
+                    }
+                }
+                val model = aceAuditMetadata(zone, generation, timeMs, winner, candidates)
+                JSONObject().put("zone", model.zone).put("reason", "LEFT_BOTTOM_ACE_AUDIT").put("generation", model.generation).put("timeMs", model.timeMs).put("winner", rankCountsJson(model.winner)).put("candidates", JSONArray().apply {
+                    model.candidates.forEach { c -> put(JSONObject().put("fusedCards", rankCountsJson(c.fusedCards)).put("yoloCards", rankCountsJson(c.yoloCards)).put("templateCards", rankCountsJson(c.templateCards)).put("minimumConfidence", c.minimumConfidence).put("cardCount", c.cardCount)) }
+                })
+                    .toString().let { File(directory, "meta.json").writeText(it) }
+            }.onFailure { Log.w(TAG, "ACE_AUDIT_SAVE_FAILED", it) }
+            copies.forEach(Bitmap::recycle)
+        }
+    }
+
     private fun trim() {
         val directories = root.listFiles()?.filter(File::isDirectory)
             ?.sortedBy(File::lastModified).orEmpty()
@@ -56,7 +87,27 @@ internal class IssueSampleStore(context: Context) : AutoCloseable {
     }
 }
 
+internal fun aceAuditMetadata(
+    zone: PlayZone, generation: Long, timeMs: Long,
+    winner: com.example.cardcounter.domain.RankCounts,
+    candidates: List<RankCountsCandidate>
+): AceAuditMetadata = AceAuditMetadata(zone.name, generation, timeMs, winner, candidates.map {
+    AceAuditCandidateMetadata(it.cards, it.yoloCards, it.templateCards, it.minimumConfidence, it.cardCount)
+})
+
+internal data class AceAuditMetadata(val zone: String, val generation: Long, val timeMs: Long, val winner: com.example.cardcounter.domain.RankCounts, val candidates: List<AceAuditCandidateMetadata>)
+internal data class AceAuditCandidateMetadata(val fusedCards: com.example.cardcounter.domain.RankCounts, val yoloCards: com.example.cardcounter.domain.RankCounts, val templateCards: com.example.cardcounter.domain.RankCounts, val minimumConfidence: Float, val cardCount: Int)
+
+internal fun rankCountsJson(cards: com.example.cardcounter.domain.RankCounts): JSONObject =
+    JSONObject(rankCountsMap(cards))
+
+internal fun rankCountsMap(cards: com.example.cardcounter.domain.RankCounts): Map<String, Int> =
+    cards.asMap().mapKeys { it.key.name }
+
 internal data class RankCountsCandidate(
     val cards: com.example.cardcounter.domain.RankCounts,
-    val minimumConfidence: Float
+    val minimumConfidence: Float,
+    val yoloCards: com.example.cardcounter.domain.RankCounts,
+    val templateCards: com.example.cardcounter.domain.RankCounts,
+    val cardCount: Int
 )

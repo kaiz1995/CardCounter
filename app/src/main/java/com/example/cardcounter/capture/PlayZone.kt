@@ -2,6 +2,7 @@ package com.example.cardcounter.capture
 
 import com.example.cardcounter.domain.GameEvent
 import com.example.cardcounter.domain.RankCounts
+import com.example.cardcounter.domain.Rank
 import com.example.cardcounter.domain.OutsideSeat
 import kotlin.math.roundToInt
 
@@ -138,8 +139,13 @@ internal fun canFastConfirmPlay(cards: RankCounts, minimumConfidence: Float): Bo
     cards.total() >= 3 && minimumConfidence >= 0.60f
 
 /** 单张以全屏固定牌角模板为准；ROI 模板未校准，不能参与此处融合。 */
-internal fun fuseSinglePublicPlay(model: RankCounts, template: RankCounts): RankCounts =
-    if (model.total() == 1 && template.total() == 1) template else model
+internal fun fuseSinglePublicPlay(zone: PlayZone, model: RankCounts, template: RankCounts): RankCounts =
+    if (model.total() == 1 && template.total() == 1 &&
+        !(zone == PlayZone.LEFT_BOTTOM && template[Rank.ACE] > 0 && model[Rank.ACE] == 0)
+    ) template else model
+
+internal fun shouldAuditAce(zone: PlayZone, cards: RankCounts): Boolean =
+    zone == PlayZone.LEFT_BOTTOM && cards[com.example.cardcounter.domain.Rank.ACE] > 0
 
 /** 牌桌动画会短暂露出无法识别的牌面；连续三次才按未知牌暂停。 */
 internal fun isStableUnknownPlay(samples: Int): Boolean = samples >= 3

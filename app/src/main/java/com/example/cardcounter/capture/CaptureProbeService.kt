@@ -554,8 +554,8 @@ class CaptureProbeService : Service() {
                 .mapNotNull { frame ->
                     detectYoloCards(frame.bitmap, publicPlay = true)?.let {
                         RankCountsCandidate(
-                            cards = fuseSinglePublicPlay(it.cards, templateCards),
-                            minimumConfidence = it.minimumConfidence
+                            cards = fuseSinglePublicPlay(finalized.zone, it.cards, templateCards), minimumConfidence = it.minimumConfidence,
+                            yoloCards = it.cards, templateCards = templateCards, cardCount = it.cards.total()
                         )
                     }
                 }
@@ -578,6 +578,10 @@ class CaptureProbeService : Service() {
             val repository = SessionRepository(this)
             if (repository.state.phase != SessionPhase.ACTIVE) return
             val stable = stablePlayGate.acceptStable(finalized.zone, cards) ?: return
+            if (shouldAuditAce(finalized.zone, stable.cards)) {
+                issueSampleStore.saveAceAudit(finalized.frames.map { it.bitmap }, finalized.zone, candidates,
+                    templateCards, stable.cards, finalized.generation, SystemClock.elapsedRealtime())
+            }
             val event = stable.toGameEvent()
             runCatching { repository.dispatch(event) }
                 .onSuccess {
