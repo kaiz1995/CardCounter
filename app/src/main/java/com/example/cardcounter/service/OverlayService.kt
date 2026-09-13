@@ -35,9 +35,14 @@ class OverlayService : Service() {
     private var resetControl: TextView? = null
     private var hidden = false
 
+    private val overlayPrefs by lazy {
+        getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+    }
+
     override fun onCreate() {
         super.onCreate()
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+        hidden = overlayPrefs.getBoolean(KEY_OVERLAY_HIDDEN, false)
         createChannel()
         startForeground(NOTIFICATION_ID, notification())
     }
@@ -48,7 +53,7 @@ class OverlayService : Service() {
             ACTION_SHOW -> setHidden(false)
             ACTION_HIDE -> setHidden(true)
         }
-        counter?.render(SessionRepository(this).state)
+        counter?.render(SessionRepository.get(this).state)
         return START_STICKY
     }
 
@@ -59,6 +64,7 @@ class OverlayService : Service() {
         counter = null
         hideControl = null
         resetControl = null
+        runCatching { SessionRepository.get(this).flush() }
         super.onDestroy()
     }
 
@@ -69,7 +75,7 @@ class OverlayService : Service() {
         counter = CounterOverlayView(this).also { view ->
             windowManager.addView(view, fullScreenParams())
         }
-        hideControl = control("隐藏").also { view ->
+        hideControl = control(if (hidden) "显示" else "隐藏").also { view ->
             view.setOnClickListener { setHidden(!hidden) }
             windowManager.addView(view, controlParams(OverlayLayout.hideButton))
         }
@@ -77,10 +83,14 @@ class OverlayService : Service() {
             installResetLongPress(view)
             windowManager.addView(view, controlParams(OverlayLayout.resetButton))
         }
+        // 服务重建后恢复上次的隐藏状态；hideControl 始终可见以便点回来。
+        counter?.visibility = if (hidden) View.GONE else View.VISIBLE
+        resetControl?.visibility = if (hidden) View.GONE else View.VISIBLE
     }
 
     private fun setHidden(value: Boolean) {
         hidden = value
+        overlayPrefs.edit().putBoolean(KEY_OVERLAY_HIDDEN, value).apply()
         counter?.visibility = if (value) View.GONE else View.VISIBLE
         resetControl?.visibility = if (value) View.GONE else View.VISIBLE
         hideControl?.text = if (value) "显示" else "隐藏"
@@ -178,6 +188,8 @@ class OverlayService : Service() {
         private const val CHANNEL_ID = "card_counter_overlay"
         private const val NOTIFICATION_ID = 1001
         private const val RESET_HOLD_MS = 800L
+        private const val PREFERENCES = "card_counter_overlay"
+        private const val KEY_OVERLAY_HIDDEN = "overlay_hidden"
         const val ACTION_SHOW = "com.example.cardcounter.SHOW"
         const val ACTION_REFRESH = "com.example.cardcounter.REFRESH"
         const val ACTION_HIDE = "com.example.cardcounter.HIDE"

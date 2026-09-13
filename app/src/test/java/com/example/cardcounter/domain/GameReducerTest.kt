@@ -1,6 +1,7 @@
 package com.example.cardcounter.domain
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Test
 
@@ -214,5 +215,89 @@ class GameReducerTest {
         assertEquals(SessionPhase.PAUSED, state.phase)
         assertEquals(PauseReason.NEW_GAME_UNCLEAR, state.pauseReason)
         assertEquals(0, state.outsidePlayedCount)
+    }
+
+    /** 正常对局：外面累计出牌远低于 198 - 自己手牌，不应触发暂停。 */
+    @Test
+    fun normalOutsidePlaysDoNotTripConservation() {
+        val active = GameReducer.apply(
+            GameReducer.newSession(),
+            GameEvent.SelfHandLocked(hand)
+        )
+        val state = GameReducer.apply(
+            active,
+            GameEvent.OutsideCardsPlayed(
+                RankCounts.of(mapOf(Rank.ACE to 3)),
+                seat = OutsideSeat.TOP,
+                cardCount = 3
+            )
+        )
+
+        assertEquals(SessionPhase.ACTIVE, state.phase)
+        assertNull(state.pauseReason)
+        assertEquals(3, state.outsidePlayedCount)
+        assertEquals(hand.total(), state.selfRemainingCount)
+    }
+
+    /** 自己出牌不占用「外面出牌」的额度，不应让外面出牌提前触发暂停。 */
+    @Test
+    fun selfPlaysDoNotConsumeOutsideConservationBudget() {
+        val active = GameReducer.apply(
+            GameReducer.newSession(),
+            GameEvent.SelfHandLocked(hand)
+        )
+        val selfPlayed = GameReducer.apply(
+            active,
+            GameEvent.SelfCardsPlayed(RankCounts.zero(), cardCount = 5)
+        )
+        val budget = Rank.initialInventory.total() - hand.total()
+        val state = GameReducer.apply(
+            selfPlayed,
+            GameEvent.OutsideCardsPlayed(
+                RankCounts.zero(),
+                seat = OutsideSeat.LEFT_TOP,
+                cardCount = budget - 1
+            )
+        )
+
+        assertEquals(SessionPhase.ACTIVE, state.phase)
+        assertEquals(budget - 1, state.outsidePlayedCount)
+    }
+
+    /**
+     * 重复入账：外面出牌累计超过 198 - 自己锁定手牌，说明某座位把同一手牌记了两次。
+     * 这必须暂停，而不是静默接受。
+     */
+    @Test
+    fun duplicateOutsideBookingTripsConservationAndPauses() {
+        val active = GameReducer.apply(
+            GameReducer.newSession(),
+            GameEvent.SelfHandLocked(hand)
+        )
+        val budget = Rank.initialInventory.total() - hand.total()
+        val first = GameReducer.apply(
+            active,
+            GameEvent.OutsideCardsPlayed(
+                RankCounts.zero(),
+                seat = OutsideSeat.TOP,
+                cardCount = budget
+            )
+        )
+        assertEquals(SessionPhase.ACTIVE, first.phase)
+
+        // 同上界再记一笔：物理上不可能，属于重复入账
+        val violated = GameReducer.apply(
+            first,
+            GameEvent.OutsideCardsPlayed(
+                RankCounts.zero(),
+                seat = OutsideSeat.TOP,
+                cardCount = 1
+            )
+        )
+
+        assertEquals(SessionPhase.PAUSED, violated.phase)
+        assertEquals(PauseReason.NEW_GAME_UNCLEAR, violated.pauseReason)
+        // 未接受的这一笔不计入账
+        assertEquals(budget, violated.outsidePlayedCount)
     }
 }

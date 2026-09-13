@@ -116,10 +116,25 @@ object GameReducer {
     private fun close(state: GameState, event: GameEvent.SessionClosed): GameState =
         state.copy(phase = SessionPhase.CLOSED, events = state.events + event)
 
+    /**
+     * 外界出牌入账前的守恒校验，替代直接 clamp。
+     *
+     * 保护的物理不变量：自己手里锁定的 [GameState.selfLockedHandCount] 张牌已经归属自己，
+     * 无论后续怎么出牌都不可能被外面打出去；因此外面累计出牌数存在硬上界
+     * `198 - selfLockedHandCount`（198 张只会分布在「外面已出 / 自己手里 / 外面手里」三处）。
+     *
+     * 何时触发：当本次要入账的 [outsideAdded] 张加进去后超过该上界，说明外面某个座位
+     * 被重复入账了（典型场景：同一手牌因牌面抖动/动画被识别两次），此时不做 clamp、
+     * 直接转入 PAUSED + NEW_GAME_UNCLEAR，交回用户确认。
+     *
+     * 注意：这里只校验"外面出牌"这一侧，不掺入 [GameState.selfPlayedCount]。
+     * 自己出牌是**从自己手牌转移到桌上弃牌堆**，仍然消耗在 198 张之内、且不会让外面出牌变多，
+     * 早先版本把 `selfPlayedCount` 与其抵消项同时塞进表达式，代数相消后恒成立、永不触发，
+     * 实际等同于没有校验。
+     */
     private fun withinConservation(state: GameState, outsideAdded: Int): Boolean {
         val locked = state.selfLockedHandCount ?: return false
-        return state.outsidePlayedCount + outsideAdded + state.selfPlayedCount +
-            (locked - state.selfPlayedCount) <= Rank.initialInventory.total()
+        return state.outsidePlayedCount + outsideAdded <= Rank.initialInventory.total() - locked
     }
 
     private fun pauseForConservation(state: GameState): GameState = state.copy(

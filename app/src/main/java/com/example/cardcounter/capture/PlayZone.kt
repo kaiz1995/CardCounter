@@ -6,7 +6,14 @@ import com.example.cardcounter.domain.Rank
 import com.example.cardcounter.domain.OutsideSeat
 import kotlin.math.roundToInt
 
-/** 固定皮肤的六个公开出牌区；中央仅代表自己，其余五区代表外面。 */
+/**
+ * 固定皮肤的六个公开出牌区；中央仅代表自己，其余五区代表外面。
+ *
+ * 坐标全部是**比例**（相对帧宽/帧高的 0..1 小数），由 [left]/[right]/[rankY] 乘上实际帧尺寸换算，
+ * 因此对任意分辨率自适应。这与 [com.example.cardcounter.ui.OverlayLayout] 的
+ * **设计像素**坐标是两套独立坐标系，互不相干：本坐标系用于**识别裁剪**（牌角窄带），
+ * OverlayLayout 用于**浮窗显示**（宽面板）。两套坐标只在「面板需水平覆盖识别带」这一点上有约束。
+ */
 enum class PlayZone(
     val source: PlaySource,
     val seat: OutsideSeat?,
@@ -112,6 +119,14 @@ internal class StablePlayGate {
     }
 }
 
+/**
+ * 连续「牌面可见但无法识别点数」的样本计数；牌面隐藏或识别成功都清零。
+ *
+ * **当前无生产调用方**，仅由 `StablePlayGateTest` 覆盖。它原本服务于已删除的
+ * `CaptureProbeService.detectFormalPlays` 路径；保留是因为它是幂等纯函数、
+ * 有单测锚定其语义，且 ROI 出牌路径若需「连续未知才跳过」的判定可直接复用。
+ * 不要误当作活代码。
+ */
 internal fun stableUnknownCount(previous: Int, cardsVisible: Boolean, cards: RankCounts): Int = when {
     !cardsVisible || cards.total() > 0 -> 0
     else -> previous + 1
@@ -147,5 +162,11 @@ internal fun fuseSinglePublicPlay(zone: PlayZone, model: RankCounts, template: R
 internal fun shouldAuditAce(zone: PlayZone, cards: RankCounts): Boolean =
     zone == PlayZone.LEFT_BOTTOM && cards[com.example.cardcounter.domain.Rank.ACE] > 0
 
-/** 牌桌动画会短暂露出无法识别的牌面；连续三次才按未知牌暂停。 */
+/**
+ * 牌桌动画会短暂露出无法识别的牌面；连续三次才按未知牌暂停。
+ *
+ * **当前无生产调用方**，仅由 `StablePlayGateTest` 覆盖。它原本服务于已删除的
+ * `CaptureProbeService.detectFormalPlays` 路径；保留是因为它是幂等纯函数、
+ * 有单测锚定其语义（连续 3 次未知才跳过），且 ROI 出牌路径可能复用。不要误当作活代码。
+ */
 internal fun isStableUnknownPlay(samples: Int): Boolean = samples >= 3

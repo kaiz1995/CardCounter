@@ -1,5 +1,7 @@
 .gradle/
 **/build/
+# Gradle 自定义构建输出目录（例如 app/tmp/build-acc）；**/build/ 只匹配名为 build 的目录，覆盖不到
+**/tmp/build-*/
 .kotlin/
 .idea/
 *.iml

@@ -36,6 +36,29 @@ import com.example.cardcounter.service.OverlayService
 import com.example.cardcounter.vision.MnnYoloDetector
 import kotlin.math.roundToInt
 
+/** 手牌 YOLO 画布布局：正方形画布边长取 ROI 宽度，ROI 以 padTop 为纵向起点。 */
+internal data class HandYoloLayout(
+    val canvasSize: Int,
+    val roiWidth: Int,
+    val roiHeight: Int,
+    val padTop: Int
+)
+
+internal fun handYoloCanvasLayout(
+    left: Int,
+    top: Int,
+    right: Int,
+    bottom: Int,
+    padTop: Int
+): HandYoloLayout {
+    val roiWidth = right - left
+    val roiHeight = bottom - top
+    require(roiWidth > 0 && roiHeight > 0) {
+        "手牌 ROI 尺寸非法：${roiWidth}x$roiHeight（left=$left top=$top right=$right bottom=$bottom）"
+    }
+    return HandYoloLayout(canvasSize = roiWidth, roiWidth = roiWidth, roiHeight = roiHeight, padTop = padTop)
+}
+
 /** 仅验证 MediaProjection 与帧流，不在此处实现视觉识别。 */
 class CaptureProbeService : Service() {
     private var projection: MediaProjection? = null
@@ -69,9 +92,10 @@ class CaptureProbeService : Service() {
     private var rankRevision = -1L
     private val rankProbeGate = SingleFlightGate()
     private val stablePlayGate = StablePlayGate()
-    private val unknownPlaySamples = PlayZone.entries.associateWith { 0 }.toMutableMap()
-    private val lastPlayCandidates = PlayZone.entries.associateWith<PlayZone, RankCounts?> { null }.toMutableMap()
     private val roiEventCache = RoiPlayEventCache<RoiFrame>(
+        // 交出后需连续 9 拍空帧才复位锁区（clearSamples 6 拍确认离场 + 额外 3 拍抑制抖动重入），
+        // 防止开点/换手动画里「牌闪现→被清掉→同牌再现」把同一手牌二次入账。
+        clearedCooldownExtra = ROI_CLEAR_COOLDOWN_SAMPLES,
         isStill = { previous, current -> roiFramesAreStill(previous.bitmap, current.bitmap) },
         discard = { it.bitmap.recycle() }
     )
@@ -133,6 +157,7 @@ class CaptureProbeService : Service() {
         roiEventCache.reset(++captureGeneration, primeExistingTable = false)
         issueSampleStore.close()
         CaptureProbeStatus.stopped()
+        runCatching { SessionRepository.get(this).flush() }
         callbackThread.quitSafely()
         rankThread.quitSafely()
         Log.i(TAG, "CAPTURE_STOPPED")
@@ -172,7 +197,7 @@ class CaptureProbeService : Service() {
             firstFrameAt = 0L
             lastReportAt = 0L
             lastReportFrames = 0L
-            val activeSession = SessionRepository(this).state.phase == SessionPhase.ACTIVE
+            val activeSession = SessionRepository.get(this).state.phase == SessionPhase.ACTIVE
             resetSessionTracking(firstPlayIsArmed = activeSession)
             primeSamplesRemaining = if (activeSession) RESTART_PRIME_SAMPLES else 0
             reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 3).also {
@@ -216,7 +241,6 @@ class CaptureProbeService : Service() {
                 val signature = handSignature(image)
                 val change = handChangePercent(lastHandSignature, signature)
                 stableHandSamples = if (change != null && change <= STABLE_CHANGE_PERCENT) stableHandSamples + 1 else 0
-                val signals = openingSignals(image)
                 val handChanged = change == null || change > STABLE_CHANGE_PERCENT
                 if (shouldInvalidatePrePlayHand(
                         firstPlayArmed,
@@ -237,7 +261,7 @@ class CaptureProbeService : Service() {
                     rankHandler.post { observeSelfHandCount(luma) }
                 }
 
-                when (firstPlayGate.update(signals, lastStablePrePlayHand != null)) {
+                when (firstPlayGate.update(lastStablePrePlayHand != null)) {
                     FirstPlayBoundary.LOCK -> {
                         firstPlayArmed = true
                         lockPrePlayHand()
@@ -371,33 +395,6 @@ class CaptureProbeService : Service() {
             .notify(NOTIFICATION_ID, notification(text))
     }
 
-    private fun openingSignals(image: Image): OpeningSignals {
-        val green = averageRgb(image, 510, 325, 600, 365)
-        val controlsVisible = green[1] > 180 && green[1] > green[0] + 40 && green[1] > green[2] + 70
-        var cardEdgeColumns = 0
-        for (x in 480..800 step 4) {
-            val belowWhite = (206..213).any { y -> isWhite(image, x, y) }
-            val aboveWhite = (194..202).any { y -> isWhite(image, x, y) }
-            if (belowWhite && !aboveWhite) cardEdgeColumns++
-        }
-        return OpeningSignals(controlsVisible, cardEdgeColumns >= 15)
-    }
-
-    private fun averageRgb(image: Image, left: Int, top: Int, right: Int, bottom: Int): IntArray {
-        val result = IntArray(3)
-        var samples = 0
-        for (y in top until bottom step 8) for (x in left until right step 10) {
-            val color = rgb(image, x, y)
-            result.indices.forEach { result[it] += color[it] }
-            samples++
-        }
-        result.indices.forEach { result[it] /= samples }
-        return result
-    }
-
-    private fun isWhite(image: Image, canonicalX: Int, canonicalY: Int): Boolean =
-        rgb(image, canonicalX, canonicalY).all { it >= 160 }
-
     private fun rgb(image: Image, canonicalX: Int, canonicalY: Int): IntArray {
         val plane = image.planes[0]
         val x = canonicalX * image.width / 1_280
@@ -408,7 +405,7 @@ class CaptureProbeService : Service() {
 
     private fun lockPrePlayHand() {
         val cards = lastStablePrePlayHand ?: return
-        val repository = SessionRepository(this)
+        val repository = SessionRepository.get(this)
         if (repository.state.phase != SessionPhase.PRE_PLAY) return
         repository.dispatch(GameEvent.SelfHandLocked(cards))
         OverlayService.refresh(this)
@@ -419,7 +416,7 @@ class CaptureProbeService : Service() {
     private fun completeManualNewGame(cards: RankCounts, handCount: Int) {
         if (!manualNewGameRequested || handCount <= 0) return
         manualNewGameRequested = false
-        val repository = SessionRepository(this)
+        val repository = SessionRepository.get(this)
         repository.newGame()
         repository.dispatch(GameEvent.SelfHandLocked(cards, cardCount = handCount))
         selfHandCountTracker.reset(handCount)
@@ -444,66 +441,6 @@ class CaptureProbeService : Service() {
                     Log.i(TAG, "SELF_HAND_SUSPECTED_NEW_GAME previous=${change.previous} current=${change.current}")
                 }
             }
-        }
-    }
-
-    /** 可用初版1：牌仍可见时连续两次相同候选即记账。 */
-    private fun detectFormalPlays(
-        ink: HandRankMatcher.InkFrame,
-        visiblePlayZones: Map<PlayZone, Boolean>,
-        yoloFrames: Map<PlayZone, Bitmap>,
-        tableVisible: Boolean
-    ) {
-        if (!tableVisible) return
-        val repository = SessionRepository(this)
-        if (repository.state.phase != SessionPhase.ACTIVE) return
-        val priming = primeSamplesRemaining > 0
-        PlayZone.entries.forEach { zone ->
-            val templateCards = handRankMatcher.detectPlay(ink, zone)
-            val yoloCards = yoloFrames[zone]?.let { detectYoloCards(it, publicPlay = true) }
-            val cards = yoloCards?.cards?.takeIf { it.total() > 0 } ?: templateCards
-            val visible = isPlayVisible(visiblePlayZones[zone] == true)
-            if (cards != lastPlayCandidates[zone]) {
-                Log.i(
-                    TAG,
-                    "PLAY_CANDIDATE zone=$zone visible=$visible yolo=$yoloCards template=$templateCards cards=$cards"
-                )
-                lastPlayCandidates[zone] = cards
-            }
-            if (!visible) {
-                stablePlayGate.update(zone, RankCounts.zero())
-                unknownPlaySamples[zone] = 0
-                return@forEach
-            }
-            if (priming) {
-                stablePlayGate.prime(zone, cards)
-                return@forEach
-            }
-            val unknownSamples = stableUnknownCount(unknownPlaySamples.getValue(zone), visible, cards)
-            unknownPlaySamples[zone] = unknownSamples
-            if (isStableUnknownPlay(unknownSamples)) {
-                stablePlayGate.update(zone, RankCounts.zero())
-                if (unknownSamples == UNKNOWN_SKIP_SAMPLES) {
-                    Log.w(TAG, "PLAY_SKIPPED_UNKNOWN zone=$zone")
-                }
-                return@forEach
-            }
-            val play = stablePlayGate.update(zone, cards) ?: return@forEach
-            val event = play.toGameEvent()
-            runCatching { repository.dispatch(event) }
-                .onSuccess {
-                    OverlayService.refresh(this)
-                    Log.i(TAG, "FORMAL_PLAY source=${play.zone.source} zone=${play.zone} cards=${play.cards}")
-                }
-                .onFailure {
-                    repository.dispatch(GameEvent.SessionPaused(PauseReason.RANK_UNSTABLE))
-                    OverlayService.refresh(this)
-                    Log.w(TAG, "SESSION_PAUSED reason=RANK_UNSTABLE", it)
-                }
-        }
-        if (priming) {
-            primeSamplesRemaining -= 1
-            if (primeSamplesRemaining == 0) Log.i(TAG, "PLAY_GATE_PRIMED_AFTER_RESTART")
         }
     }
 
@@ -575,7 +512,7 @@ class CaptureProbeService : Service() {
                 Log.w(TAG, "ROI_NO_CONSENSUS zone=${finalized.zone} candidates=$candidates")
                 return
             }
-            val repository = SessionRepository(this)
+            val repository = SessionRepository.get(this)
             if (repository.state.phase != SessionPhase.ACTIVE) return
             val stable = stablePlayGate.acceptStable(finalized.zone, cards) ?: return
             if (shouldAuditAce(finalized.zone, stable.cards)) {
@@ -649,9 +586,10 @@ class CaptureProbeService : Service() {
         detections.forEach { detection ->
             counts[detection.rank] = counts.getValue(detection.rank) + 1
         }
-        YoloCards(RankCounts.of(counts), detections.minOfOrNull { it.confidence } ?: 0f)
+        YoloCards(RankCounts.of(counts), aggregateConfidence(detections))
     }.onFailure { Log.w(TAG, "YOLO_PLAY_FAILED", it) }.getOrNull()
 
+    /** [minimumConfidence] 是整批检测的聚合置信度（平均值），不是单张最小值。 */
     private data class YoloCards(val cards: RankCounts, val minimumConfidence: Float)
 
     private fun publicPlayBitmap(image: Image, zone: PlayZone): Bitmap {
@@ -688,22 +626,37 @@ class CaptureProbeService : Service() {
         return output
     }
 
+    /**
+     * 把手牌 ROI（870×140）垂直居中放进 870×870 画布再交给 YOLO。
+     * 画布是正方形，横向上 ROI 与画布等宽，纵向上按 [HAND_YOLO_PAD_TOP] 偏移。
+     */
     private fun handYoloBitmap(image: Image): Bitmap {
-        val width = HAND_YOLO_RIGHT - HAND_YOLO_LEFT
-        val height = HAND_YOLO_BOTTOM - HAND_YOLO_TOP
-        val pixels = IntArray(width * width)
+        val layout = handYoloCanvasLayout(
+            left = HAND_YOLO_LEFT,
+            top = HAND_YOLO_TOP,
+            right = HAND_YOLO_RIGHT,
+            bottom = HAND_YOLO_BOTTOM,
+            padTop = HAND_YOLO_PAD_TOP
+        )
+        val roiWidth = layout.roiWidth
+        val roiHeight = layout.roiHeight
+        val canvasSize = layout.canvasSize
+        require(roiWidth <= canvasSize && layout.padTop + roiHeight <= canvasSize) {
+            "手牌 YOLO 画布放不下 ROI：roi=${roiWidth}x$roiHeight padTop=${layout.padTop} canvas=$canvasSize"
+        }
+        val pixels = IntArray(canvasSize * canvasSize)
         val plane = image.planes[0]
-        for (y in 0 until height) for (x in 0 until width) {
+        for (y in 0 until roiHeight) for (x in 0 until roiWidth) {
             val sourceX = (HAND_YOLO_LEFT + x) * image.width / 1_280
             val sourceY = (HAND_YOLO_TOP + y) * image.height / 578
             val offset = sourceY * plane.rowStride + sourceX * plane.pixelStride
             val red = plane.buffer.get(offset).toInt() and 0xff
             val green = plane.buffer.get(offset + 1).toInt() and 0xff
             val blue = plane.buffer.get(offset + 2).toInt() and 0xff
-            pixels[(HAND_YOLO_PAD_TOP + y) * width + x] =
+            pixels[(layout.padTop + y) * canvasSize + x] =
                 0xff000000.toInt() or (red shl 16) or (green shl 8) or blue
         }
-        return Bitmap.createBitmap(pixels, width, width, Bitmap.Config.ARGB_8888)
+        return Bitmap.createBitmap(pixels, canvasSize, canvasSize, Bitmap.Config.ARGB_8888)
     }
 
     private fun playZoneVisibility(image: Image): Map<PlayZone, Boolean> = PlayZone.entries.associateWith { zone ->
@@ -748,7 +701,7 @@ class CaptureProbeService : Service() {
         selfHandCountCandidate = null
         stableSelfHandCounts = 0
         selfHandCountTracker.reset(if (firstPlayIsArmed) {
-            SessionRepository(this).state.selfLockedHandCount
+            SessionRepository.get(this).state.selfLockedHandCount
         } else {
             null
         })
@@ -758,10 +711,6 @@ class CaptureProbeService : Service() {
             stableRankCandidates = 0
             rankRevision = -1L
             stablePlayGate.reset()
-            PlayZone.entries.forEach {
-                unknownPlaySamples[it] = 0
-                lastPlayCandidates[it] = null
-            }
         }
     }
 
@@ -800,8 +749,9 @@ class CaptureProbeService : Service() {
         private const val MANUAL_NEW_GAME_TIMEOUT_MS = 3_000L
         private const val PLAY_VISIBILITY_STEP = 8
         private const val PLAY_WHITE_LIMIT = 190
-        private const val UNKNOWN_SKIP_SAMPLES = 3
         private const val RESTART_PRIME_SAMPLES = 3
+        // 清空路径的后段额外冷却帧数；总计 = RoiPlayEventCache.clearSamples(6) + 本值(3) = 9 帧。
+        private const val ROI_CLEAR_COOLDOWN_SAMPLES = 3
         private const val ROI_SAMPLE_INTERVAL_MS = 50L
         private const val ROI_MOTION_SAMPLE_STEP = 3
         private const val ROI_MOTION_CHANNEL_DELTA = 12

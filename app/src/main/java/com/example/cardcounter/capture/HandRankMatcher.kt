@@ -107,6 +107,32 @@ class HandRankMatcher(context: Context) {
         return RankCounts.of(counts)
     }
 
+    /** 单行的原始候选峰；不做去重，去重交给调用方决定作用范围。 */
+    private fun findRaw(
+        ink: InkFrame,
+        y: Int,
+        templates: List<Template>,
+        minX: Int,
+        maxX: Int,
+        threshold: Double
+    ): List<Match> {
+        val peaks = mutableListOf<Match>()
+        for (x in minX..maxX) {
+            val scored = templates.mapNotNull { template ->
+                val minScore = template.minScore ?: threshold
+                val sceneInk = inkCount(ink, x, y, template.width, template.height)
+                if (!canReachInkRatio(sceneInk, template.inkCount, minScore)) null else {
+                    val score = score(ink, x, y, template)
+                    (template to score).takeIf { score >= minScore }
+                }
+            }
+            val best = scored.maxByOrNull { it.second } ?: continue
+            peaks += Match(x, best.first.rank, best.second)
+        }
+        return peaks
+    }
+
+    /** 单行内去重后再选峰；`findBestRow` 依赖该语义比较各行的得分。 */
     private fun find(
         ink: InkFrame,
         y: Int,
@@ -116,22 +142,11 @@ class HandRankMatcher(context: Context) {
         threshold: Double,
         maxCount: Int,
         minGap: Int = DEFAULT_MATCH_GAP
-    ): List<Match> {
-        val peaks = mutableListOf<Match>()
-        for (x in minX..maxX) {
-            val scored = templates.mapNotNull { template ->
-                val minScore = template.minScore ?: threshold
-                val sceneInk = inkCount(ink, x, y, template.width, template.height)
-                if (!canReachIoUThreshold(sceneInk, template.inkCount, minScore)) null else {
-                    val score = score(ink, x, y, template)
-                    (template to score).takeIf { score >= minScore }
-                }
-            }
-            val best = scored.maxByOrNull { it.second } ?: continue
-            peaks += Match(x, best.first.rank, best.second)
-        }
-        return selectDistinctMatches(peaks, maxCount, minGap)
-    }
+    ): List<Match> = selectDistinctMatches(
+        findRaw(ink, y, templates, minX, maxX, threshold),
+        maxCount,
+        minGap
+    )
 
     private fun findBestRow(
         ink: InkFrame,
@@ -146,6 +161,11 @@ class HandRankMatcher(context: Context) {
         .maxWithOrNull(compareBy<List<Match>> { matches -> matches.sumOf { it.score } }.thenBy { it.size })
         .orEmpty()
 
+    /**
+     * 跨行只在合并后去重一次。
+     * 若逐行先各自去重，同一张牌在两行的候选峰可能落在不同 x（偏差超过 minGap），
+     * 合并时无法判定为同一张牌，导致该牌被重复计数。
+     */
     private fun findAcrossRows(
         ink: InkFrame,
         ys: IntArray,
@@ -155,8 +175,8 @@ class HandRankMatcher(context: Context) {
         threshold: Double,
         maxCount: Int,
         minGap: Int = DEFAULT_MATCH_GAP
-    ): List<Match> = selectDistinctMatches(
-        ys.flatMap { y -> find(ink, y, templates, minX, maxX, threshold, maxCount, minGap) },
+    ): List<Match> = sweepAcrossRows(
+        ys.flatMap { y -> findRaw(ink, y, templates, minX, maxX, threshold) },
         maxCount,
         minGap
     )
@@ -265,7 +285,15 @@ class HandRankMatcher(context: Context) {
     private val maxTemplateHeight = (normal + jokers).maxOf { it.height }
 }
 
-internal fun canReachIoUThreshold(sceneInk: Int, templateInk: Int, threshold: Double): Boolean {
+/**
+ * 墨量比值的**宽松上界剪枝**，不是严格 IoU。
+ *
+ * 只比较 scene 与 template 的墨量 min/max 比值是否可能达到 threshold：
+ * 该比值是真实重叠率的上界（真 IoU 还需考虑空间位置对齐），因此比 IoU 更宽松，
+ * 不会误杀本可命中的候选，仅用于在 `score()` 之前快速跳过明显不可能的模板。
+ * 命名统一为 InkRatio 以免后续调参误当作 IoU 使用。
+ */
+internal fun canReachInkRatio(sceneInk: Int, templateInk: Int, threshold: Double): Boolean {
     if (sceneInk == 0 || templateInk == 0) return false
     return minOf(sceneInk, templateInk).toDouble() / maxOf(sceneInk, templateInk) >= threshold
 }
@@ -279,3 +307,14 @@ internal fun selectDistinctMatches(
         if (size < maxCount && none { kotlin.math.abs(it.x - candidate.x) <= minGap }) add(candidate)
     }
 }.sortedBy { it.x }
+
+/**
+ * 跨行候选的统一去重入口。
+ * 必须先把所有行的候选峰合并，再一次性按 x 去重；
+ * 逐行先各自去重会让同一张牌在两行选出不同 x，合并后无法识别为同一张。
+ */
+internal fun sweepAcrossRows(
+    candidates: List<HandRankMatcher.Match>,
+    maxCount: Int,
+    minGap: Int = 28
+): List<HandRankMatcher.Match> = selectDistinctMatches(candidates, maxCount, minGap)

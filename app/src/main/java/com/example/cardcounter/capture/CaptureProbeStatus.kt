@@ -2,6 +2,7 @@ package com.example.cardcounter.capture
 
 import com.example.cardcounter.domain.Rank
 import com.example.cardcounter.domain.RankCounts
+import com.example.cardcounter.vision.YoloDetection
 import java.util.concurrent.atomic.AtomicBoolean
 
 data class CaptureProbeSnapshot(
@@ -106,10 +107,15 @@ internal class SingleFlightGate {
     }
 }
 
-internal data class OpeningSignals(
-    val controlsVisible: Boolean,
-    val centerCardsVisible: Boolean
-)
+/**
+ * 整批检测的聚合置信度，取平均值。
+ * 不用 minOf：一批 12 张牌里只要有 1 张低置信，最小值就会把整批拉到阈值以下，
+ * 使 `canFastConfirmPlay` 的快速确认路径永远失效。
+ */
+internal fun aggregateConfidence(detections: List<YoloDetection>): Float {
+    if (detections.isEmpty()) return 0f
+    return detections.sumOf { it.confidence.toDouble() }.toFloat() / detections.size
+}
 
 internal enum class FirstPlayBoundary {
     NONE,
@@ -120,7 +126,7 @@ internal class FirstPlayBoundaryGate {
     private var readySamples = 0
     private var fired = false
 
-    fun update(signals: OpeningSignals, hasStableHand: Boolean): FirstPlayBoundary {
+    fun update(hasStableHand: Boolean): FirstPlayBoundary {
         if (fired) return FirstPlayBoundary.NONE
         readySamples = if (hasStableHand) readySamples + 1 else 0
         if (readySamples < 2) return FirstPlayBoundary.NONE
