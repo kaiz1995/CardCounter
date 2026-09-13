@@ -26,6 +26,8 @@
 | v6 会计重构 阶段2 手牌差分 | 完成 | `SelfHandCountTracker`（只诊断，不生成事件） |
 | v6 会计重构 阶段3 正数会计 | 完成 | 删 `PublicPlayCountAggregator`；守恒校验替代 clamp |
 | **分支合并 rank-accuracy → count-positive** | **完成** | **`d826447`，62/62 单测通过，已 push** |
+| **分支合并 count-positive → main** | **完成** | **合并 `b48d18f`，冲突仅 .gitignore，62/62 通过，已 push** |
+| 文档回写（progress/task_plan/findings） | 完成 | `94dae59`，含 3 份计划文档补入 |
 | G4 六区完整牌局验证 | 未完成 | 依赖真机整局 |
 | G5 生命周期整局验证 | 未完成 | 依赖真机整局 |
 | G6 真机完整牌局正确率 | 未开始 | 依赖 G1–G5 |
@@ -53,13 +55,13 @@ OutsideRemaining
 
 ## 下一阶段入口
 
-1. **`count-positive` → `main` 合并**：预计 8 处冲突
-   （CaptureProbeService / RoiPlayEventCache / GameReducer / GameState /
-   SessionStore / CounterOverlayView + 2 测试），需人工处理核心语义。
-2. **真机整局验证**：装 `d826447` 的 APK，验证 `FORMAL_PLAY` 数 = 实际出牌次数。
+1. ~~`count-positive` → `main` 合并~~ ✅ **已完成**（`b48d18f`，冲突仅 1 处 `.gitignore`）
+   —— 实际冲突远比预估的 8 处少，因为 `main` 侧零源码改动。详见 `plans/merge-main-preview-20260913.md`
+2. **真机整局验证**：装 `b48d18f`/`b6a196e` 的 APK，验证 `FORMAL_PLAY` 数 = 实际出牌次数。
 3. **补交付物**：`releases/数量正向累计版` 的 APK + source.zip。
 4. **G4 六区完整牌局**：扩大 Rank、五个外面区及清空后同牌重新布防覆盖。
 5. **G5/G6**：生命周期与正确率整局验证；`handoff.md` 门槛为 30 局独立验证集 / 3000 标注事件，实际开发集仅 9 局。
+6. **架构收尾**：统一 `OverlayLayout.seatPanels`（v5 五座位）与 PlayZone 归一化六区两套坐标系。
 
 ## 历史状态表（2026-08-01 原口径，保留）
 
