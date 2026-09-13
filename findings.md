@@ -1,5 +1,36 @@
 # 方案审查发现
 
+## 2026-09-13 项目状态审查与分支合并
+
+- **文档落后一个半月**：`progress.md` / `task_plan.md` / 本文件均停留在 2026-08-01 口径（G4 进行中），而代码实际已推进到 v6 会计重构 + 两轮修复方案落地。
+- **分支拓扑**：共同祖先 `8d98b21`(08-13, v0.3.0 基线) 后分裂两条正交线——
+  `codex/rank-accuracy`（识别层，13 提交，HEAD `1a2a768`）与
+  `codex/count-positive`（会计层，3 提交，HEAD `d79dd26`）。
+- **`codex/count-positive` 健康度验证**：`testDebugUnitTest --rerun-tasks` 全量重跑 **59/59 通过**（0 fail / 0 error）；`assembleDebug` 成功，APK 51,031,655 字节，SHA256 `b3ef5ed1c5c1a1d9f1da38340ce4d363c4fab820f8af60295a57aad6673ab01c`。
+- **冲突预演（`git merge-tree --write-tree --name-only`）**：
+  - `rank-accuracy ← count-positive` = **1 处冲突**（`CaptureProbeService.kt` 581-592 行）
+  - `positive-accumulate ← count-positive` = **8 处冲突**
+- **合并完成**：`rank-accuracy` → `codex/count-positive`，合并 commit **`d826447`**。
+  唯一冲突解法为「保留 `toGameEvent()` 重构 + 插入 `shouldAuditAce()` 审计块」，两者正交不互斥。
+  合并后单测 **62/62 通过**（`StablePlayGateTest` 19→22），已 push 至远端。
+- **v6 会计重构关键设计（阶段 3）**：删除 `PublicPlayCountAggregator`；
+  `GameReducer.addOutsidePlay` 由 `require(cards.fitsWithin(remaining))` 抛异常式 clamp
+  改为 `withinConservation()` 校验 + `pauseForConservation()` 暂停。
+  `GameState` 删 `selfPlayed: RankCounts`，改 `selfLockedHandCount: Int?` + `selfRemainingCount`。
+- **`SelfHandCountTracker`（阶段 2）**：53 行新组件，注释明确
+  「Confirms stable geometric hand counts for diagnostics only; never creates a play event.」，
+  含 `DecreaseObserved` / `ReboundIgnored` 两个 sealed 变体，**只诊断不生成事件**。
+- **审查纪律教训（本轮两次误报）**：
+  1. 第一轮把 `RoiPlayEventCache.retry()`、`arbitrateSelfPlay()`、`isPlayVisible()`、
+     `fuseSinglePublicPlay()`、`maxHandChangePercent` 判为死代码——**实际全部有调用点**
+     （561/585/422/489/541 行等 + 单测 + androidTest）。原因：只 grep 了 `CaptureProbeService.kt` 单文件。
+  2. 把 v6 阶段 2 判为「完全未实现」——实际在 `codex/count-positive` 已实现 3 个提交。原因：只看当前 HEAD 文件树，未扫其他分支。
+  **结论：审查必须先全仓 grep + 先扫全部分支的 `git log`，再下「未实现/死代码」结论。**
+- **git 对象库故障与本环境 git 写操作不可靠**：详见 `progress.md` 分支拓扑与项目记忆中的处置手册；远端 GitHub 为最终兜底。
+- **`docs/` 目录定性**：165 张诊断/截图 PNG（133MB）+ 3 个 `tmp_*.py` 一次性调试脚本，判定为视觉标定临时工作区，已加 `.gitignore` 忽略（保留在磁盘供本地标定）。
+- **验收门槛缺口未变**：`handoff.md` 要求 30 局独立验证集 / 3000 标注事件，实际开发集仍仅 9 局。
+- **老问题未修**：大王识别（`v0.3.0` 即记「大王完全没有被识别」）。
+
 ## 2026-07-29 G2 回归定位
 
 - 当前 `HandRankMatcher` 对普通 Rank 仅使用单一模板和统一阈值 `0.55`，Joker 使用单一模板和 `0.72`；固定扫描坐标在首个 Mate 60 实时帧可正确识别 33 张。

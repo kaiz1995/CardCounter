@@ -1,8 +1,67 @@
 # 记牌器实施任务计划
 
-更新时间：2026-08-01
+更新时间：2026-09-13
 
-## 状态总览
+> ⚠️ **本文件在 2026-08-01 ~ 2026-09-13 期间未同步。**
+> 「状态总览」已按 09-13 真实状态改写；08-01 原口径状态表保留在文末「历史状态表」。
+> 接手时请同时查看 `git log`、`progress.md` 与代码。
+
+## 状态总览（2026-09-13 真实状态）
+
+| 阶段 | 状态 | 结果 |
+|---|---|---|
+| 固定规则与统计边界 | 完成 | 4副198张、唯一库存公式冻结 |
+| 旧代码清理 | 完成 | 旧玩家模型和旧浮窗已删除 |
+| 基础领域模型 | 完成 | Rank、事件、状态、归约器已实现 |
+| 本地持久化 | 完成 | 事件日志保存与重放已实现 |
+| 左上横条 | 完成 | 15个Rank、无总剩、只读显示 |
+| MediaProjection 探针 | 完成 | 接收帧、释放帧、输出候选区变化率 |
+| Gradle 构建基线 | 完成 | Wrapper、SDK路径、编译和测试通过 |
+| G1 Mate 60 真机 | 完成 | 2688×1216、约59–60fps、双前台服务存活 |
+| G2 自己手牌识别 | 完成 | 9/9 离线回归、真机锁牌、59.2fps 验收 |
+| G3 六区与来源分类 | 完成 | 33张边界、SELF/OUTSIDE、稳定去重、内存单飞 |
+| 08-29 修复方案 | 完成 | 多点采样桌面判定、H0 只信 YOLO、early finalize 置 reported |
+| 08-30 架构修复方案 A | 完成 | 同牌停留不再重复入账 |
+| v6 会计重构 阶段1 手动新局 | 完成 | 长按重置 → `newGame()` + `resetSession()` |
+| v6 会计重构 阶段2 手牌差分 | 完成 | `SelfHandCountTracker`（只诊断，不生成事件） |
+| v6 会计重构 阶段3 正数会计 | 完成 | 删 `PublicPlayCountAggregator`；守恒校验替代 clamp |
+| **分支合并 rank-accuracy → count-positive** | **完成** | **`d826447`，62/62 单测通过，已 push** |
+| G4 六区完整牌局验证 | 未完成 | 依赖真机整局 |
+| G5 生命周期整局验证 | 未完成 | 依赖真机整局 |
+| G6 真机完整牌局正确率 | 未开始 | 依赖 G1–G5 |
+
+## 当前不变量
+
+```text
+OutsideRemaining
+= InitialInventory - SelfLockedHand - OutsidePlayed
+```
+
+自己后续出牌不扣外面库存；未知来源不作反证推断。
+自己初始手牌张数不固定：买3/4、同伙代买与互相给牌可为31、32、34、35等；
+以稳定识别的完整 Rank 向量锁定，不硬编码 33。
+
+守恒替代 clamp：越界时 `pauseForConservation()` 暂停而非静默截断；
+`withinConservation()` 作为事件准入的唯一校验点。
+
+## 本轮验收
+
+- 编译通过。
+- 单元测试通过（当前基线 **62/62**）。
+- 源码中无 `GameSession`、`PlayerState`、`PlayerPosition`、`FloatingWindowView`、`totalRemaining` 残留。
+- 旧方案备份在 `progress.before-code.md`、`task_plan.before-code.md`，不参与构建。
+
+## 下一阶段入口
+
+1. **`count-positive` → `main` 合并**：预计 8 处冲突
+   （CaptureProbeService / RoiPlayEventCache / GameReducer / GameState /
+   SessionStore / CounterOverlayView + 2 测试），需人工处理核心语义。
+2. **真机整局验证**：装 `d826447` 的 APK，验证 `FORMAL_PLAY` 数 = 实际出牌次数。
+3. **补交付物**：`releases/数量正向累计版` 的 APK + source.zip。
+4. **G4 六区完整牌局**：扩大 Rank、五个外面区及清空后同牌重新布防覆盖。
+5. **G5/G6**：生命周期与正确率整局验证；`handoff.md` 门槛为 30 局独立验证集 / 3000 标注事件，实际开发集仅 9 局。
+
+## 历史状态表（2026-08-01 原口径，保留）
 
 | 阶段 | 状态 | 结果 |
 |---|---|---|
@@ -20,23 +79,6 @@
 | G5 状态/持久化整局验证 | 基础完成 | 需真机整局验证 |
 | G6 真机完整牌局 | 未开始 | 依赖 G1-G4 |
 
-## 当前不变量
-
-```text
-OutsideRemaining
-= InitialInventory - SelfLockedHand - OutsidePlayed
-```
-
-自己后续出牌不扣外面库存；未知来源不作反证推断。
-自己初始手牌张数不固定：买3/4、同伙代买与互相给牌可为31、32、34、35等；以稳定识别的完整 Rank 向量锁定。
-
-## 本轮验收
-
-- 编译通过。
-- 单元测试通过。
-- 源码中无 `GameSession`、`PlayerState`、`PlayerPosition`、`FloatingWindowView`、`totalRemaining` 残留。
-- 旧方案备份在 `progress.before-code.md`、`task_plan.before-code.md`，不参与构建。
-
-## 下一阶段入口
-
-进入 G4 六区完整牌局验证：扩大 Rank、五个外面区及清空后同牌重新布防覆盖。G2 不分类交贡/还贡/买 3/买 4，无双计数证据时不锁牌。
+> 08-01 口径下的「下一阶段入口」为：进入 G4 六区完整牌局验证——扩大 Rank、
+> 五个外面区及清空后同牌重新布防覆盖。G2 不分类交贡/还贡/买 3/买 4，
+> 无双计数证据时不锁牌。后续工作重心已转向 v6 会计重构，此段留档。

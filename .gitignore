@@ -14,3 +14,12 @@ releases/**/*-source.zip
 g2-analysis/
 *.mp4
 *.jpg
+.tmp*
+*.tmp
+
+# 视觉标定临时工作区：165 张诊断/截图 PNG（133MB）+ 一次性调试脚本
+# 保留在磁盘供本地标定使用，不进版本控制
+docs/
+
+# 工具目录：WorkBuddy 记忆与工作区状态，不入库
+.workbuddy-ai/
