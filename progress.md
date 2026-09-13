@@ -15,19 +15,21 @@
    ├─ codex/rank-accuracy    (08-13→08-14, 13 提交) 牌面识别：A 识别、模板融合
    └─ codex/count-positive   (08-14→08-15, 3 提交)  会计重构：v6 阶段 1/2/3
         ↑ 已于 2026-09-13 合并 = d826447
+        ↑ 已于 2026-09-13 合入 main = b48d18f
 ```
 
 | 分支 | HEAD | 说明 |
 |---|---|---|
-| `codex/count-positive` | **`d826447`** | **最新最全**：会计重构 + rank-accuracy 已合并 |
-| `codex/positive-accumulate` | `bec72b6` | 主 worktree，内容较旧 |
+| **`main`** | **`b48d18f`** | **主线（最新）**：已接收全部成果 |
+| `codex/count-positive` | `94dae59` | 来源分支：会计重构 + rank-accuracy + 文档回写 |
+| `codex/positive-accumulate` | `bec72b6` | 主 worktree，内容较旧（历史使命已结束） |
 | `codex/rank-accuracy` | `1a2a768` | 已并入 count-positive |
 | `codex/count-accuracy` | `44c65fd` | |
-| `main` | `bf8e172` | 尚未接收上述成果 |
 | `backup/count-positive-20260913` | `d79dd26` | 合并前快照 |
 | `backup/rank-accuracy-20260913` | `1a2a768` | 合并前快照 |
 
 - worktree 位置：`Documents/workbuddy/.zcf/记牌器开发/{count-positive,rank-accuracy,count-accuracy}/`
+- 合并专用 worktree：`Documents/workbuddy/_merge-main/`（已执行完，可删）
 - 远端：`https://github.com/kaiz1995/CardCounter.git`（7 个分支已同步）
 
 ### 已完成（截至 2026-09-13）
@@ -44,24 +46,36 @@
   - 阶段 3 正数会计：删 `PublicPlayCountAggregator`；
     `GameReducer` 新增 `withinConservation()`，越界改为**暂停而非 clamp**
 - **合并 rank-accuracy → count-positive**：完成（`d826447`），62/62 单测通过。
+- **文档回写**：`progress.md` / `task_plan.md` / `findings.md` 已按 09-13 真实状态更新
+  （commit `94dae59`）。
+- **合并 count-positive → main**：**完成**（合并提交 **`b48d18f`**）：
+  - 冲突仅 1 处（`.gitignore`，两边添加了相同的 `.tmp*`/`*.tmp` 两行 → 取 count-positive 版）
+  - `main` 侧零源码改动 → 源码零冲突，29 个源码文件全部自动合并
+  - `README.md`（main 独有）自动保留
+  - **验收**：`testDebugUnitTest` **62/62 通过**（0 fail / 0 error / 0 skip）；
+    `assembleDebug` BUILD SUCCESSFUL；`git diff count-positive main -- '*.kt'` **为空**
+  - 已 push 至远端（`bf8e172..b48d18f`）
+  - 预演报告：`plans/merge-main-preview-20260913.md`
 
 ### 未完成
 
-1. **count-positive → main 合并**：未做。预计 8 处冲突
-   （CaptureProbeService / RoiPlayEventCache / GameReducer / GameState /
-   SessionStore / CounterOverlayView + 2 测试）。
+1. **真机整局验证**：装 `b48d18f` 的 APK 跑一局，验证 `FORMAL_PLAY` 数 = 实际出牌次数。
 2. **G4 六区完整牌局验证**：未完成。
 3. **G5 生命周期整局验证**：未完成。
 4. **G6 真机完整牌局（15 Rank 最终正确率）**：未开始。
 5. **验收门槛未达成**：`handoff.md` 要求 30 局独立验证集 / 3000 标注事件，
    实际开发集仅 9 局。
 6. **老问题未修**：大王识别（`v0.3.0` 即记「大王完全没有被识别」）。
+7. **补交付物**：`releases/数量正向累计版/` 缺 APK + source.zip。
+8. **架构不一致**：`OverlayLayout.seatPanels`（v5 五座位全宽框）与 PlayZone 归一化六区
+   两套坐标系并存。
 
 ### 下一步顺序
 
-1. `count-positive` → `main` 合并（8 处冲突需人工处理）。
-2. 装 `d826447` 的 APK 跑一局真机，验证 `FORMAL_PLAY` 数 = 实际出牌次数。
-3. 补 `releases/数量正向累计版` 的 APK + source.zip。
+1. 装 `b48d18f` 的 APK 跑一局真机，验证 `FORMAL_PLAY` 数 = 实际出牌次数。
+2. 补 `releases/数量正向累计版` 的 APK + source.zip。
+3. 清理合并用 worktree `_merge-main` 与主 worktree 的索引异常。
+4. 推进 G4 六区完整牌局验证。
 
 ## 历史记录（2026-08-01 及以前，保留原口径）
 
