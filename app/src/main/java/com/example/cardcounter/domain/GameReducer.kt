@@ -38,32 +38,44 @@ object GameReducer {
 
     private fun lockHand(state: GameState, event: GameEvent.SelfHandLocked): GameState {
         require(state.phase == SessionPhase.PRE_PLAY) { "当前不能锁定手牌" }
-        require(event.cards.total() > 0) { "自己手牌不能为空" }
-        require(event.cards.fitsWithin(Rank.initialInventory)) { "自己手牌超过固定库存" }
+        require(event.cardCount > 0) { "自己手牌不能为空" }
+        require(event.cardCount <= Rank.initialInventory.total()) { "自己手牌超过固定库存" }
         return state.copy(
             phase = SessionPhase.ACTIVE,
             selfLockedHand = event.cards,
+            selfLockedHandCount = event.cardCount,
             events = state.events + event
         )
     }
 
     private fun addOutsidePlay(state: GameState, event: GameEvent.OutsideCardsPlayed): GameState {
         require(state.phase == SessionPhase.ACTIVE) { "当前不接受自动出牌事件" }
-        val remaining = state.outsideRemaining ?: error("未锁定自己手牌")
-        require(event.cards.fitsWithin(remaining)) { "外面出牌超过剩余库存" }
+        require(event.cardCount > 0) { "出牌张数必须为正数" }
+        if (!withinConservation(state, outsideAdded = event.cardCount)) return pauseForConservation(state)
         val bySeat = event.seat?.let { seat ->
             state.outsidePlayedBySeat + (seat to state.playedBy(seat).plus(event.cards))
         } ?: state.outsidePlayedBySeat
+        val countBySeat = event.seat?.let { seat ->
+            state.outsidePlayedCountBySeat + (seat to state.playedCountBy(seat) + event.cardCount)
+        } ?: state.outsidePlayedCountBySeat
         return state.copy(
             outsidePlayed = state.outsidePlayed.plus(event.cards),
+            outsidePlayedCount = state.outsidePlayedCount + event.cardCount,
             outsidePlayedBySeat = bySeat,
+            outsidePlayedCountBySeat = countBySeat,
             events = state.events + event
         )
     }
 
     private fun addSelfPlay(state: GameState, event: GameEvent.SelfCardsPlayed): GameState {
         require(state.phase == SessionPhase.ACTIVE) { "当前不接受自己出牌事件" }
-        return state.copy(events = state.events + event)
+        require(event.cardCount > 0) { "出牌张数必须为正数" }
+        val locked = requireNotNull(state.selfLockedHandCount) { "未锁定自己手牌" }
+        if (state.selfPlayedCount + event.cardCount > locked) return pauseForConservation(state)
+        return state.copy(
+            selfPlayedCount = state.selfPlayedCount + event.cardCount,
+            events = state.events + event
+        )
     }
 
     private fun revert(state: GameState, event: GameEvent.Reverted): GameState {
@@ -77,9 +89,14 @@ object GameReducer {
         val bySeat = target.seat?.let { seat ->
             state.outsidePlayedBySeat + (seat to state.playedBy(seat).minus(target.cards))
         } ?: state.outsidePlayedBySeat
+        val countBySeat = target.seat?.let { seat ->
+            state.outsidePlayedCountBySeat + (seat to state.playedCountBy(seat) - target.cardCount)
+        } ?: state.outsidePlayedCountBySeat
         return state.copy(
             outsidePlayed = state.outsidePlayed.minus(target.cards),
+            outsidePlayedCount = state.outsidePlayedCount - target.cardCount,
             outsidePlayedBySeat = bySeat,
+            outsidePlayedCountBySeat = countBySeat,
             revertedEventIds = state.revertedEventIds + target.id,
             events = state.events + event
         )
@@ -98,6 +115,18 @@ object GameReducer {
 
     private fun close(state: GameState, event: GameEvent.SessionClosed): GameState =
         state.copy(phase = SessionPhase.CLOSED, events = state.events + event)
+
+    private fun withinConservation(state: GameState, outsideAdded: Int): Boolean {
+        val locked = state.selfLockedHandCount ?: return false
+        return state.outsidePlayedCount + outsideAdded + state.selfPlayedCount +
+            (locked - state.selfPlayedCount) <= Rank.initialInventory.total()
+    }
+
+    private fun pauseForConservation(state: GameState): GameState = state.copy(
+        phase = SessionPhase.PAUSED,
+        pauseReason = PauseReason.NEW_GAME_UNCLEAR,
+        events = state.events + GameEvent.SessionPaused(PauseReason.NEW_GAME_UNCLEAR)
+    )
 
     private fun corrupted(events: List<GameEvent>): GameState = GameState(
         phase = SessionPhase.PAUSED,

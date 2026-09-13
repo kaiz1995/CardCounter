@@ -1,10 +1,72 @@
 # 多乐够级记牌器——工作进度
 
-更新时间：2026-08-01
+更新时间：2026-09-13
 
-## 当前阶段
+> ⚠️ **本文件在 2026-08-01 ~ 2026-09-13 期间未同步。**
+> 下方「已完成」保留 08-01 口径的历史记录，最新真实状态见本节。
+> 接手时请同时查看 `git log`、`plans/` 与代码，勿只依赖本文档。
 
-**G2、G3 已完成；G4 六区完整牌局验证进行中。**
+## 当前真实状态（2026-09-13）
+
+### 分支拓扑（worktree 并行开发）
+
+```
+8d98b21 (08-13, v0.3.0 基线)
+   ├─ codex/rank-accuracy    (08-13→08-14, 13 提交) 牌面识别：A 识别、模板融合
+   └─ codex/count-positive   (08-14→08-15, 3 提交)  会计重构：v6 阶段 1/2/3
+        ↑ 已于 2026-09-13 合并 = d826447
+```
+
+| 分支 | HEAD | 说明 |
+|---|---|---|
+| `codex/count-positive` | **`d826447`** | **最新最全**：会计重构 + rank-accuracy 已合并 |
+| `codex/positive-accumulate` | `bec72b6` | 主 worktree，内容较旧 |
+| `codex/rank-accuracy` | `1a2a768` | 已并入 count-positive |
+| `codex/count-accuracy` | `44c65fd` | |
+| `main` | `bf8e172` | 尚未接收上述成果 |
+| `backup/count-positive-20260913` | `d79dd26` | 合并前快照 |
+| `backup/rank-accuracy-20260913` | `1a2a768` | 合并前快照 |
+
+- worktree 位置：`Documents/workbuddy/.zcf/记牌器开发/{count-positive,rank-accuracy,count-accuracy}/`
+- 远端：`https://github.com/kaiz1995/CardCounter.git`（7 个分支已同步）
+
+### 已完成（截至 2026-09-13）
+
+- **G1 真机探针**：完成（2688×1216、约 59–60fps、双前台服务存活）。
+- **G2 自己手牌识别**：完成（9/9 离线回归、真机锁牌 33 张、59.2fps 验收）。
+- **G3 六区与来源分类**：完成（33 张边界、SELF/OUTSIDE、稳定去重、内存单飞）。
+- **08-29 修复方案**：已落地（多点采样桌面判定、H0 只信 YOLO 不回退模板、
+  `PLAY_REJECTED` 含 cards、RoiPlayEventCache early finalize 置 `reported`）。
+- **08-30 架构修复方案 A**：已落地（同牌停留不再重复入账）。
+- **v6 会计重构（阶段 1/2/3）**：已在 `codex/count-positive` 实现：
+  - 阶段 1 手动新局：长按重置 800ms 触发 `newGame()` + `resetSession()`
+  - 阶段 2 手牌差分：新增 `SelfHandCountTracker`（**只诊断，不生成事件**）
+  - 阶段 3 正数会计：删 `PublicPlayCountAggregator`；
+    `GameReducer` 新增 `withinConservation()`，越界改为**暂停而非 clamp**
+- **合并 rank-accuracy → count-positive**：完成（`d826447`），62/62 单测通过。
+
+### 未完成
+
+1. **count-positive → main 合并**：未做。预计 8 处冲突
+   （CaptureProbeService / RoiPlayEventCache / GameReducer / GameState /
+   SessionStore / CounterOverlayView + 2 测试）。
+2. **G4 六区完整牌局验证**：未完成。
+3. **G5 生命周期整局验证**：未完成。
+4. **G6 真机完整牌局（15 Rank 最终正确率）**：未开始。
+5. **验收门槛未达成**：`handoff.md` 要求 30 局独立验证集 / 3000 标注事件，
+   实际开发集仅 9 局。
+6. **老问题未修**：大王识别（`v0.3.0` 即记「大王完全没有被识别」）。
+
+### 下一步顺序
+
+1. `count-positive` → `main` 合并（8 处冲突需人工处理）。
+2. 装 `d826447` 的 APK 跑一局真机，验证 `FORMAL_PLAY` 数 = 实际出牌次数。
+3. 补 `releases/数量正向累计版` 的 APK + source.zip。
+
+## 历史记录（2026-08-01 及以前，保留原口径）
+
+> 以下内容记录时的阶段定位为「G2、G3 已完成；G4 进行中」，
+> 后续工作重心已转向 v6 会计重构，此段作为历史留档。
 
 ## 已完成
 

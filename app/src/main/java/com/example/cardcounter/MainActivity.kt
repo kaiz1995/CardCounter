@@ -101,10 +101,8 @@ class MainActivity : Activity() {
         })
 
         addView(button("新局重置") {
-            repository.newGame()
-            CaptureProbeService.resetSession(this@MainActivity)
-            OverlayService.refresh(this@MainActivity)
-            renderStatus()
+            CaptureProbeService.requestNewGame(this@MainActivity)
+            status.text = "正在识别自己手牌；成功后才会开始新局。"
         })
     }
 

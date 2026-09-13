@@ -57,6 +57,10 @@ object CaptureProbeStatus {
         )
     }
 
+    fun manualNewGameFailed() {
+        current = current.copy(error = "未识别到稳定自己手牌，保持原局")
+    }
+
     fun failed(message: String) {
         current = current.copy(running = false, error = message)
     }

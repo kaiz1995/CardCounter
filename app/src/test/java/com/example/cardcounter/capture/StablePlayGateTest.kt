@@ -2,6 +2,7 @@ package com.example.cardcounter.capture
 
 import com.example.cardcounter.domain.Rank
 import com.example.cardcounter.domain.RankCounts
+import com.example.cardcounter.domain.GameEvent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -44,6 +45,18 @@ class StablePlayGateTest {
         repeat(6) { assertNull(gate.update(PlayZone.SELF, RankCounts.zero())) }
         assertNull(gate.update(PlayZone.SELF, fives))
         assertEquals(StablePlay(PlayZone.SELF, fives), gate.update(PlayZone.SELF, fives))
+    }
+
+    @Test
+    fun stableSelfZonePlayCreatesSelfEventWithDetectedCardCount() {
+        val cards = RankCounts.of(mapOf(Rank.THREE to 1, Rank.FIVE to 2))
+
+        val event = StablePlay(PlayZone.SELF, cards).toGameEvent()
+
+        assertTrue(event is GameEvent.SelfCardsPlayed)
+        event as GameEvent.SelfCardsPlayed
+        assertEquals(cards, event.cards)
+        assertEquals(3, event.cardCount)
     }
 
     @Test
@@ -169,8 +182,42 @@ class StablePlayGateTest {
     fun letsTheFullScreenTemplateCorrectOnePublicCard() {
         val king = RankCounts.of(mapOf(Rank.KING to 1))
         val ten = RankCounts.of(mapOf(Rank.TEN to 1))
-        assertEquals(king, fuseSinglePublicPlay(ten, king))
-        assertEquals(fives, fuseSinglePublicPlay(fives, king))
+        assertEquals(king, fuseSinglePublicPlay(PlayZone.TOP, ten, king))
+        assertEquals(fives, fuseSinglePublicPlay(PlayZone.TOP, fives, king))
+    }
+
+    @Test
+    fun preventsTemplateOnlyAcePromotion() {
+        val ace = RankCounts.of(mapOf(Rank.ACE to 1))
+        val ten = RankCounts.of(mapOf(Rank.TEN to 1))
+        val king = RankCounts.of(mapOf(Rank.KING to 1))
+        assertEquals(ten, fuseSinglePublicPlay(PlayZone.LEFT_BOTTOM, ten, ace))
+        assertEquals(ace, fuseSinglePublicPlay(PlayZone.LEFT_BOTTOM, ace, ace))
+        assertEquals(king, fuseSinglePublicPlay(PlayZone.LEFT_BOTTOM, ten, king))
+        assertEquals(fives, fuseSinglePublicPlay(PlayZone.LEFT_BOTTOM, fives, ace))
+        assertEquals(ace, fuseSinglePublicPlay(PlayZone.TOP, ten, ace))
+    }
+
+    @Test
+    fun auditsAceOnlyForLeftBottom() {
+        val ace = RankCounts.of(mapOf(Rank.ACE to 1))
+        assertTrue(shouldAuditAce(PlayZone.LEFT_BOTTOM, ace))
+        assertFalse(shouldAuditAce(PlayZone.TOP, ace))
+        assertFalse(shouldAuditAce(PlayZone.LEFT_BOTTOM, RankCounts.of(mapOf(Rank.KING to 1))))
+    }
+
+    @Test
+    fun aceAuditMetadataContainsFusionFields() {
+        val ace = RankCounts.of(mapOf(Rank.ACE to 1))
+        val metadata = aceAuditMetadata(PlayZone.LEFT_BOTTOM, 3, 42, ace,
+            listOf(RankCountsCandidate(ace, .8f, ace, ace, 1)))
+        val candidate = metadata.candidates.single()
+        assertEquals("LEFT_BOTTOM", metadata.zone); assertEquals(3, metadata.generation); assertEquals(42, metadata.timeMs)
+        assertEquals(ace, candidate.fusedCards); assertEquals(ace, candidate.yoloCards)
+        assertEquals(ace, candidate.templateCards); assertEquals(.8f, candidate.minimumConfidence)
+        assertEquals(1, candidate.cardCount)
+        assertEquals(1, rankCountsMap(metadata.winner)["ACE"])
+        assertEquals(1, rankCountsMap(candidate.fusedCards)["ACE"])
     }
 
     @Test

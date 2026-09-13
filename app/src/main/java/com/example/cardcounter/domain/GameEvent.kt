@@ -12,19 +12,23 @@ sealed interface GameEvent {
 
     data class SelfHandLocked(
         val cards: RankCounts,
-        override val id: String = UUID.randomUUID().toString()
+        override val id: String = UUID.randomUUID().toString(),
+        /** 手牌几何检测为数量账本；cards 仅保留牌面猜测。 */
+        val cardCount: Int = cards.total()
     ) : GameEvent
 
     data class OutsideCardsPlayed(
         val cards: RankCounts,
         override val id: String = UUID.randomUUID().toString(),
-        val seat: OutsideSeat? = null
+        val seat: OutsideSeat? = null,
+        val cardCount: Int = cards.total()
     ) : GameEvent
 
     /** 自己出牌只做事件边界记录，绝不扣外面剩余。 */
     data class SelfCardsPlayed(
         val cards: RankCounts,
-        override val id: String = UUID.randomUUID().toString()
+        override val id: String = UUID.randomUUID().toString(),
+        val cardCount: Int = cards.total()
     ) : GameEvent
 
     data class Reverted(

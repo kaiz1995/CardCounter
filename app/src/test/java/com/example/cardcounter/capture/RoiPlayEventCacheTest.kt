@@ -1,97 +1,69 @@
 package com.example.cardcounter.capture
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class RoiPlayEventCacheTest {
     @Test
-    fun commitsThreeStableFramesBeforeTheZoneClears() {
-        val cache = RoiPlayEventCache<String>(clearSamples = 3, earlyFrames = 3)
+    fun animationFramesNeverFinalize() {
+        val cache = RoiPlayEventCache<String>(stableSamples = 3, isStill = { _, _ -> false })
         cache.reset(generation = 1, primeExistingTable = false)
-        assertNull(cache.observe(PlayZone.RIGHT_TOP, true, true, "one", 1))
-        assertNull(cache.observe(PlayZone.RIGHT_TOP, true, true, "two", 1))
 
-        val finalized = cache.observe(PlayZone.RIGHT_TOP, true, true, "three", 1)
-        requireNotNull(finalized)
-        assertEquals(true, finalized.early)
-        assertEquals(listOf("one", "two", "three"), finalized.frames)
-        cache.completeEarly(PlayZone.RIGHT_TOP, 1)
-        assertEquals(true, cache.needsFrame(PlayZone.RIGHT_TOP, 1))
+        repeat(8) { index ->
+            assertNull(cache.observe(PlayZone.RIGHT_TOP, true, true, "moving-$index", 1))
+        }
     }
 
     @Test
-    fun commitsOnlyAfterTheZoneHasCleared() {
-        val cache = RoiPlayEventCache<String>(clearSamples = 3)
+    fun finalizesOnlyAfterConsecutiveStillFrames() {
+        val cache = RoiPlayEventCache<String>(stableSamples = 3, isStill = { _, current -> current.startsWith("still") })
         cache.reset(generation = 1, primeExistingTable = false)
-        assertNull(cache.observe(PlayZone.LEFT_TOP, true, true, "card", 1))
-        repeat(2) { assertNull(cache.observe(PlayZone.LEFT_TOP, true, false, null, 1)) }
+        assertNull(cache.observe(PlayZone.RIGHT_TOP, true, true, "start", 1))
+        repeat(2) { assertNull(cache.observe(PlayZone.RIGHT_TOP, true, true, "still-$it", 1)) }
 
-        val finalized = cache.observe(PlayZone.LEFT_TOP, true, false, null, 1)
-        requireNotNull(finalized)
-        assertEquals(PlayZone.LEFT_TOP, finalized.zone)
-        assertEquals(listOf("card"), finalized.frames)
+        val finalized = requireNotNull(
+            cache.observe(PlayZone.RIGHT_TOP, true, true, "still-final", 1)
+        )
+        assertEquals(listOf("start", "still-0", "still-1", "still-final"), finalized.frames)
     }
 
     @Test
-    fun shortAnimationGapDoesNotSplitOnePlayIntoTwo() {
-        val cache = RoiPlayEventCache<String>(clearSamples = 3)
+    fun finalizedZoneLocksUntilItClears() {
+        val cache = RoiPlayEventCache<String>(clearSamples = 2, stableSamples = 1, isStill = { _, _ -> true })
         cache.reset(generation = 1, primeExistingTable = false)
-        cache.observe(PlayZone.RIGHT_BOTTOM, true, true, "first", 1)
-        repeat(2) { cache.observe(PlayZone.RIGHT_BOTTOM, true, false, null, 1) }
-        cache.observe(PlayZone.RIGHT_BOTTOM, true, true, "second", 1)
-        repeat(2) { assertNull(cache.observe(PlayZone.RIGHT_BOTTOM, true, false, null, 1)) }
-
-        val finalized = cache.observe(PlayZone.RIGHT_BOTTOM, true, false, null, 1)
-        requireNotNull(finalized)
-        assertEquals(listOf("first", "second"), finalized.frames)
+        cache.observe(PlayZone.LEFT_TOP, true, true, "start", 1)
+        assertTrue(cache.observe(PlayZone.LEFT_TOP, true, true, "still", 1) != null)
+        assertFalse(cache.needsFrame(PlayZone.LEFT_TOP, 1))
+        assertNull(cache.observe(PlayZone.LEFT_TOP, true, false, null, 1))
+        assertNull(cache.observe(PlayZone.LEFT_TOP, true, false, null, 1))
+        assertTrue(cache.needsFrame(PlayZone.LEFT_TOP, 1))
     }
 
     @Test
-    fun restartPrimeDiscardsCardsAlreadyOnTable() {
+    fun clearingBeforeSettlementFinalizesOnceAsFallback() {
+        val cache = RoiPlayEventCache<String>(clearSamples = 2, stableSamples = 3)
+        cache.reset(generation = 1, primeExistingTable = false)
+        cache.observe(PlayZone.RIGHT_BOTTOM, true, true, "moving", 1)
+        assertNull(cache.observe(PlayZone.RIGHT_BOTTOM, true, false, null, 1))
+
+        val fallback = requireNotNull(cache.observe(PlayZone.RIGHT_BOTTOM, true, false, null, 1))
+        assertEquals(listOf("moving"), fallback.frames)
+        repeat(3) { assertNull(cache.observe(PlayZone.RIGHT_BOTTOM, true, false, null, 1)) }
+    }
+
+    @Test
+    fun observingANewGenerationDiscardsOldFrames() {
         val discarded = mutableListOf<String>()
-        val cache = RoiPlayEventCache<String>(clearSamples = 2, discard = discarded::add)
-        cache.reset(generation = 7, primeExistingTable = true)
-        cache.observe(PlayZone.TOP, true, true, "existing", 7)
-        repeat(2) { assertNull(cache.observe(PlayZone.TOP, true, false, null, 7)) }
-        cache.observe(PlayZone.TOP, true, true, "new", 7)
-        assertNull(cache.observe(PlayZone.TOP, true, false, null, 7))
+        val cache = RoiPlayEventCache<String>(stableSamples = 1, isStill = { _, _ -> true }, discard = discarded::add)
+        cache.reset(generation = 1, primeExistingTable = false)
+        cache.observe(PlayZone.TOP, true, true, "old", 1)
+        cache.observe(PlayZone.TOP, true, true, "new", 2)
+        assertEquals(listOf("old"), discarded)
 
-        val finalized = cache.observe(PlayZone.TOP, true, false, null, 7)
-        requireNotNull(finalized)
-        assertEquals(listOf("existing"), discarded)
-        assertEquals(listOf("new"), finalized.frames)
-    }
-
-    @Test
-    fun restartPrimeCanBeReleasedBeforeReturningToTheTable() {
-        val cache = RoiPlayEventCache<String>(clearSamples = 2)
-        cache.reset(generation = 3, primeExistingTable = true)
-        cache.releasePrime(generation = 3)
-        cache.observe(PlayZone.TOP, true, true, "first", 3)
-        assertNull(cache.observe(PlayZone.TOP, true, false, null, 3))
-
-        val finalized = cache.observe(PlayZone.TOP, true, false, null, 3)
-        requireNotNull(finalized)
-        assertEquals(listOf("first"), finalized.frames)
-    }
-
-    @Test
-    fun keepsTheLatestFramesWhenTheEventBufferIsFull() {
-        val discarded = mutableListOf<String>()
-        val cache = RoiPlayEventCache<String>(maxFrames = 2, clearSamples = 3, discard = discarded::add)
-        cache.reset(generation = 5, primeExistingTable = false)
-        assertEquals(true, cache.needsFrame(PlayZone.LEFT_BOTTOM, 5))
-        cache.observe(PlayZone.LEFT_BOTTOM, true, true, "one", 5)
-        cache.observe(PlayZone.LEFT_BOTTOM, true, true, "two", 5)
-        cache.observe(PlayZone.LEFT_BOTTOM, true, true, "three", 5)
-        assertEquals(true, cache.needsFrame(PlayZone.LEFT_BOTTOM, 5))
-        assertEquals(listOf("one"), discarded)
-
-        assertNull(cache.observe(PlayZone.LEFT_BOTTOM, true, false, null, 5))
-        assertNull(cache.observe(PlayZone.LEFT_BOTTOM, true, false, null, 5))
-        val finalized = cache.observe(PlayZone.LEFT_BOTTOM, true, false, null, 5)
-        requireNotNull(finalized)
-        assertEquals(listOf("two", "three"), finalized.frames)
+        val finalized = requireNotNull(cache.observe(PlayZone.TOP, true, true, "new-still", 2))
+        assertEquals(listOf("new", "new-still"), finalized.frames)
     }
 }
