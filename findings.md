@@ -125,3 +125,60 @@
 
 - 当前自动化终端的 PATH 未刷新，不能直接调用 `ffmpeg` / `ffprobe`。
 - 已直接调用本机已安装 FFmpeg 提取关键帧；不影响项目运行时设计。
+
+---
+
+## 2026-09-13 夜间：全仓排查 + 12 个缺陷修复（自主优化轮）
+
+用户授权全权推进（至 09-14 08:00）。独立分支 `optimization-20260913`（基线 `main`=`dda6b45`），
+**commit `08e3fbd`，已 push 到 GitHub**。
+
+### 排查结论：12 个问题（P0×4 / P1×5 / P2×3）
+
+| 级别 | 问题 | 后果 |
+|---|---|---|
+| P0 | `withinConservation()` 恒真失效 | `selfPlayedCount` 与抵消项代数相消，守恒校验**永不触发**，重复入账无人拦截 |
+| P0 | `FirstPlayBoundaryGate.update()` 忽略 `signals` | 每 250ms 约 1300 次像素读取算完即丢弃 |
+| P0 | `detectYoloCards` 用 `minOf` 聚合置信度 | 一张低置信牌使 `canFastConfirmPlay`(≥0.60) 永久失效 |
+| P0 | `SessionRepository` 每帧重建（9 处热路径） | 构造即全量 JSON 解析 + replay + 同步写盘 → 掉帧、入账延迟 |
+| P1 | `hidden` 未持久化 | 服务重启后浮窗状态丢失 |
+| P1 | `RoiPlayEventCache` 清空即复位 | 牌面抖动导致同一手牌重复入账 |
+| P1 | `findAcrossRows` 逐行去重 | 同一张牌跨行选出不同 x → 重复计数 |
+| P1 | `PlayZone`(比例) 与 `OverlayLayout`(设计像素) 两套坐标系 | 经测算属**设计使然**，非 bug；只加覆盖性测试与注释，坐标零改动 |
+| P1 | `canReachIoUThreshold` 名不副实 | 算的是墨量比，不是 IoU |
+| P2 | `detectFormalPlays` 死代码 58 行 | 零调用 |
+| P2 | `handYoloBitmap` 靠参数巧合不越界 | 隐式脆弱 |
+| P2 | `TfliteYoloDetector` 仅服务 androidTest | 冗余认知负担 |
+
+### ★ 验收中发现的「测试全绿但代码错」缺陷（重要教训）
+
+子代理报告 75 tests 全绿，但主代理逐行读 diff 后揪出 3 个新缺陷：
+
+1. **版本迁移逻辑被整个删除**。`SessionRepository` 原本调用
+   `store.migratePositiveCountSessionIfNeeded()`——这是丢弃「正向累计版」之前旧格式
+   事件日志的关键迁移。重写后改成 `store.load()`，旧日志会被新归约器 replay 出错误账本。
+   已恢复为 `loadOrMigrate()`，**迁移标记与事件日志必须在同一次 `commit()` 原子写入**
+   （否则节流会延后「已迁移」状态，下次冷启动重复迁移）。
+2. **预热路径清空帧数被从 6 改成 9**。`primed` 态（服务重启后桌面残留旧牌）从未交出过牌、
+   无重复入账风险，多等 3 帧只会拖慢识别恢复。已改为按路径分别取值，并用**反证法**验证
+   新测试确实能捕获该回归（把代码改回错误版本 → 测试 FAILED）。
+3. 节流策略过保守（除 `Reverted` 外全部立即落盘 ≈ 没节流）。保留保守选择：
+   **丢账本事件的代价远高于多写几次盘**，记录为待优化。
+
+> **教训：单测全绿 ≠ 代码正确。** 重构类改动必须逐行读 diff 才能发现「迁移逻辑被删」
+> 这类测试覆盖不到的回归；补写的回归测试还要用反证法确认它真能失败。
+
+### 本次未做（有意为之）
+
+**不追求识别精度提升。** 仓库仅 9 局真实样本，远低于 `handoff.md` 要求的
+30 局 / 3000 事件门槛；无真值集时调参必然过拟合（呼应 2026-07-29 教训）。
+本轮全部聚焦「识别结果产生后如何准确、及时、不丢地记进账本」这条可控链路。
+
+### git 故障第二条根因（本次新查明）
+
+**`refs/heads/codex/` 整个命名空间会被外部进程清空**——`.git/refs/codex/turn-diffs/`
+下有大量 checkpoint 目录，说明有工具在管理 `codex/` 命名空间，清理时把
+`refs/heads/codex/` 一并删了（`refs/heads/main`、`backup/` 幸存）。
+根治：**分支名去掉 `codex/` 前缀**（改用 `optimization-20260913`）→ commit 一次成功。
+`packed-refs` 是唯一可靠兜底，但**必须 LF 换行**（CRLF 会让 `git push` 失败，
+错误看起来像网络问题）。详见 `_git-heal.sh` 注释。

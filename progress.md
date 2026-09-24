@@ -195,3 +195,53 @@
 - G2、G3 已完成当前确认口径；G4/G6 尚未完成。
 
 历史方案审计备份：`progress.before-code.md`、`task_plan.before-code.md`。
+
+---
+
+## 自主优化轮（2026-09-13 夜间，22:00–23:10）
+
+用户授权全权推进（至 09-14 08:00）：排查架构/代码缺陷 → 出方案 → 派子代理实施 → 主代理验收。
+
+### 交付
+
+| 项 | 值 |
+|---|---|
+| 分支 | `optimization-20260913`（基线 `main`=`dda6b45`） |
+| Commit | `08e3fbde8ff06a7f3aee9bbd86f6de2722aa69b3` |
+| 远端 | GitHub `kaiz1995/CardCounter`，`refs/heads/codex/optimization-20260913` |
+| 变更 | 35 files changed, +1369 / −169 |
+| 单测 | **80 tests / 0 failures / 0 errors**（基线 75） |
+| APK | 47,040,387 bytes，SHA256 `30977fe4937b23a3b036b42eaa9c85e97a131c911256bbd2dcf9a8b4be4ea9af` |
+
+修复 12 个问题（P0×4 / P1×5 / P2×3），清单见
+`plans/optimization-report-20260913.md` 与 `findings.md` 新章节。
+
+### 执行方式
+
+4 个阶段：① 会计与领域层（子代理 A）② 识别路径（子代理 B）
+③ 性能与 UI（子代理 C）④ 主代理独立回归 + 交付。
+**子代理只改工作区、不 commit**，由主代理统一验证并提交。
+
+### 主代理额外修复的 3 个缺陷（子代理引入、测试全绿却未被发现）
+
+1. 版本迁移逻辑被整个删除 → 恢复 `loadOrMigrate()`，迁移标记与日志同次原子 `commit()`。
+2. 预热路径清空帧数 6→9 → 按路径分别取值；补的回归测试经**反证法**确认可捕获。
+3. 节流过保守（性能收益低于预期）→ 保留保守策略并记为待优化。
+
+### 计划文档
+
+- `plans/optimization-master-20260913.md`（总控）
+- `plans/optimization-stage3-20260913.md`（阶段 3 规格）
+- `plans/optimization-report-20260913.md`（验收报告）
+- `OPTIMIZATION-STATUS.md`（进度快照）
+
+### 待真机验证（本次无条件覆盖）
+
+1. **对局中途强杀进程 → 重启验证事件未丢**（验节流 + `flush()` 落盘可靠性）
+2. `hidden` 持久化：隐藏浮窗 → 重启 App → 仍为隐藏态
+3. 服务重启后识别恢复速度（验预热路径修复效果）
+4. 浮窗面板观感：面板中心与识别带中心偏差（TOP 达 115.5px）是否影响使用
+
+### ⚠️ 尚未合并回 `main`
+
+本分支**未合入 `main`**，等待用户 08:00 检查后再决定。

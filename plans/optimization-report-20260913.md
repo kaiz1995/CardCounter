@@ -106,9 +106,50 @@
 
 ## 5. 交付物
 
-- 源码与测试改动：14 个文件（`git status` 可见，**未提交**，由主代理统一 commit）
+- 源码与测试改动：18 个文件（含 `.gitignore`），已在 **commit `08e3fbd`** 提交
 - `plans/optimization-master-20260913.md`：总控计划
 - `plans/optimization-stage3-20260913.md`：阶段 3 规格
 - `plans/optimization-report-20260913.md`：本报告
 - `OPTIMIZATION-STATUS.md`：进度快照
 - `_git-heal.sh`：git 自愈脚本
+
+### 提交信息
+
+| 项 | 值 |
+|---|---|
+| 分支 | `optimization-20260913`（原 `codex/optimization-20260913`，见下方说明） |
+| Commit | `08e3fbde8ff06a7f3aee9bbd86f6de2722aa69b3` |
+| 基线 | `main` = `dda6b45` |
+| 远端 | `https://github.com/kaiz1995/CardCounter.git` 的 `refs/heads/codex/optimization-20260913` |
+| 变更 | 35 files changed, 1369 insertions(+), 169 deletions(-) |
+| 测试 | 80 tests / 0 failures / 0 errors |
+| APK | 47,040,387 bytes，SHA256 `30977fe4937b23a3b036b42eaa9c85e97a131c911256bbd2dcf9a8b4be4ea9af` |
+
+---
+
+## 6. 本环境 git 故障：第二条根因（本次新查明，值得单独记录）
+
+### 现象
+本次会话中 `git commit` 连续 3 次失败，每次都报：
+```
+fatal: your current branch 'codex/optimization-20260913' does not have any commits yet
+```
+且 ref 文件刚建好就消失。但 `refs/heads/main`、`refs/heads/backup/` **始终幸存**。
+
+### 根因
+`.git/refs/codex/turn-diffs/checkpoints/...` 下存在大量 checkpoint 目录，说明环境中
+**有工具在管理 `codex/` 命名空间**。该工具清理时把 `refs/heads/codex/` 一并删除了。
+→ **`codex/` 前缀的分支名在本环境天生不可靠。**
+
+### 根治
+把分支改名为 **`refs/heads/optimization-20260913`（去掉 `codex/` 前缀）**，
+彻底避开被清理的命名空间。改名后 **commit 一次成功**。
+
+### 附带发现
+`packed-refs` 是唯一可靠的兜底（loose ref 会被删，packed 不会）——
+正是它保存的 `dda6b451` 让我能恢复 HEAD。但手写 `packed-refs`
+**必须使用 LF 换行**：CRLF 会让 `git push` 报
+`BUG: refs/packed-backend.c:1001: packed-refs backend yielded reference preceding its prefix`
+并失败，表面上很像网络问题。
+
+以上全部已写进 `_git-heal.sh` 的注释与实现。
