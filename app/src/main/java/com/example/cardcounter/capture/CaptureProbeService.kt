@@ -106,7 +106,6 @@ class CaptureProbeService : Service() {
     @Volatile private var firstPlayArmed = false
     @Volatile private var manualNewGameRequested = false
     @Volatile private var lastStablePrePlayHand: RankCounts? = null
-    @Volatile private var primeSamplesRemaining = 0
     private val firstPlayGate = FirstPlayBoundaryGate()
 
     override fun onCreate() {
@@ -199,7 +198,6 @@ class CaptureProbeService : Service() {
             lastReportFrames = 0L
             val activeSession = SessionRepository.get(this).state.phase == SessionPhase.ACTIVE
             resetSessionTracking(firstPlayIsArmed = activeSession)
-            primeSamplesRemaining = if (activeSession) RESTART_PRIME_SAMPLES else 0
             reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 3).also {
                 it.setOnImageAvailableListener(::onImageAvailable, callbackHandler)
             }
@@ -681,7 +679,6 @@ class CaptureProbeService : Service() {
         }
 
     private fun resetSessionTracking(firstPlayIsArmed: Boolean) {
-        if (!firstPlayIsArmed) primeSamplesRemaining = 0
         val generation = ++captureGeneration
         roiEventCache.reset(generation, primeExistingTable = firstPlayIsArmed)
         restartPrimeDeadlineAt = if (firstPlayIsArmed) {
@@ -749,7 +746,6 @@ class CaptureProbeService : Service() {
         private const val MANUAL_NEW_GAME_TIMEOUT_MS = 3_000L
         private const val PLAY_VISIBILITY_STEP = 8
         private const val PLAY_WHITE_LIMIT = 190
-        private const val RESTART_PRIME_SAMPLES = 3
         // 清空路径的后段额外冷却帧数；总计 = RoiPlayEventCache.clearSamples(6) + 本值(3) = 9 帧。
         private const val ROI_CLEAR_COOLDOWN_SAMPLES = 3
         private const val ROI_SAMPLE_INTERVAL_MS = 50L

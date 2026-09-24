@@ -48,7 +48,7 @@
 
 | ID | 问题 | 位置 | 证据 |
 |---|---|---|---|
-| **P0-1** | `withinConservation()` 恒真失效 | `GameReducer.kt:119-123` | `outsidePlayedCount + outsideAdded + selfPlayedCount + (locked - selfPlayedCount) <= 198` — `selfPlayedCount` 被代数消掉，退化为 `outsidePlayedCount + outsideAdded + locked <= 198`。正常对局中自己手牌本就是从 198 里来的，此式**永不触发**。注释声称「替代 clamp」，实际不拦任何事。 |
+| **P0-1**<br>⚠️已更正 | ~~`withinConservation()` 恒真失效~~ → **等价化简重构（非缺陷）** | `GameReducer.kt:119-123` | **2026-09-24 更正：误判。** 旧式 `outsidePlayed + outsideAdded + selfPlayed + (locked − selfPlayed) <= 198` 中两个 `selfPlayed` 项相消后正是新式 `outsidePlayed + outsideAdded <= 198 − locked`，**代数等价，旧实现语义正确、在正确边界触发**。反证法验证：换回旧写法 `GameReducerTest` 15 项仍全通过。**行为零变化**，仅去掉自相抵消项并补注释。 |
 | **P0-2** | `FirstPlayBoundaryGate` 忽略视觉信号 | `CaptureProbeStatus.kt:119-129` | `update(signals, hasStableHand)` 的 `signals` 参数**在函数体内从未引用**。开局边界实际只依赖 `hasStableHand`（稳定手牌样本 ≥2）。而 `openingSignals()` 每帧做绿色检测 + 720 次 `isWhite` 采样（`CaptureProbeService.kt:374-384`），**结果算出后丢弃**，纯浪费 CPU。 |
 | **P0-3** | `detectYoloCards` 用 `minOf` 聚合置信度 | `CaptureProbeService.kt:652` | `detections.minOfOrNull { it.confidence }` 取**最小**置信度作为整批牌 confidence。12 张牌里 1 张 0.26 → 整批 0.26 → `canFastConfirmPlay`（要求 ≥0.60，`PlayZone.kt:138`）**永远返回 false**，快速确认路径失效。 |
 | **P0-4** | `SessionRepository` 每帧重建 + 全量 JSON 读写 | `CaptureProbeService.kt:411,422,458,578,751` + `SessionRepository.kt:11-16` | 每次 `SessionRepository(this)` 构造都执行 `store.load()`（全量 JSON 解析 + `GameReducer.replay`）**并且立即 `store.save(state)`（全量序列化 + SharedPreferences 写入）**。`captureRoiEvents` 每 50ms 走一遍，`finalizeRoiEvent` 每区一次 → 每秒数十次磁盘 IO。 |

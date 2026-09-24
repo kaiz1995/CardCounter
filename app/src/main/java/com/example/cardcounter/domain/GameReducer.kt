@@ -129,8 +129,16 @@ object GameReducer {
      *
      * 注意：这里只校验"外面出牌"这一侧，不掺入 [GameState.selfPlayedCount]。
      * 自己出牌是**从自己手牌转移到桌上弃牌堆**，仍然消耗在 198 张之内、且不会让外面出牌变多，
-     * 早先版本把 `selfPlayedCount` 与其抵消项同时塞进表达式，代数相消后恒成立、永不触发，
-     * 实际等同于没有校验。
+     * 因此自己出牌不占用外面出牌的额度。
+     *
+     * ⚠️ **更正（2026-09-24）**：早先这里写的是
+     * `outsidePlayed + outsideAdded + selfPlayed + (locked - selfPlayed) <= 198`。
+     * 那两个 `selfPlayed` 项**代数相消**，等价于本式——所以它并非"恒真失效/永不触发"的 bug，
+     * 语义是正确的（曾一度被误判为 P0 缺陷，已用反证法澄清：把本式换回旧写法，
+     * 全部守恒测试仍然通过）。
+     *
+     * 本次改动只是**去掉自相抵消的项 + 补注释**，属可读性重构，**不改变任何行为**。
+     * 保留这个更正记录，避免后续再把它当成 bug 修一遍。
      */
     private fun withinConservation(state: GameState, outsideAdded: Int): Boolean {
         val locked = state.selfLockedHandCount ?: return false

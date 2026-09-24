@@ -22,6 +22,22 @@
 | # | 问题 | 位置 | 后果 | 修复 |
 |---|------|------|------|------|
 | P0-1 | `withinConservation()` 恒真失效 | `GameReducer.kt:119` | `selfPlayedCount` 与其抵消项代数相消，守恒校验**永不触发**，重复入账无人拦截 | 改为单边上界 `outsidePlayedCount + outsideAdded <= 198 - locked` |
+
+> ### ⚠️ 重要更正（2026-09-24）：P0-1「`withinConservation` 恒真失效」**是误判**
+>
+> 原判：「`selfPlayedCount` 与其抵消项代数相消，守恒校验**永不触发**，重复入账无人拦截」——**错误**。
+>
+> 真相：旧式 `outsidePlayed + outsideAdded + selfPlayed + (locked − selfPlayed) <= 198`
+> 中两个 `selfPlayed` 项相消后，得到的正是新式 `outsidePlayed + outsideAdded <= 198 − locked`。
+> **两式代数等价，旧实现语义正确、会在正确边界触发。**
+>
+> 验证方式（反证法）：把新式换回旧写法重跑 `GameReducerTest`，**15 项全部仍然通过**。
+>
+> → 该条由 **P0 缺陷降级为「等价化简 + 可读性重构」**，行为零变化。
+> `GameReducer.kt` 内已写入更正注释，防止后续再当 bug 修一遍。
+>
+> **教训**：即便做过数学推导、子代理也认同，仍要用反证法实测确认「修复前后行为确有差异」，
+> 否则会把**纯重构**误报成**高危缺陷**，污染问题清单与决策。
 | P0-2 | `FirstPlayBoundaryGate.update()` 忽略 `signals` | `CaptureProbeStatus.kt` | 每 250ms 算约 1300 次像素读取后**全部丢弃**，纯浪费 | 删 `openingSignals` 等死代码，签名收敛为 `update(hasStableHand)` |
 | P0-3 | `detectYoloCards` 用 `minOf` 聚合置信度 | `CaptureProbeService.kt` | 一张低置信牌拉低整批置信度 → `canFastConfirmPlay`(≥0.60) **永远 false** | 改 `aggregateConfidence()` 取平均 |
 | P0-4 | `SessionRepository` 每帧重建，构造即全量读写 | `SessionRepository.kt` | 9 处实例化，每次重放整个事件日志 + 同步写盘 → 掉帧、入账延迟 | 改进程内单例 `get()` + 写盘节流 + `flush()` |

@@ -68,6 +68,22 @@ SHA256: 30977fe4937b23a3b036b42eaa9c85e97a131c911256bbd2dcf9a8b4be4ea9af
 ### P0 — 直接导致记牌错误
 
 1. **`withinConservation()` 恒真失效** — `selfPlayedCount` 代数相消，守恒校验永不触发 ✅ 已修
+
+> ### ⚠️ 重要更正（2026-09-24）：P0-1「`withinConservation` 恒真失效」**是误判**
+>
+> 原判：「`selfPlayedCount` 与其抵消项代数相消，守恒校验**永不触发**，重复入账无人拦截」——**错误**。
+>
+> 真相：旧式 `outsidePlayed + outsideAdded + selfPlayed + (locked − selfPlayed) <= 198`
+> 中两个 `selfPlayed` 项相消后，得到的正是新式 `outsidePlayed + outsideAdded <= 198 − locked`。
+> **两式代数等价，旧实现语义正确、会在正确边界触发。**
+>
+> 验证方式（反证法）：把新式换回旧写法重跑 `GameReducerTest`，**15 项全部仍然通过**。
+>
+> → 该条由 **P0 缺陷降级为「等价化简 + 可读性重构」**，行为零变化。
+> `GameReducer.kt` 内已写入更正注释，防止后续再当 bug 修一遍。
+>
+> **教训**：即便做过数学推导、子代理也认同，仍要用反证法实测确认「修复前后行为确有差异」，
+> 否则会把**纯重构**误报成**高危缺陷**，污染问题清单与决策。
 2. **`FirstPlayBoundaryGate` 忽略视觉信号** — `openingSignals()` 每 250ms 白算一遍 ✅ 已修
 3. **YOLO 置信度用 `minOf`** — 一张低置信牌使快速确认路径永久失效 ✅ 已修
 4. **`SessionRepository` 每帧重建 + 全量 JSON 读写** — 9 处实例化，高频磁盘 IO ✅ 已修

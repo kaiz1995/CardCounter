@@ -95,6 +95,12 @@ OutsideRemaining
 |---|---|---|---|---|
 | 1 | 建立独立分支 | 主代理 | 完成 | `optimization-20260913` = `dda6b45` |
 | 2 | 全仓排查缺陷 | 主代理 | 完成 | 12 个（P0×4 / P1×5 / P2×3） |
+
+> ⚠️ **更正（2026-09-24）**：清单里的 P0-1「`withinConservation` 恒真失效」**是误判**——
+> 旧式两个 `selfPlayed` 项代数相消后与新式完全等价，**旧实现语义正确**。
+> 该项降级为「等价化简 + 可读性重构」，**行为零变化**。
+> 因此真实缺陷为 **P0×3 / P1×5 / P2×3 + 1 处等价重构**（总数仍 12 条）。
+> 详见 `plans/optimization-report-20260913.md` 的更正章节。
 | 3 | 编写实施计划 | 主代理 | 完成 | `plans/optimization-master-20260913.md` |
 | 4 | 阶段 1 会计与领域层 | 子代理 A | 完成 | `GameReducer` / `RoiPlayEventCache` |
 | 5 | 阶段 2 识别路径 | 子代理 B | 完成 | `CaptureProbeService` / `CaptureProbeStatus` / `HandRankMatcher` |
