@@ -26,14 +26,19 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.example.cardcounter.R
-import com.example.cardcounter.domain.GameEvent
-import com.example.cardcounter.domain.PauseReason
+import com.example.cardcounter.domain.DispatchResult
 import com.example.cardcounter.domain.Rank
+import com.example.cardcounter.domain.RankCompleteness
 import com.example.cardcounter.domain.RankCounts
 import com.example.cardcounter.domain.SessionPhase
 import com.example.cardcounter.persistence.SessionRepository
+import com.example.cardcounter.persistence.SessionStore
 import com.example.cardcounter.service.OverlayService
+import com.example.cardcounter.storage.DiagnosticsLog
+import com.example.cardcounter.storage.LedgerCommand
+import com.example.cardcounter.storage.SessionActor
 import com.example.cardcounter.vision.MnnYoloDetector
+import java.util.UUID
 import kotlin.math.roundToInt
 
 /** 仅验证 MediaProjection 与帧流，不在此处实现视觉识别。 */
@@ -84,12 +89,26 @@ class CaptureProbeService : Service() {
     @Volatile private var lastStablePrePlayHand: RankCounts? = null
     @Volatile private var primeSamplesRemaining = 0
     private val firstPlayGate = FirstPlayBoundaryGate()
+    private lateinit var sessionLedger: SessionRepository
+    private lateinit var sessionActor: SessionActor
+    private lateinit var diagnosticsLog: DiagnosticsLog
+    private lateinit var diagnosticsStore: SessionStore
 
     override fun onCreate() {
         super.onCreate()
         handRankMatcher = HandRankMatcher(this)
         handCardPositionDetector = HandCardPositionDetector()
         issueSampleStore = IssueSampleStore(this)
+        // 单写者：本服务生命周期内所有账本写入都经过它串行执行。
+        sessionLedger = SessionRepository(this)
+        // 单写者：读 phase 也走同一个 Repository 实例，杜绝临时实例 init 触发的旁路写盘。
+        sessionActor = SessionActor(sessionLedger)
+        diagnosticsLog = DiagnosticsLog()
+        diagnosticsStore = SessionStore(this)
+        diagnosticsStore.loadDiagnostics()?.let { json ->
+            runCatching { diagnosticsLog.loadRecentJson(json) }
+                .onFailure { Log.w(TAG, "DIAGNOSTICS_RESTORE_FAILED", it) }
+        }
         publicPlayYolo = runCatching { MnnYoloDetector(this) }
             .onFailure { Log.w(TAG, "YOLO_DISABLED", it) }
             .getOrNull()
@@ -132,6 +151,7 @@ class CaptureProbeService : Service() {
         publicPlayYolo = null
         roiEventCache.reset(++captureGeneration, primeExistingTable = false)
         issueSampleStore.close()
+        sessionActor.shutdown()
         CaptureProbeStatus.stopped()
         callbackThread.quitSafely()
         rankThread.quitSafely()
@@ -172,7 +192,7 @@ class CaptureProbeService : Service() {
             firstFrameAt = 0L
             lastReportAt = 0L
             lastReportFrames = 0L
-            val activeSession = SessionRepository(this).state.phase == SessionPhase.ACTIVE
+            val activeSession = sessionLedger.state.phase == SessionPhase.ACTIVE
             resetSessionTracking(firstPlayIsArmed = activeSession)
             primeSamplesRemaining = if (activeSession) RESTART_PRIME_SAMPLES else 0
             reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 3).also {
@@ -408,9 +428,8 @@ class CaptureProbeService : Service() {
 
     private fun lockPrePlayHand() {
         val cards = lastStablePrePlayHand ?: return
-        val repository = SessionRepository(this)
-        if (repository.state.phase != SessionPhase.PRE_PLAY) return
-        repository.dispatch(GameEvent.SelfHandLocked(cards))
+        if (sessionLedger.state.phase != SessionPhase.PRE_PLAY) return
+        sessionActor.post(LedgerCommand.LockHand(cards, cards.total(), RankCompleteness.COMPLETE))
         OverlayService.refresh(this)
         Log.i(TAG, "SELF_HAND_LOCKED total=${cards.total()} cards=$cards")
     }
@@ -419,9 +438,8 @@ class CaptureProbeService : Service() {
     private fun completeManualNewGame(cards: RankCounts, handCount: Int) {
         if (!manualNewGameRequested || handCount <= 0) return
         manualNewGameRequested = false
-        val repository = SessionRepository(this)
-        repository.newGame()
-        repository.dispatch(GameEvent.SelfHandLocked(cards, cardCount = handCount))
+        sessionActor.post(LedgerCommand.NewSession())
+        sessionActor.post(LedgerCommand.LockHand(cards, handCount, RankCompleteness.COMPLETE))
         selfHandCountTracker.reset(handCount)
         callbackHandler.post {
             resetSessionTracking(firstPlayIsArmed = true)
@@ -455,8 +473,7 @@ class CaptureProbeService : Service() {
         tableVisible: Boolean
     ) {
         if (!tableVisible) return
-        val repository = SessionRepository(this)
-        if (repository.state.phase != SessionPhase.ACTIVE) return
+        if (sessionLedger.state.phase != SessionPhase.ACTIVE) return
         val priming = primeSamplesRemaining > 0
         PlayZone.entries.forEach { zone ->
             val templateCards = handRankMatcher.detectPlay(ink, zone)
@@ -467,6 +484,13 @@ class CaptureProbeService : Service() {
                 Log.i(
                     TAG,
                     "PLAY_CANDIDATE zone=$zone visible=$visible yolo=$yoloCards template=$templateCards cards=$cards"
+                )
+                // 每条最终候选记 OBSERVED；候选为空不计数量。
+                recordDiagnostics(
+                    null, zone,
+                    quantity = cards.total().takeIf { it > 0 },
+                    rankTotal = cards.total().takeIf { it > 0 },
+                    decision = DiagnosticsLog.Decision.OBSERVED
                 )
                 lastPlayCandidates[zone] = cards
             }
@@ -489,17 +513,40 @@ class CaptureProbeService : Service() {
                 return@forEach
             }
             val play = stablePlayGate.update(zone, cards) ?: return@forEach
-            val event = play.toGameEvent()
-            runCatching { repository.dispatch(event) }
-                .onSuccess {
+            recordDiagnostics(
+                null, zone,
+                quantity = play.cards.total(),
+                rankTotal = play.cards.total(),
+                decision = DiagnosticsLog.Decision.STABLE
+            )
+            // 单写者派发：evidenceId 兼作账本事件 id，重试不会重复扣牌。
+            val command = play.toLedgerCommand()
+            val result = sessionActor.post(command)
+            recordDiagnostics(
+                command.evidenceId, zone,
+                quantity = play.cards.total(),
+                rankTotal = play.cards.total(),
+                decision = DiagnosticsLog.Decision.forResult(result),
+                reason = reasonOf(result)
+            )
+            when (result) {
+                is DispatchResult.Rejected -> {
                     OverlayService.refresh(this)
-                    Log.i(TAG, "FORMAL_PLAY source=${play.zone.source} zone=${play.zone} cards=${play.cards}")
+                    Log.w(TAG, "PLAY_REJECTED zone=${play.zone} reason=${result.reason}")
                 }
-                .onFailure {
-                    repository.dispatch(GameEvent.SessionPaused(PauseReason.RANK_UNSTABLE))
+                is DispatchResult.Paused -> {
                     OverlayService.refresh(this)
-                    Log.w(TAG, "SESSION_PAUSED reason=RANK_UNSTABLE", it)
+                    Log.w(TAG, "PLAY_PAUSED zone=${play.zone} reason=${result.reason}")
                 }
+                else -> {
+                    OverlayService.refresh(this)
+                    Log.i(
+                        TAG,
+                        "FORMAL_PLAY source=${play.zone.source} zone=${play.zone} " +
+                            "cards=${play.cards} decision=${DiagnosticsLog.Decision.forResult(result)}"
+                    )
+                }
+            }
         }
         if (priming) {
             primeSamplesRemaining -= 1
@@ -572,27 +619,58 @@ class CaptureProbeService : Service() {
             }
             if (cards == null) {
                 saveIssue(finalized, "NO_CONSENSUS", candidates)
+                // 无共识保留证据等待重试，记 RETRY，不静默丢弃。
+                recordDiagnostics(
+                    null, finalized.zone,
+                    quantity = null,
+                    rankTotal = candidates.maxOfOrNull { it.cards.total() },
+                    decision = DiagnosticsLog.Decision.RETRY,
+                    reason = "NO_CONSENSUS"
+                )
                 Log.w(TAG, "ROI_NO_CONSENSUS zone=${finalized.zone} candidates=$candidates")
                 return
             }
-            val repository = SessionRepository(this)
-            if (repository.state.phase != SessionPhase.ACTIVE) return
+            if (sessionLedger.state.phase != SessionPhase.ACTIVE) return
             val stable = stablePlayGate.acceptStable(finalized.zone, cards) ?: return
+            recordDiagnostics(
+                null, finalized.zone,
+                quantity = stable.cards.total(),
+                rankTotal = stable.cards.total(),
+                decision = DiagnosticsLog.Decision.STABLE
+            )
             if (shouldAuditAce(finalized.zone, stable.cards)) {
                 issueSampleStore.saveAceAudit(finalized.frames.map { it.bitmap }, finalized.zone, candidates,
                     templateCards, stable.cards, finalized.generation, SystemClock.elapsedRealtime())
             }
-            val event = stable.toGameEvent()
-            runCatching { repository.dispatch(event) }
-                .onSuccess {
-                    OverlayService.refresh(this)
-                    Log.i(TAG, "FORMAL_PLAY source=${finalized.zone.source} zone=${finalized.zone} cards=$cards")
-                }
-                .onFailure {
+            // 单写者派发：evidenceId 兼作账本事件 id，重试不会重复扣牌。
+            val command = stable.toLedgerCommand()
+            val result = sessionActor.post(command)
+            recordDiagnostics(
+                command.evidenceId, finalized.zone,
+                quantity = stable.cards.total(),
+                rankTotal = stable.cards.total(),
+                decision = DiagnosticsLog.Decision.forResult(result),
+                reason = reasonOf(result)
+            )
+            when (result) {
+                is DispatchResult.Rejected -> {
                     saveIssue(finalized, "REDUCER_REJECTED", candidates)
                     OverlayService.refresh(this)
-                    Log.w(TAG, "PLAY_REJECTED reason=OUT_OF_STOCK", it)
+                    Log.w(TAG, "PLAY_REJECTED zone=${finalized.zone} reason=${result.reason}")
                 }
+                is DispatchResult.Paused -> {
+                    OverlayService.refresh(this)
+                    Log.w(TAG, "PLAY_PAUSED zone=${finalized.zone} reason=${result.reason}")
+                }
+                else -> {
+                    OverlayService.refresh(this)
+                    Log.i(
+                        TAG,
+                        "FORMAL_PLAY source=${finalized.zone.source} zone=${finalized.zone} " +
+                            "cards=$cards decision=${DiagnosticsLog.Decision.forResult(result)}"
+                    )
+                }
+            }
         } finally {
             finalized.frames.forEach { it.bitmap.recycle() }
         }
@@ -606,6 +684,39 @@ class CaptureProbeService : Service() {
         finalized.frames.maxByOrNull(RoiFrame::quality)?.let { frame ->
             issueSampleStore.save(frame.bitmap, finalized.zone, reason, candidates)
         }
+    }
+
+    /** 稳定出牌 → 单写者账本命令；evidenceId 兼作账本事件 id，重试不会重复扣牌。 */
+    private fun StablePlay.toLedgerCommand(): LedgerCommand {
+        val evidenceId = UUID.randomUUID().toString()
+        return when (zone.source) {
+            PlaySource.SELF -> LedgerCommand.AcceptSelfPlay(
+                cards, cards.total(), RankCompleteness.COMPLETE, evidenceId
+            )
+            PlaySource.OUTSIDE -> LedgerCommand.AcceptOutsidePlay(
+                cards, cards.total(), requireNotNull(zone.seat), RankCompleteness.COMPLETE, evidenceId
+            )
+        }
+    }
+
+    /** 诊断记账统一入口：入环形缓冲并轮换持久化到独立 SharedPreferences key。 */
+    private fun recordDiagnostics(
+        evidenceId: String?,
+        zone: PlayZone,
+        quantity: Int?,
+        rankTotal: Int?,
+        decision: String,
+        reason: String? = null
+    ) {
+        diagnosticsLog.record(evidenceId, zone.name, zone.source.name, quantity, rankTotal, decision, reason)
+        runCatching { diagnosticsStore.saveDiagnostics(diagnosticsLog.toRecentJson()) }
+            .onFailure { Log.w(TAG, "DIAGNOSTICS_SAVE_FAILED", it) }
+    }
+
+    private fun reasonOf(result: DispatchResult): String? = when (result) {
+        is DispatchResult.Rejected -> result.reason
+        is DispatchResult.Paused -> result.reason.name
+        else -> null
     }
 
     private fun roiQuality(bitmap: Bitmap): Int {
@@ -748,7 +859,7 @@ class CaptureProbeService : Service() {
         selfHandCountCandidate = null
         stableSelfHandCounts = 0
         selfHandCountTracker.reset(if (firstPlayIsArmed) {
-            SessionRepository(this).state.selfLockedHandCount
+            sessionLedger.state.selfLockedHandCount
         } else {
             null
         })

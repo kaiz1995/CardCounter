@@ -47,6 +47,14 @@ sealed interface GameEvent {
         override val id: String = UUID.randomUUID().toString()
     ) : GameEvent
 
+    /**
+     * 显式恢复：仅由人工/上层决策产生；重启回放不会生成该事件，
+     * 因此暂停状态不会被重启自动解除。
+     */
+    data class SessionResumed(
+        override val id: String = UUID.randomUUID().toString()
+    ) : GameEvent
+
     data class SessionClosed(
         override val id: String = UUID.randomUUID().toString()
     ) : GameEvent

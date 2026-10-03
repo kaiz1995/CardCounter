@@ -21,6 +21,7 @@ object GameReducer {
             is GameEvent.SelfCardsPlayed -> addSelfPlay(state, event)
             is GameEvent.Reverted -> revert(state, event)
             is GameEvent.SessionPaused -> pause(state, event)
+            is GameEvent.SessionResumed -> resume(state, event)
             is GameEvent.SessionClosed -> accept(close(state, event))
         }
     }
@@ -215,6 +216,27 @@ object GameReducer {
             state.copy(
                 phase = SessionPhase.PAUSED,
                 pauseReason = event.reason,
+                events = state.events + event
+            )
+        )
+    }
+
+    /**
+     * 显式恢复：仅 PAUSED → ACTIVE，清空暂停原因并追加 SessionResumed 事件。
+     * PRE_PLAY/ACTIVE/CLOSED 收到 Resume 一律 Rejected；
+     * 重启回放不会产生 Resume 事件，暂停状态仍保留。
+     */
+    private fun resume(state: GameState, event: GameEvent.SessionResumed): DispatchResult {
+        if (state.phase != SessionPhase.PAUSED) {
+            return DispatchResult.Rejected(state, "仅 PAUSED 状态可恢复，当前 ${state.phase}")
+        }
+        if (state.events.isEmpty() || state.events.first() !is GameEvent.NewSession) {
+            return DispatchResult.Rejected(state, "会话已损坏，不能恢复")
+        }
+        return accept(
+            state.copy(
+                phase = SessionPhase.ACTIVE,
+                pauseReason = null,
                 events = state.events + event
             )
         )

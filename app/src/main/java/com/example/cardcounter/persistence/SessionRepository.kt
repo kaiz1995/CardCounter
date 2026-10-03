@@ -6,22 +6,28 @@ import com.example.cardcounter.domain.DispatchResult
 import com.example.cardcounter.domain.GameEvent
 import com.example.cardcounter.domain.GameReducer
 import com.example.cardcounter.domain.GameState
+import com.example.cardcounter.storage.LedgerGateway
 
-class SessionRepository(context: Context) {
+class SessionRepository(context: Context) : LedgerGateway {
     private val store = SessionStore(context.applicationContext)
 
-    var state: GameState = store.load() ?: GameReducer.newSession()
+    override var state: GameState
+        private set
+
+    /** 存储序列号（CAS 期望值）：每次成功 save 后更新为 state.events.size。 */
+    @Volatile
+    var seq: Int = 0
         private set
 
     init {
-        store.save(state)
+        val loaded = store.loadWithSeq()
+        state = loaded?.first ?: GameReducer.newSession()
+        seq = loaded?.second ?: 0
+        persist(state)
     }
 
-    /** 兼容旧调用方：返回派发后的账本状态；被拒事件不落账，返回原状态。 */
-    fun dispatch(event: GameEvent): GameState = dispatchDetailed(event).state
-
     /** 完整派发结果：Accepted / AcceptedQuantityOnly / DuplicateIgnored / Rejected / Paused。 */
-    fun dispatchDetailed(event: GameEvent): DispatchResult {
+    override fun dispatchDetailed(event: GameEvent): DispatchResult {
         val result = GameReducer.apply(state, event)
         when (result) {
             is DispatchResult.Rejected -> {
@@ -30,16 +36,17 @@ class SessionRepository(context: Context) {
             }
             else -> {
                 state = result.state
-                store.save(state)
+                persist(state)
             }
         }
         return result
     }
 
-    fun newGame(): GameState {
-        state = GameReducer.newSession()
-        store.save(state)
-        return state
+    /** CAS 落盘：磁盘 seq 大于本地期望时拒绝写入，序列号不推进。 */
+    private fun persist(target: GameState) {
+        if (store.save(target, seq)) {
+            seq = target.events.size
+        }
     }
 
     private companion object {
