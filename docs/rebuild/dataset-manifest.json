@@ -1,0 +1,194 @@
+{
+  "generatedAt": "2026-10-03",
+  "baselineCommit": "dda6b451e03ac1db5fe372729a4a8b0c6d7b58e8",
+  "hashAlgorithm": "SHA256",
+  "note": "所有字节数与哈希均来自文件系统实测（sha256sum + ls -la），日期 2026-10-03。视频文件位于主仓库目录（只读），不入 git。",
+  "videos": [
+    {
+      "fileName": "SVID_20260728_145252_1.mp4",
+      "absolutePath": "D:/HuaweiMoveData/Users/张大脸小太阳/Documents/workbuddy/记牌器开发/9局/SVID_20260728_145252_1.mp4",
+      "bytes": 24547646,
+      "sha256": "617b6ad6bdc9ebde6eda6a51a203abf7a08357a1c596d441ec9561923bef4b95",
+      "sourceGroup": "9局",
+      "dedupConclusion": "唯一，与 source/ 组无重复"
+    },
+    {
+      "fileName": "SVID_20260728_145333_1.mp4",
+      "absolutePath": "D:/HuaweiMoveData/Users/张大脸小太阳/Documents/workbuddy/记牌器开发/9局/SVID_20260728_145333_1.mp4",
+      "bytes": 24375832,
+      "sha256": "10903f5cfbf3aae24e867449e62daf564dbc8749a13edec51dfe865cb4054ff0",
+      "sourceGroup": "9局",
+      "dedupConclusion": "唯一，与 source/ 组无重复"
+    },
+    {
+      "fileName": "SVID_20260728_145406_1.mp4",
+      "absolutePath": "D:/HuaweiMoveData/Users/张大脸小太阳/Documents/workbuddy/记牌器开发/9局/SVID_20260728_145406_1.mp4",
+      "bytes": 21613085,
+      "sha256": "bf48de0a181addb09da754d09cfc69a944d6c4c20594516dbcd84f0e7114578e",
+      "sourceGroup": "9局",
+      "dedupConclusion": "唯一，与 source/ 组无重复"
+    },
+    {
+      "fileName": "SVID_20260728_145436_1.mp4",
+      "absolutePath": "D:/HuaweiMoveData/Users/张大脸小太阳/Documents/workbuddy/记牌器开发/9局/SVID_20260728_145436_1.mp4",
+      "bytes": 21515837,
+      "sha256": "71a135115486337cf99a8f52f0e11d17fbffb378d339616b8222e14ccdd603bb",
+      "sourceGroup": "9局",
+      "dedupConclusion": "唯一，与 source/ 组无重复"
+    },
+    {
+      "fileName": "SVID_20260728_145511_1.mp4",
+      "absolutePath": "D:/HuaweiMoveData/Users/张大脸小太阳/Documents/workbuddy/记牌器开发/9局/SVID_20260728_145511_1.mp4",
+      "bytes": 19462237,
+      "sha256": "59bf7d73478070af1b5832624eec5d34cedef3e672066cdfde027de59283010f",
+      "sourceGroup": "9局",
+      "dedupConclusion": "唯一，与 source/ 组无重复"
+    },
+    {
+      "fileName": "SVID_20260728_145541_1.mp4",
+      "absolutePath": "D:/HuaweiMoveData/Users/张大脸小太阳/Documents/workbuddy/记牌器开发/9局/SVID_20260728_145541_1.mp4",
+      "bytes": 19506617,
+      "sha256": "4c21ca2a704c45c4f416d01c2020374fdc7a0fca4fc669b89f1161fa87870299",
+      "sourceGroup": "9局",
+      "dedupConclusion": "唯一，与 source/ 组无重复"
+    },
+    {
+      "fileName": "SVID_20260728_145608_1.mp4",
+      "absolutePath": "D:/HuaweiMoveData/Users/张大脸小太阳/Documents/workbuddy/记牌器开发/9局/SVID_20260728_145608_1.mp4",
+      "bytes": 20214377,
+      "sha256": "f0301023f63ee0bb6c8ac4fee2eb0a565e98bebc12cc2f50994b9df2d07e9ede",
+      "sourceGroup": "9局",
+      "dedupConclusion": "唯一，与 source/ 组无重复"
+    },
+    {
+      "fileName": "SVID_20260728_145637_1.mp4",
+      "absolutePath": "D:/HuaweiMoveData/Users/张大脸小太阳/Documents/workbuddy/记牌器开发/9局/SVID_20260728_145637_1.mp4",
+      "bytes": 18949532,
+      "sha256": "cb9a047d8592d242dbcd6e9a1fa782f92fefb3b3352d848232dfe73638608c1d",
+      "sourceGroup": "9局",
+      "dedupConclusion": "唯一，与 source/ 组无重复"
+    },
+    {
+      "fileName": "SVID_20260728_145704_1.mp4",
+      "absolutePath": "D:/HuaweiMoveData/Users/张大脸小太阳/Documents/workbuddy/记牌器开发/9局/SVID_20260728_145704_1.mp4",
+      "bytes": 17756127,
+      "sha256": "2682f3b2f35867e2817fd8ba52969f4072c746b5d00ac26ff238f6fcb6175ec6",
+      "sourceGroup": "9局",
+      "dedupConclusion": "唯一，与 source/ 组无重复"
+    },
+    {
+      "fileName": "SVID_20260727_201930_1.mp4",
+      "absolutePath": "D:/HuaweiMoveData/Users/张大脸小太阳/Documents/workbuddy/记牌器开发/source/SVID_20260727_201930_1.mp4",
+      "bytes": 25999347,
+      "sha256": "6d130191b968d5f50eb108c17c998fbebd6ba4a93075f55abb73b13efd1b6778",
+      "sourceGroup": "source",
+      "dedupConclusion": "唯一，与 9局/ 组无重复"
+    },
+    {
+      "fileName": "SVID_20260728_135222_1.mp4",
+      "absolutePath": "D:/HuaweiMoveData/Users/张大脸小太阳/Documents/workbuddy/记牌器开发/source/SVID_20260728_135222_1.mp4",
+      "bytes": 53325315,
+      "sha256": "cf91d316724e0953e0bab4287274dd97387aee85ff3d4be0b129a27e7e13c3d1",
+      "sourceGroup": "source",
+      "dedupConclusion": "唯一，与 9局/ 组无重复"
+    },
+    {
+      "fileName": "SVID_20260810_102658_1.mp4",
+      "absolutePath": "D:/HuaweiMoveData/Users/张大脸小太阳/Documents/workbuddy/记牌器开发/source/SVID_20260810_102658_1.mp4",
+      "bytes": 959847483,
+      "sha256": "382e992b51de516e15a4cf632874cfec93ad472a50ae64d28afbdcd1255fd5d1",
+      "sourceGroup": "source",
+      "dedupConclusion": "唯一，与 9局/ 组无重复"
+    },
+    {
+      "fileName": "SVID_20260810_143651_1.mp4",
+      "absolutePath": "D:/HuaweiMoveData/Users/张大脸小太阳/Documents/workbuddy/记牌器开发/source/SVID_20260810_143651_1.mp4",
+      "bytes": 932177480,
+      "sha256": "84c2428b4306c5dbd0bdd44198c30f24088bf35f0a94454cb44b5ea907ade547",
+      "sourceGroup": "source",
+      "dedupConclusion": "唯一，与 9局/ 组无重复"
+    },
+    {
+      "fileName": "SVID_20260811_075639_1.mp4",
+      "absolutePath": "D:/HuaweiMoveData/Users/张大脸小太阳/Documents/workbuddy/记牌器开发/source/SVID_20260811_075639_1.mp4",
+      "bytes": 238235695,
+      "sha256": "7f9b26f056c171753d1f2590c6e6284343dc14ce0aa8f56382e9e2cfd3e88f08",
+      "sourceGroup": "source",
+      "dedupConclusion": "唯一，与 9局/ 组无重复"
+    },
+    {
+      "fileName": "SVID_20260811_214558_1.mp4",
+      "absolutePath": "D:/HuaweiMoveData/Users/张大脸小太阳/Documents/workbuddy/记牌器开发/source/SVID_20260811_214558_1.mp4",
+      "bytes": 17801534,
+      "sha256": "5f29601e904a4e98311e24152972cc1af37a4b991c7ac01195821ddd94d44b24",
+      "sourceGroup": "source",
+      "dedupConclusion": "唯一，与 9局/ 组无重复"
+    },
+    {
+      "fileName": "SVID_20260813_164333_1.mp4",
+      "absolutePath": "D:/HuaweiMoveData/Users/张大脸小太阳/Documents/workbuddy/记牌器开发/source/SVID_20260813_164333_1.mp4",
+      "bytes": 233565210,
+      "sha256": "a66ba6289bdbfc82ee8e8b9fe1a3d71d295dc74f01918f9c7435348cce803ee5",
+      "sourceGroup": "source",
+      "dedupConclusion": "唯一，与 9局/ 组无重复"
+    },
+    {
+      "fileName": "SVID_20260815_202234_1.mp4",
+      "absolutePath": "D:/HuaweiMoveData/Users/张大脸小太阳/Documents/workbuddy/记牌器开发/source/SVID_20260815_202234_1.mp4",
+      "bytes": 338299522,
+      "sha256": "c637ff3dce990312d33325b972f9a5dc65357e64a0f491f85a530763a20c71e8",
+      "sourceGroup": "source",
+      "dedupConclusion": "唯一，与 9局/ 组无重复"
+    },
+    {
+      "fileName": "SVID_20260815_210429_1.mp4",
+      "absolutePath": "D:/HuaweiMoveData/Users/张大脸小太阳/Documents/workbuddy/记牌器开发/source/SVID_20260815_210429_1.mp4",
+      "bytes": 250849448,
+      "sha256": "c2007cd420129f0354be09632ac7679634f1c179a09a575f470d652fe5db2410",
+      "sourceGroup": "source",
+      "dedupConclusion": "唯一，与 9局/ 组无重复"
+    }
+  ],
+  "dedupSummary": {
+    "videoCount_9ju": 9,
+    "videoCount_source": 9,
+    "identicalPairs": 0,
+    "conclusion": "9局/ 与 source/ 不是同一批视频的两份拷贝：18 个文件文件名、字节数、SHA256 均互不重复。9局/ 为 2026-07-28 14:52–14:57 录制的 9 个短片段（每段约 17–25 MB，1 段≈1 局）；source/ 为 2026-07-27 至 2026-08-15 录制的 9 个长视频（17 MB–960 MB，单个可能含多局，整局数待切分标注后确定）。",
+    "sourceGameCount": "待补（需整局切分标注）"
+  },
+  "split": {
+    "ruleRef": "docs/rebuild/sample-split-rules.md",
+    "unit": "整局",
+    "totalGames": 9,
+    "threshold": 30,
+    "gap": 21,
+    "gapNote": "当前总数 9 < 方案门槛 30，缺口 21 局需补充录制（source/ 长视频切分后可部分抵扣，抵扣数待切分确定）。",
+    "suggestion": {
+      "dev": {
+        "count": 6,
+        "games": [
+          "SVID_20260728_145252_1.mp4",
+          "SVID_20260728_145333_1.mp4",
+          "SVID_20260728_145406_1.mp4",
+          "SVID_20260728_145436_1.mp4",
+          "SVID_20260728_145511_1.mp4",
+          "SVID_20260728_145541_1.mp4"
+        ]
+      },
+      "tuning": {
+        "count": 2,
+        "games": [
+          "SVID_20260728_145608_1.mp4",
+          "SVID_20260728_145637_1.mp4"
+        ]
+      },
+      "blind": {
+        "count": 1,
+        "games": [
+          "SVID_20260728_145704_1.mp4"
+        ]
+      },
+      "rationale": "按录制时间顺序切分：前 6 局为开发集，随后 2 局为调参集，最后 1 局为盲测集。source/ 长视频切分出的整局在补齐标注前不进入任何集合，避免污染盲测。"
+    }
+  }
+}
