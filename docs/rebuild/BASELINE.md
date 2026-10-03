@@ -11,9 +11,9 @@
 | 分支名 | `rebuild-event-pipeline`（从远程 main `dda6b451` 创建） |
 | 来源仓库 | GitHub `kaiz1995/CardCounter` |
 | 工作区状态 | 仅 `.gitignore` 有未提交修改（新增 `docs/*` + `!docs/rebuild/` 例外），代码文件干净 |
-| APK SHA256 | 待验收后填写 |
+| APK SHA256 | `0f582d4227eee4791b0a1a62dfa4e7bbd202b48bd98ae526a0643bd722120c03`（P2 构建实测；SHA256 每次构建都变，校验以字节大小 47,089,539 为准） |
 
-构建证据（APK SHA256）待主代理验收后补填。
+构建证据（APK SHA256）已由主代理验收补填，详见 `ACCEPTANCE-20261003.md`。
 
 ## 2. 代码模块清单
 
