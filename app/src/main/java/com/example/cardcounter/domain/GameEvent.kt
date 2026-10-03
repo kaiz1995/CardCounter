@@ -14,21 +14,27 @@ sealed interface GameEvent {
         val cards: RankCounts,
         override val id: String = UUID.randomUUID().toString(),
         /** 手牌几何检测为数量账本；cards 仅保留牌面猜测。 */
-        val cardCount: Int = cards.total()
+        val cardCount: Int = cards.total(),
+        /** UNKNOWN 时 cards 必须为全零，锁定只进数量账（selfLockedHand 为 null）。 */
+        val rankCompleteness: RankCompleteness = RankCompleteness.COMPLETE
     ) : GameEvent
 
     data class OutsideCardsPlayed(
         val cards: RankCounts,
         override val id: String = UUID.randomUUID().toString(),
         val seat: OutsideSeat? = null,
-        val cardCount: Int = cards.total()
+        val cardCount: Int = cards.total(),
+        /** COMPLETE 时 cardCount 必须等于 cards.total()，否则拒绝。 */
+        val rankCompleteness: RankCompleteness = RankCompleteness.COMPLETE
     ) : GameEvent
 
     /** 自己出牌只做事件边界记录，绝不扣外面剩余。 */
     data class SelfCardsPlayed(
         val cards: RankCounts,
         override val id: String = UUID.randomUUID().toString(),
-        val cardCount: Int = cards.total()
+        val cardCount: Int = cards.total(),
+        /** COMPLETE 时 cardCount 必须等于 cards.total()，否则拒绝。 */
+        val rankCompleteness: RankCompleteness = RankCompleteness.COMPLETE
     ) : GameEvent
 
     data class Reverted(
@@ -53,5 +59,7 @@ enum class PauseReason(val displayName: String) {
     UNKNOWN_SEMANTIC("未知语义"),
     NEW_GAME_UNCLEAR("新局不明"),
     CAPTURE_INTERRUPTED("截屏中断"),
+    /** 任何出牌会导致超库存或总量守恒失败，原事件不进账本。 */
+    CONSERVATION_FAILURE("守恒失败"),
     CORRUPTED_SESSION("会话损坏")
 }

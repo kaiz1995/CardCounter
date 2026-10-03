@@ -35,6 +35,8 @@ dependencies {
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("org.tensorflow:tensorflow-lite:2.17.0")
     testImplementation("junit:junit:4.13.2")
+    // JVM 单测使用真实 org.json 实现（Android SDK 的 org.json 在本地单测中未 mock）
+    testImplementation("org.json:json:20240303")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test:runner:1.5.2")
 }

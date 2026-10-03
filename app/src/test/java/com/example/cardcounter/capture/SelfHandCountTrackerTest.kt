@@ -25,7 +25,7 @@ class SelfHandCountTrackerTest {
         val state = GameReducer.apply(
             GameReducer.newSession(),
             GameEvent.SelfHandLocked(RankCounts.of(mapOf(Rank.THREE to 33)))
-        )
+        ).state
         assertEquals(SessionPhase.ACTIVE, state.phase)
         assertFalse(state.events.any { it is GameEvent.SessionPaused })
     }
