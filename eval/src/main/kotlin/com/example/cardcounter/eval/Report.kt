@@ -145,6 +145,7 @@ fun buildGameReport(
 )
 
 const val TRUTH_RANKS_INCOMPLETE = "truth_ranks_incomplete"
+const val SELF_HAND_UNKNOWN = "self_hand_unknown"
 
 private fun remainingOf(
     meta: GameMeta,
@@ -153,6 +154,7 @@ private fun remainingOf(
     completeness: com.example.cardcounter.domain.RankCompleteness
 ): RemainingReport {
     val unavailable = when {
+        completeness == com.example.cardcounter.domain.RankCompleteness.UNKNOWN -> SELF_HAND_UNKNOWN
         completeness != com.example.cardcounter.domain.RankCompleteness.COMPLETE -> "self_hand_partial"
         !meta.selfHandComplete -> "self_hand_partial"
         // 真值里有看不清点数的外面出牌（cards 留空）：真值剩余本身就不知道，不能拿 0 张去比。
@@ -170,7 +172,8 @@ private fun remainingOf(
     val evalRemaining = finalState.outsideRemaining
     if (unavailable != null || evalRemaining == null) {
         // 手牌点数不全或真值外面区点数不全时，真值剩余本身算不出来，不给残缺值。
-        val truthUnknown = unavailable == "self_hand_partial" || unavailable == TRUTH_RANKS_INCOMPLETE
+        val truthUnknown = unavailable == "self_hand_partial" || unavailable == SELF_HAND_UNKNOWN ||
+            unavailable == TRUTH_RANKS_INCOMPLETE
         val knownTruth = if (truthUnknown) emptyMap() else truthRemaining
         return RemainingReport(emptyMap(), knownTruth, emptyMap(), unavailable ?: "rank_ledger_incomplete")
     }
@@ -277,6 +280,16 @@ object SummaryWriter {
             "口径：张数正确率 = 张数完全正确的命中手 / 真值手数；" +
                 "点数正确率 = 点数完全正确的命中手 / 点数已知的真值手数（cards 为空的手不计入分母）。"
         )
+        val unknownHand = reports.filter {
+            it.replay.lockHandCompleteness == com.example.cardcounter.domain.RankCompleteness.UNKNOWN
+        }
+        if (unknownHand.isNotEmpty()) {
+            appendLine()
+            appendLine(
+                "手牌未知（selfHandCount=null）的 ${unknownHand.size} 局按标称 ${Replay.NOMINAL_HAND_COUNT} 张锁定：" +
+                    "这些局的守恒暂停可能是标称张数造成的，剩余牌不可算。"
+            )
+        }
         val flagged = reports.filter { it.flagged }
         if (flagged.isNotEmpty()) {
             appendLine()
