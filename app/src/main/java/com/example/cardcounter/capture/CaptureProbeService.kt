@@ -330,11 +330,12 @@ class CaptureProbeService : Service() {
 
     /**
      * 手动新局：只重置，不锁手牌。账本开新局、手牌草稿清空，手牌识别接着在后台跑，等用户在悬浮窗上确认。
-     * 新局不当作中途打开：这是用户主动开的，桌上已有的牌（上一局残留）靠清桌后再记。
+     * 新局不当作中途打开：这是用户主动开的。桌上已有的牌（上一局残留）当作旧牌不记，
+     * 每个出牌区清空一次之后才开始记新出的牌。
      */
     private fun startNewGame() {
         sessionActor.post(LedgerCommand.NewSession())
-        resetSessionTracking(primeExistingTable = false, checkMidOpen = false)
+        resetSessionTracking(primeExistingTable = true, checkMidOpen = false)
         OverlayService.refresh(this)
         Log.i(TAG, "MANUAL_NEW_GAME")
     }
