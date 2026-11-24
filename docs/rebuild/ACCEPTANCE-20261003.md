@@ -38,7 +38,7 @@
 | 识别失败静默丢失 | NO_CONSENSUS → RETRY 诊断记录保留证据 |
 | 重启自动解除未确认暂停 | **已修复**（withoutRecoverablePause 删除 + 测试锁定） |
 | 持久化后 replay 与实时不一致 | replayMatchesLiveState 测试锁定 |
-| MNN/TFLite 后端不可观察 | **未处理**（Phase 3 范围） |
+| MNN/TFLite 后端不可观察 | **已不存在**（W8 删除 MNN/TFLite，手机只剩官方 ONNX Runtime 一个后端） |
 | 数量与 Rank 矛盾仍显示伪精确 | **已修复**（只接受点数完整的出牌；各家张数和外面总张数由点数向量推出，不再有独立数量账；手牌确认时点数合计必须等于牌边缘张数，对不上 → Rejected） |
 
 ## 主代理审查记录（子代理产出修正项）

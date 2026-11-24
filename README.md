@@ -7,8 +7,8 @@
 ## 核心特性
 
 - **无侵入实时录屏捕获**：通过 Android `MediaProjection` 服务实时采集游戏画面，配合系统悬浮窗（`SYSTEM_ALERT_WINDOW`）在屏幕左上角动态渲染剩余牌力与出牌详情。
-- **端侧轻量化模型推理**：集成针对够级牌面优化训练的 YOLO11 28 类模型，导出为端侧 TFLite / MNN 双格式（`poker_yolo11_320.tflite` / `poker_yolo11_320.mnn`），保障手机端实战低延迟与低功耗运行。
-- **28 类牌面识别体系**：完整覆盖红黑花色与王牌分类（`RA`-`RK`、`BA`-`BK`、`D` 大王、`X` 小王），精准区分进贡/憋三关键牌型。
+- **端侧轻量化模型推理**：集成针对够级牌面优化训练的 YOLO11n 15 点数模型（ONNX，`poker_rank15_yolo11n_320.onnx`），手机端用官方 ONNX Runtime Android（CPU）运行，电脑离线评测用同一个模型文件和同一套解码。
+- **15 点数识别体系**：只认点数、不分花色（大王、小王、2、A、K、Q、J、10 … 4、3），类别号与 `Rank` 枚举顺序一致；输出解码和不分类别 NMS 在 `:core`，手机和电脑共用。
 - **6 区域时序去抖与抗重机制**：针对左下、左上、顶端、右上、右下及自身 6 个出牌位，设计 `RoiPlayEventCache` 与 `StablePlayGate`，避免同一手牌滞留导致重复扣牌，并在无共识时支持快速重新采样。
 - **正向累计记牌账本**：独立于牌点库存累计出牌张数，在误分类超额时仍能准确兜底牌张总数，确保对局全局数据自洽。
 
@@ -19,7 +19,7 @@
 ```text
 .
 ├── app/
-│   ├── src/main/assets/       # 端侧 YOLO11 模型（TFLite / MNN）
+│   ├── src/main/assets/       # 端侧 YOLO11n 15 点数模型（ONNX）
 │   ├── src/main/java/         # 核心源码（Kotlin）
 │   │   ├── capture/           # 探针捕获、区域裁切、时序去抖（RoiPlayEventCache）
 │   │   ├── service/           # 悬浮窗服务（OverlayService）与录屏后台服务
