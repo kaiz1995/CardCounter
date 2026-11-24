@@ -48,6 +48,10 @@ class GoujiPlayRulesTest {
         assertSuspicious("OVER_INVENTORY", hand(Rank.THREE to 7))
         assertSuspicious("OVER_INVENTORY", hand(Rank.FOUR to 9))
         assertSuspicious("OVER_INVENTORY", hand(Rank.KING to 17, Rank.TWO to 1))
+        assertSuspicious("OVER_INVENTORY", hand(Rank.KING to 17, Rank.ACE to 1))
+        val multi = GoujiPlayRules.check(hand(Rank.BIG_JOKER to 5, Rank.THREE to 7)) as PlayRuleCheck.Suspicious
+        assertEquals("OVER_INVENTORY", multi.code)
+        assertTrue(multi.detail, multi.detail.contains("大") && multi.detail.contains("3"))
     }
 
     @Test
