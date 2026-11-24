@@ -303,7 +303,8 @@ def extract_play(bank: SpriteBank, detector, pitch: defaultdict) -> dict:
                 detections = detector.detect(crop, conf=0.5, iou=0.4)
                 if not detections:
                     # Real empty play-zone crop (felt + overlay + count board).
-                    if len(bank.entries) and stats["empty_bg"] < 120 and (hash((video.name, zone, int(second))) % 3 == 0):
+                    if (video.name in C.NEGATIVE_SOURCE_VIDEOS and len(bank.entries) and stats["empty_bg"] < 120
+                            and hash((video.name, zone, int(second))) % 3 == 0):
                         bank.add_negative(crop.copy(), C.clip_key(video))
                         stats["empty_bg"] += 1
                     continue
@@ -320,7 +321,7 @@ def extract_play(bank: SpriteBank, detector, pitch: defaultdict) -> dict:
 
 def extract_negatives(bank: SpriteBank, count_per_video: int = 120) -> int:
     rng = np.random.default_rng(7)
-    videos = C.nine_games(train_only=True)[:3] + C.source_videos("dev")[:1]
+    videos = C.nine_games(train_only=True)[:3] + [C.ensure_allowed(C.SOURCE / n) for n in C.NEGATIVE_SOURCE_VIDEOS]
     total = 0
     for video in videos:
         capture = C.open_video(video)

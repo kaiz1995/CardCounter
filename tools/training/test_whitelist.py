@@ -49,6 +49,12 @@ class WhitelistGateTest(unittest.TestCase):
         with self.assertRaises(common.NotWhitelisted):
             common.grab_frames(common.SOURCE / "SVID_20260815_210429_1.mp4", [1.0])
 
+    def test_empty_zone_eval_never_feeds_training(self):
+        overlap = set(common.EMPTY_ZONE_EVAL_VIDEOS) & set(common.NEGATIVE_SOURCE_VIDEOS)
+        self.assertFalse(overlap, f"empty play-zone eval must not use negative-source recordings: {overlap}")
+        for name in common.EMPTY_ZONE_EVAL_VIDEOS:
+            common.ensure_allowed(common.SOURCE / name)
+
     def test_train_split_excludes_eval_clips(self):
         names = [path.name for path in common.nine_games(train_only=True)]
         for clip in common.EVAL_CLIPS:

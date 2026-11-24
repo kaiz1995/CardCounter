@@ -313,9 +313,10 @@ def metrics(tp: Counter, fp: Counter, fn: Counter) -> list[dict]:
 def evaluate_screenshots(onnx_model: OnnxModel, old_model, details: dict) -> list[dict]:
     """Real app screenshots with the play stated in the file name."""
 
-    # File names encode "<rank>x<count>" (7x4 = four sevens), confirmed by eye.
+    # Expected plays confirmed by eye on each screenshot (the file name alone is not
+    # enough: current_a_right_bottom shows two stacked aces, club + diamond).
     cases = [
-        ("current_a_right_bottom.png", "RIGHT_BOTTOM", "ACE", 1),
+        ("current_a_right_bottom.png", "RIGHT_BOTTOM", "ACE", 2),
         ("current_left_bottom_7x4.png", "LEFT_BOTTOM", "SEVEN", 4),
         ("current_right_top_7x2_overcount.png", "RIGHT_TOP", "SEVEN", 2),
         ("current_pass_and_sixes.png", "SELF", "SIX", 1),
@@ -381,14 +382,16 @@ def evaluate_empty_play_zones(onnx_model: OnnxModel, old_model, limit: int = 200
     new_crops_with_det = 0
     old_crops_with_det = 0
     started_new = started_old = 0.0
-    for video in C.source_videos("dev"):
+    per_video = Counter()
+    per_video_limit = limit // len(C.EMPTY_ZONE_EVAL_VIDEOS)
+    for video in [C.ensure_allowed(C.SOURCE / n) for n in C.EMPTY_ZONE_EVAL_VIDEOS]:
         capture = C.open_video(video)
         duration = capture.get(cv2.CAP_PROP_FRAME_COUNT) / max(1.0, capture.get(cv2.CAP_PROP_FPS))
         capture.release()
         times = [float(t) for t in np.arange(30.0, min(duration, 500.0), 3.0)]
         for second, frame in C.grab_frames(video, times).items():
             for zone in C.ZONES:
-                if crops >= limit:
+                if per_video[C.clip_key(video)] >= per_video_limit:
                     break
                 crop = C.zone_crop(frame, zone)
                 if crop.size == 0:
@@ -405,6 +408,7 @@ def evaluate_empty_play_zones(onnx_model: OnnxModel, old_model, limit: int = 200
                 det_old = old_model.detect(cv2.resize(crop, (C.MODEL_INPUT, C.MODEL_INPUT)))
                 started_old += time.perf_counter() - t0
                 crops += 1
+                per_video[C.clip_key(video)] += 1
                 if det_new:
                     new_crops_with_det += 1
                     new_hits.update(C.RANKS[d["class"]] for d in det_new)
@@ -413,6 +417,7 @@ def evaluate_empty_play_zones(onnx_model: OnnxModel, old_model, limit: int = 200
                     old_hits.update(d["rank"] for d in det_old)
     return {
         "crops": crops,
+        "per_video": dict(per_video),
         "new": {
             "crops_with_detection": new_crops_with_det,
             "detections": dict(new_hits),

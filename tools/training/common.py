@@ -115,6 +115,12 @@ EVAL_CLIPS = ["SVID_20260728_145608_1.mp4", "SVID_20260728_145637_1.mp4", "SVID_
 # shows JOKER/JOKER/joker (34 cards), the 13s frame only JOKER/joker (33).
 EVAL_HAND_CLIPS = ["SVID_20260728_145637_1.mp4", "SVID_20260728_145704_1.mp4"]
 
+# The only source/ recordings allowed to give negative (no-card) patches to training.
+NEGATIVE_SOURCE_VIDEOS = ["SVID_20260810_102658_1.mp4"]
+# Empty play-zone false-positive check: recordings that never fed a negative.
+# Must stay disjoint from NEGATIVE_SOURCE_VIDEOS (guarded by test_whitelist.py).
+EMPTY_ZONE_EVAL_VIDEOS = ["SVID_20260810_143651_1.mp4", "SVID_20260811_075639_1.mp4"]
+
 
 class NotWhitelisted(RuntimeError):
     """Raised when a script touches a video outside the allowed sets."""
