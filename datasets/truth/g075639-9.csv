@@ -1,0 +1,2 @@
+game_id,event_seq,zone,appear_ms,stable_ms,clear_ms,quantity,cards,tag,review,notes
+g075639-9,1,RIGHT_BOTTOM,165517,165517,181627,2,TWO:2,NORMAL,AUTO,geom=2; model=1 geom=2 +1TWO

@@ -153,8 +153,29 @@
     "videoCount_9ju": 9,
     "videoCount_source": 9,
     "identicalPairs": 0,
-    "conclusion": "9局/ 与 source/ 不是同一批视频的两份拷贝：18 个文件文件名、字节数、SHA256 均互不重复。9局/ 为 2026-07-28 14:52–14:57 录制的 9 个短片段（每段约 17–25 MB，1 段≈1 局）；source/ 为 2026-07-27 至 2026-08-15 录制的 9 个长视频（17 MB–960 MB，单个可能含多局，整局数待切分标注后确定）。",
-    "sourceGameCount": "待补（需整局切分标注）"
+    "conclusion": "9局/ 与 source/ 不是同一批视频的两份拷贝：18 个文件文件名、字节数、SHA256 均互不重复。9局/ 为 2026-07-28 14:52–14:57 录制的 9 个开局片段（每段 14–20 秒，只覆盖发牌后的开局手牌，不是完整牌局）；source/ 为 2026-07-27 至 2026-08-15 录制的 9 个长视频（17 MB–960 MB），已按发牌/结算切分为整局。",
+    "sourceGameCount": 20
+  },
+  "cutGames": {
+    "generatedAt": "2026-11-24",
+    "method": "tools/dataset/cut_games.py：手牌白带出现=发牌，中央暗板+得分蓝条=结算，白区密集簇=第一手正式出牌；宣点按钮结束时刻修正前置边界。结果见 datasets/games.json。",
+    "total": 36,
+    "bySplit": {
+      "dev": {"games": 20, "minutes": 31.1, "complete": 9},
+      "tuning": {"games": 2, "minutes": 3.7, "complete": 1},
+      "blind": {"games": 2, "minutes": 9.2, "complete": 1},
+      "clip": {"games": 12, "minutes": 4.0, "complete": 0}
+    },
+    "perVideo": {
+      "source/SVID_20260810_102658_1.mp4": {"games": 5, "complete": 4},
+      "source/SVID_20260810_143651_1.mp4": {"games": 5, "complete": 5},
+      "source/SVID_20260811_075639_1.mp4": {"games": 10, "complete": 0},
+      "source/SVID_20260813_164333_1.mp4": {"games": 2, "complete": 1},
+      "source/SVID_20260815_202234_1.mp4": {"games": 1, "complete": 1},
+      "source/SVID_20260815_210429_1.mp4": {"games": 1, "complete": 0},
+      "clipVideos": {"games": 12, "complete": 0}
+    },
+    "note": "075639 是快进/调试录制，局间结算画面常短于 0.5s，按下一局发牌切分，全部标 complete=false；164333/210429 开头缺发牌画面，complete=false。clip 为 3 段 source 短片 + 9 段 9局/ 开局片段。"
   },
   "split": {
     "ruleRef": "docs/rebuild/sample-split-rules.md",

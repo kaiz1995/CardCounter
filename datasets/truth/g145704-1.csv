@@ -1,0 +1,8 @@
+game_id,event_seq,zone,appear_ms,stable_ms,clear_ms,quantity,cards,tag,review,notes
+g145704-1,1,SELF,4603,5302,6503,1,FOUR:1,NORMAL,AUTO,clip片段; geom=1; model=2 geom=1 trim
+g145704-1,2,RIGHT_BOTTOM,4703,4703,5101,1,FOUR:1,NORMAL,AUTO,clip片段; geom=1
+g145704-1,3,TOP,4802,4802,5101,1,TWO:1,NORMAL,AUTO,clip片段; geom=1
+g145704-1,4,TOP,5902,6003,7504,2,FOUR:1;THREE:1,NORMAL,AUTO,clip片段; geom=2
+g145704-1,5,SELF,11012,11012,14007,4,QUEEN:4,NORMAL,AUTO,clip片段; geom=4; model=2 geom=4 +2QUEEN
+g145704-1,6,RIGHT_BOTTOM,12011,12011,13308,2,ACE:2,NORMAL,AUTO,clip片段; geom=2
+g145704-1,7,LEFT_TOP,13009,13009,14007,2,TWO:2,NORMAL,AUTO,clip片段; geom=2
