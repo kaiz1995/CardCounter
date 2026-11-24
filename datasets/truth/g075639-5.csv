@@ -1,2 +1,2 @@
 game_id,event_seq,zone,appear_ms,stable_ms,clear_ms,quantity,cards,tag,review,notes
-g075639-5,1,RIGHT_BOTTOM,70716,70716,78920,1,TWO:1,NORMAL,AUTO,geom=1
+g075639-5,1,RIGHT_BOTTOM,70716,70716,78920,1,TWO:1,NORMAL,AUTO,needs_review; model=1 geom=1(w=29) clusters=1 corners=1 -> corners(pitch=None)

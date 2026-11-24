@@ -1,4 +1,4 @@
 game_id,event_seq,zone,appear_ms,stable_ms,clear_ms,quantity,cards,tag,review,notes
-g145252-1,1,TOP,10903,10903,12408,1,THREE:1,NORMAL,AUTO,clip片段; geom=1
-g145252-1,2,SELF,18010,18010,19706,3,FIVE:3,NORMAL,AUTO,clip片段; geom=3; model=4 geom=3 trim
-g145252-1,3,RIGHT_BOTTOM,19007,19007,19706,3,SEVEN:3,NORMAL,AUTO,clip片段; geom=3
+g145252-1,1,TOP,10903,10903,12408,1,THREE:1,NORMAL,AUTO,clip片段; geom=1(w=45)
+g145252-1,2,SELF,18010,18010,19706,3,FIVE:3,NORMAL,AUTO,clip片段; geom=3(w=112); model=4 geom=3 trim
+g145252-1,3,RIGHT_BOTTOM,19007,19007,19706,3,SEVEN:3,NORMAL,AUTO,clip片段; geom=3(w=75)

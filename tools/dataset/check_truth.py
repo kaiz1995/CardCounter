@@ -1,6 +1,16 @@
-"""用人工真值抽查预标草稿：按 zone + 时间就近匹配，报表数/点数正确率。
+"""真值硬门槛 + 人工真值抽查。
 
-用法:
+两种用法：
+
+1) 整库硬门槛（complete=true 的局）：
+    python tools/dataset/check_truth.py --all
+   - 任何点数累计超过库存（Rank.kt 的 4 副牌库存）、或全局合计超过 198 张 -> 报错
+   - 一手里出现两种普通点数（大王/小王/2 之外）-> 报错
+   - 第一手 appear_ms 早于该局 firstPlayMs -> 报错
+   - cards 合计与 quantity 不一致、stable<appear、clear<stable -> 报错
+   有任何错误以非 0 退出。
+
+2) 人工真值抽查（原有用法）：
     python tools/dataset/check_truth.py --game g102658-3 \
         --truth experiments/results/truth_102658_516_536.csv \
         --start 516000 --end 536500
@@ -21,6 +31,29 @@ RANK_ALIAS = {
     "9": "NINE", "8": "EIGHT", "7": "SEVEN", "6": "SIX", "5": "FIVE", "4": "FOUR",
     "3": "THREE", "BIG_JOKER": "BIG_JOKER", "SMALL_JOKER": "SMALL_JOKER",
 }
+
+# 4 副牌 198 张（core/src/main/kotlin/com/example/cardcounter/domain/Rank.kt）
+STOCK = {
+    "BIG_JOKER": 4,
+    "SMALL_JOKER": 4,
+    "TWO": 16,
+    "ACE": 16,
+    "KING": 16,
+    "QUEEN": 16,
+    "JACK": 16,
+    "TEN": 16,
+    "NINE": 16,
+    "EIGHT": 16,
+    "SEVEN": 16,
+    "SIX": 16,
+    "FIVE": 16,
+    "FOUR": 8,
+    "THREE": 6,
+}
+TOTAL_STOCK = sum(STOCK.values())
+NORMAL_RANKS = tuple(
+    rank for rank in ds.RANK_ORDER if rank not in ("BIG_JOKER", "SMALL_JOKER", "TWO")
+)
 
 
 def parse_cards(text: str):
@@ -48,14 +81,109 @@ def parse_vector(text: str):
     return counts
 
 
+def check_game(game: dict) -> list[str]:
+    """单局硬门槛；返回错误列表（空表示通过）。"""
+    game_id = game["gameId"]
+    csv_path = ds.TRUTH_DIR / f"{game_id}.csv"
+    errors = []
+    if not csv_path.exists():
+        return [f"{game_id}: 缺真值文件 {csv_path}"]
+    with csv_path.open(encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    if not rows:
+        return [f"{game_id}: 真值文件没有出牌行"]
+
+    totals = {rank: 0 for rank in STOCK}
+    total_quantity = 0
+    first_play = int(game["firstPlayMs"])
+    earliest = None
+    for row in rows:
+        seq = row["event_seq"]
+        where = f"{game_id} #{seq} {row['zone']}"
+        quantity = int(row["quantity"])
+        total_quantity += quantity
+        appear = int(row["appear_ms"])
+        stable = int(row["stable_ms"])
+        clear = int(row["clear_ms"])
+        if appear > stable:
+            errors.append(f"{where}: appear_ms {appear} 晚于 stable_ms {stable}")
+        if clear < stable:
+            errors.append(f"{where}: clear_ms {clear} 早于 stable_ms {stable}")
+        cards = parse_vector(row["cards"])
+        if cards and sum(cards.values()) != quantity:
+            errors.append(
+                f"{where}: cards 合计 {sum(cards.values())} 与 quantity {quantity} 不一致"
+            )
+        normals = [rank for rank in cards if rank in NORMAL_RANKS and cards[rank] > 0]
+        if len(normals) > 1:
+            errors.append(
+                f"{where}: 一手出现两种普通点数 "
+                + "+".join(f"{rank}:{cards[rank]}" for rank in normals)
+            )
+        for rank, count in cards.items():
+            if rank in totals:
+                totals[rank] += count
+        earliest = appear if earliest is None else min(earliest, appear)
+
+    for rank, count in totals.items():
+        if count > STOCK[rank]:
+            errors.append(f"{game_id}: {rank} 合计 {count}/{STOCK[rank]} 超库存")
+    if total_quantity > TOTAL_STOCK:
+        errors.append(
+            f"{game_id}: 全局合计 {total_quantity}/{TOTAL_STOCK} 张"
+        )
+    if earliest is not None and earliest < first_play:
+        errors.append(
+            f"{game_id}: 第一手 appear_ms {earliest} 早于 firstPlayMs {first_play}"
+        )
+    return errors
+
+
+def check_all() -> int:
+    payload = ds.load_games()
+    complete = [game for game in payload["games"] if game.get("complete")]
+    errors = []
+    print(f"检查 {len(complete)} 个 complete=true 的局")
+    for game in complete:
+        game_errors = check_game(game)
+        errors.extend(game_errors)
+        print(
+            f"  {game['gameId']}: {'OK' if not game_errors else 'FAIL'}"
+            + (f"（{len(game_errors)} 项）" if game_errors else "")
+        )
+    if errors:
+        print(f"\n{len(errors)} 项错误：")
+        for error in errors:
+            print(f"  - {error}")
+        return 1
+    print("\n全部通过：库存、全局张数、单一点数、firstPlayMs 边界均无问题")
+    return 0
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--game", required=True)
-    parser.add_argument("--truth", required=True)
-    parser.add_argument("--start", type=int, required=True)
-    parser.add_argument("--end", type=int, required=True)
+    parser.add_argument("--all", action="store_true", help="整库硬门槛检查")
+    parser.add_argument("--game")
+    parser.add_argument("--truth")
+    parser.add_argument("--start", type=int)
+    parser.add_argument("--end", type=int)
     parser.add_argument("--window", type=int, default=1500)
     args = parser.parse_args()
+
+    if args.all:
+        raise SystemExit(check_all())
+    missing = [
+        name
+        for name, value in (
+            ("--game", args.game),
+            ("--truth", args.truth),
+            ("--start", args.start),
+            ("--end", args.end),
+        )
+        if value is None
+    ]
+    if missing:
+        parser.error("对照用法需要 " + " ".join(missing) + "，整库检查用 --all")
 
     truth = []
     with open(args.truth, encoding="utf-8-sig") as handle:

@@ -159,10 +159,10 @@
   "cutGames": {
     "generatedAt": "2026-11-24",
     "method": "tools/dataset/cut_games.py：手牌白带出现=发牌，中央暗板+得分蓝条=结算，白区密集簇=第一手正式出牌；宣点按钮结束时刻修正前置边界。结果见 datasets/games.json。",
-    "total": 36,
+    "total": 35,
     "bySplit": {
       "dev": {"games": 20, "minutes": 31.1, "complete": 9},
-      "tuning": {"games": 2, "minutes": 3.7, "complete": 1},
+      "tuning": {"games": 1, "minutes": 3.7, "complete": 0},
       "blind": {"games": 2, "minutes": 9.2, "complete": 1},
       "clip": {"games": 12, "minutes": 4.0, "complete": 0}
     },
@@ -170,12 +170,12 @@
       "source/SVID_20260810_102658_1.mp4": {"games": 5, "complete": 4},
       "source/SVID_20260810_143651_1.mp4": {"games": 5, "complete": 5},
       "source/SVID_20260811_075639_1.mp4": {"games": 10, "complete": 0},
-      "source/SVID_20260813_164333_1.mp4": {"games": 2, "complete": 1},
+      "source/SVID_20260813_164333_1.mp4": {"games": 1, "complete": 0},
       "source/SVID_20260815_202234_1.mp4": {"games": 1, "complete": 1},
       "source/SVID_20260815_210429_1.mp4": {"games": 1, "complete": 0},
       "clipVideos": {"games": 12, "complete": 0}
     },
-    "note": "075639 是快进/调试录制，局间结算画面常短于 0.5s，按下一局发牌切分，全部标 complete=false；164333/210429 开头缺发牌画面，complete=false。clip 为 3 段 source 短片 + 9 段 9局/ 开局片段。"
+    "note": "075639 是快进/调试录制，局间结算画面常短于 0.5s，按下一局发牌切分，全部标 complete=false；164333/210429 开头缺发牌画面，complete=false。164333 原本在 173s 处被下拉通知栏切成两局（g164333-1/g164333-2），2026-11-24 复核成片：173s 前后是同一次出牌过程，220s 才出现结算，两段已合并回 g164333-1（0-220015ms）。clip 为 3 段 source 短片 + 9 段 9局/ 开局片段。"
   },
   "split": {
     "ruleRef": "docs/rebuild/sample-split-rules.md",

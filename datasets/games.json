@@ -70,12 +70,12 @@
       "startMs": 733508,
       "endMs": 886565,
       "prePlayEndMs": 781012,
-      "firstPlayMs": 784508,
+      "firstPlayMs": 784328,
       "complete": false,
       "selfHand": "",
       "selfHandCount": null,
       "review": "AUTO",
-      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。 录屏只覆盖半局。"
+      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。 录屏只覆盖半局。 firstPlayMs 784508->784328（第一手 784428ms 出现，夹到出现之前）；prePlayEndMs=781012。"
     },
     {
       "gameId": "g143651-1",
@@ -145,12 +145,12 @@
       "startMs": 728517,
       "endMs": 866510,
       "prePlayEndMs": 748512,
-      "firstPlayMs": 749512,
+      "firstPlayMs": 749319,
       "complete": true,
       "selfHand": "",
       "selfHandCount": null,
       "review": "AUTO",
-      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。"
+      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。 firstPlayMs 749512->749319（第一手 749419ms 出现，夹到出现之前）；prePlayEndMs=748512。"
     },
     {
       "gameId": "g075639-1",
@@ -308,29 +308,14 @@
       "videoSha256": "a66ba6289bdbfc82ee8e8b9fe1a3d71d295dc74f01918f9c7435348cce803ee5",
       "split": "tuning",
       "startMs": 0,
-      "endMs": 173002,
+      "endMs": 220015,
       "prePlayEndMs": 13015,
       "firstPlayMs": 14015,
       "complete": false,
       "selfHand": "",
       "selfHandCount": null,
       "review": "AUTO",
-      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。 录屏只覆盖半局。 开头缺少发牌画面。"
-    },
-    {
-      "gameId": "g164333-2",
-      "video": "source/SVID_20260813_164333_1.mp4",
-      "videoSha256": "a66ba6289bdbfc82ee8e8b9fe1a3d71d295dc74f01918f9c7435348cce803ee5",
-      "split": "tuning",
-      "startMs": 173002,
-      "endMs": 220015,
-      "prePlayEndMs": 190510,
-      "firstPlayMs": 191510,
-      "complete": true,
-      "selfHand": "",
-      "selfHandCount": null,
-      "review": "AUTO",
-      "notes": "自动切分；画布 1280x578。firstPlay 为白区密集簇启发式，prePlayEnd=firstPlay-1000ms。"
+      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。 录屏只覆盖半局。 开头缺少发牌画面。 173s 处是下拉通知栏遮挡（不是新一局、也不是结算）：原来把这一局切成了 g164333-1(0-173s)+g164333-2(173-220s)，检测流已合并重跑；结算 220015ms 属于本局。开头仍缺发牌画面，complete=false。"
     },
     {
       "gameId": "g202234-1",

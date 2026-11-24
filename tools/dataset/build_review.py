@@ -41,6 +41,12 @@ PAGE = """<!doctype html>
   .tag-NORMAL {{ color:#7f8b95; }}
   .tag-REPLACE_DIRECT {{ color:#f0b44c; }}
   .note {{ color:#6f7a84; font-size:12px; }}
+  tr.review {{ background:#2a1416; }}
+  tr.review td {{ border-bottom:1px solid #5a2a2e; }}
+  tr.review td.cards, tr.review td.qty {{ color:#ffb4a8; }}
+  .flag {{ display:inline-block; padding:1px 6px; margin-right:6px; border-radius:3px;
+           background:#b3261e; color:#fff; font-size:11px; font-weight:600; }}
+  .flag.blank {{ background:#6b4b00; }}
   img.crop {{ height:72px; image-rendering:pixelated; background:#0b0d0f;
               border:1px solid #2a3138; border-radius:2px; }}
   tr:hover td {{ background:#151a1e; }}
@@ -74,19 +80,26 @@ def build_game(game: dict) -> Path | None:
     for row in rows:
         seq = int(row["event_seq"])
         zone = row["zone"]
+        needs_review = "needs_review" in row["notes"]
+        blank = not row["cards"].strip()
         image = crop_dir / f"{seq:03d}_{zone}.png"
         rel = f"../crops/{game_id}/{image.name}"
         if image.exists():
             img_html = f'<img class="crop" src="{html.escape(rel)}" alt="{zone}">'
         else:
             img_html = '<span class="note">无裁剪图</span>'
+        flag_html = ""
+        if needs_review:
+            flag_html = '<span class="flag">待核对</span>'
+        elif blank:
+            flag_html = '<span class="flag blank">点数未识别</span>'
         body_rows.append(
-            "<tr>"
+            f'<tr class="{"review" if needs_review or blank else ""}">'
             f'<td class="qty">{seq}</td>'
             f'<td class="time">{fmt_time(int(row["stable_ms"]))}</td>'
             f'<td class="zone">{html.escape(zone)}</td>'
             f'<td class="qty">{html.escape(row["quantity"])}</td>'
-            f'<td class="cards">{html.escape(row["cards"] or "（未识别）")}</td>'
+            f'<td class="cards">{flag_html}{html.escape(row["cards"] or "（未识别）")}</td>'
             f'<td>{img_html}</td>'
             f'<td class="tag tag-{html.escape(row["tag"])}">{html.escape(row["tag"])}</td>'
             f'<td class="note">{html.escape(row["notes"])}</td>'
@@ -107,6 +120,7 @@ def build_game(game: dict) -> Path | None:
         f'{html.escape(game["video"])} · {fmt_time(game["startMs"])}–{fmt_time(game["endMs"])} '
         f'· split={game["split"]} · complete={str(game["complete"]).lower()} '
         f'· firstPlay={fmt_time(game["firstPlayMs"])} · 共 {len(rows)} 手 · review=AUTO'
+        f' · 待核对 {sum(1 for row in rows if "needs_review" in row["notes"])} 手'
     )
     page = PAGE.format(title=f"{game_id} 预标核对", meta=meta, body=body)
     out = ds.REVIEW_DIR / f"{game_id}.html"

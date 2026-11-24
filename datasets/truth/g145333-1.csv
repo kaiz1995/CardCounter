@@ -1,5 +1,5 @@
 game_id,event_seq,zone,appear_ms,stable_ms,clear_ms,quantity,cards,tag,review,notes
-g145333-1,1,RIGHT_TOP,7902,8004,10616,1,TWO:1,NORMAL,AUTO,clip片段; geom=1
-g145333-1,2,TOP,9118,9118,10616,2,TWO:2,NORMAL,AUTO,clip片段; geom=2
-g145333-1,3,SELF,16908,16908,19508,7,SIX:7,NORMAL,AUTO,clip片段; geom=7; model=5 geom=7 +2SIX
-g145333-1,4,RIGHT_TOP,18905,18905,19508,7,EIGHT:7,NORMAL,AUTO,clip片段; geom=7; model=5 geom=7 +2EIGHT
+g145333-1,1,RIGHT_TOP,7902,8004,10616,1,TWO:1,NORMAL,AUTO,clip片段; geom=1(w=45)
+g145333-1,2,TOP,9118,9118,10616,2,TWO:2,NORMAL,AUTO,clip片段; needs_review; model=2 geom=2(w=67) clusters=2 corners=2 -> corners(pitch=26)
+g145333-1,3,SELF,16908,16908,19508,5,SIX:5,NORMAL,AUTO,clip片段; geom=5(w=156)
+g145333-1,4,RIGHT_TOP,18905,18905,19508,5,EIGHT:5,NORMAL,AUTO,clip片段; geom=5(w=104)
