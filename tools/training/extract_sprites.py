@@ -42,7 +42,20 @@ TILES = {
     "outside": {"w": 40, "h": 34, "off": (3, 3)},
     "self": {"w": 60, "h": 46, "off": (4, 4)},
 }
+# play-scale cards come in a plain and a ``_top`` (big centre pip) flavour
+ALL_SCALES = ("hand", "outside", "self", "outside_top", "self_top")
 HAND_ROW_PITCH = 63  # measured: row 2 top - row 1 top inside the 140px strip
+
+# Row 1 of the hand shows the small suit pip under the rank glyph. Measured on
+# 77 clean row-1 glyphs of the 6 training clips: glyph 30px high, 6px of felt-white
+# gap, pip 18px high, pip bottom 50..56px (median 54) below the glyph top. The
+# row-1 tile therefore reaches 3 (glyph offset) + 56 + 1 = 60px. Row 2 is cut by
+# the 140px strip, so its (shorter) tiles stay exactly as they were.
+HAND_ROW1_H = 60
+PIP_GAP = 6          # glyph bottom -> pip top, hand px (median of the same sample)
+PIP_MIN_H, PIP_MAX_H = 10, 26
+JOKERS = ("BIG_JOKER", "SMALL_JOKER")
+FACE = (252, 252, 250)  # BGR of the synthetic play-card face
 
 
 def white_mask(bgr: np.ndarray) -> np.ndarray:
@@ -100,12 +113,15 @@ def hand_row_bands(strip: np.ndarray) -> list[int]:
     return sorted(y for _, y in bands[:2])
 
 
-def cut_tile(strip: np.ndarray, glyph: list[int], scale: str):
+def cut_tile(strip: np.ndarray, glyph: list[int], scale: str, tall: bool = False):
     """Cut the corner tile around a glyph.
 
     Row 2 of the hand is clipped by the 140px strip in the app, so a short tile
-    there is the *correct* sample. Leading felt columns (a joker glyph sits on
-    the card edge) are trimmed so tiles can be stacked without green seams.
+    there is the *correct* sample. Row 1 (``tall=True``) is cut down to
+    HAND_ROW1_H so the small suit pip under the rank glyph is fully inside the
+    tile. The pip is never labelled: it is background the model must ignore.
+    Leading felt columns (a joker glyph sits on the card edge) are trimmed so
+    tiles can be stacked without green seams.
     Returns (tile, off_x, off_y) or None.
     """
 
@@ -113,7 +129,8 @@ def cut_tile(strip: np.ndarray, glyph: list[int], scale: str):
     x0, y0 = glyph[0] - spec["off"][0], glyph[1] - spec["off"][1]
     if x0 < 0 or y0 < 0:
         return None
-    y1 = min(y0 + spec["h"], strip.shape[0])
+    height = HAND_ROW1_H if (tall and scale == "hand") else spec["h"]
+    y1 = min(y0 + height, strip.shape[0])
     x1 = min(x0 + spec["w"], strip.shape[1])
     tile = strip[y0:y1, x0:x1]
     if tile.shape[0] < 14 or tile.shape[1] < 12:
@@ -132,15 +149,16 @@ class SpriteBank:
     def __init__(self) -> None:
         self.entries: list[dict] = []
         self.hashes: set[str] = set()
-        for scale in TILES:
+        for scale in ALL_SCALES:
             for rank in C.RANKS:
                 folder = C.SPRITE_DIR / scale / rank
                 folder.mkdir(parents=True, exist_ok=True)
                 for stale in folder.glob("*.png"):
                     stale.unlink()
-        (C.SPRITE_DIR / "_neg").mkdir(parents=True, exist_ok=True)
-        for stale in (C.SPRITE_DIR / "_neg").glob("*.png"):
-            stale.unlink()
+        for folder in ("_neg", PIP_NEG_DIR):
+            (C.SPRITE_DIR / folder).mkdir(parents=True, exist_ok=True)
+            for stale in (C.SPRITE_DIR / folder).glob("*.png"):
+                stale.unlink()
 
     def add(self, tile, off, rank: str, scale: str, source: str, glyph: tuple[int, int]) -> bool:
         digest = hashlib.sha1(tile.tobytes()).hexdigest()[:10]
@@ -166,14 +184,14 @@ class SpriteBank:
         )
         return True
 
-    def add_negative(self, patch: np.ndarray, source: str) -> bool:
+    def add_negative(self, patch: np.ndarray, source: str, folder: str = "_neg") -> bool:
         """Write a negative patch; False when an identical patch was already kept."""
 
         digest = hashlib.sha1(patch.tobytes()).hexdigest()[:10]
         if digest in self.hashes:
             return False
         self.hashes.add(digest)
-        cv2.imwrite(str(C.SPRITE_DIR / "_neg" / f"{source}_{digest}.png"), patch)
+        cv2.imwrite(str(C.SPRITE_DIR / folder / f"{source}_{digest}.png"), patch)
         return True
 
     def save(self) -> None:
@@ -233,8 +251,8 @@ def extract_hand(bank: SpriteBank, truth: dict) -> tuple[int, list[dict]]:
         for item in frames:
             frame = C.grab_frames(video, [item["second"]])[item["second"]]
             strip = C.hand_strip(frame)
-            for (_, glyph), rank in zip(item["clusters"], item["ranks"]):
-                cut = cut_tile(strip, glyph, "hand")
+            for (row, glyph), rank in zip(item["clusters"], item["ranks"]):
+                cut = cut_tile(strip, glyph, "hand", tall=(row == 0))
                 if cut is None:
                     continue
                 tile, off_x, off_y = cut
@@ -362,55 +380,222 @@ def extract_negatives(bank: SpriteBank, count_per_video: int = 120) -> int:
 # Played cards are drawn smaller than hand cards: measured digit height 15px
 # (outside seats) and 23px (own seat) against 30px in the hand, so the corner
 # art is resampled by 0.50 / 0.77 onto a white card of the measured size.
+# Real play frames of the 6 training clips (digit top -> small-pip bottom, median):
+# outside 28px (55 pairs), own seat 42px (58 pairs) = 0.50 / 0.77 x the hand's
+# 54px, so a scaled hand corner (digit + gap + pip) lands where the real play
+# card has it. Only the top card of a stack shows the big centre pip.
+# Suits are never labelled and never classified: pips are background the model
+# must learn to ignore (it used to read a small club under a 3 as THREE).
 PLAY_CARD = {
     "outside": {"w": 44, "h": 62, "scale": 0.50, "pad": 1},
     "self": {"w": 68, "h": 90, "scale": 0.77, "pad": 2},
 }
+BIG_PIP_ZOOM = 2.0     # big pip = small pip x2 (measured 19-20px outside, 28px own seat)
+BIG_PIP_DROP = 22.0    # outside px (scale 0.50) from the digit top down to the big pip top
+BIG_PIP_CX = 0.55      # big pip centre as a share of the card width
+PIP_NEG_DIR = "_pipneg"
 
 
 def play_card(w: int, h: int) -> np.ndarray:
-    card = np.full((h, w, 3), (252, 252, 250), np.uint8)
+    card = np.full((h, w, 3), FACE, np.uint8)
     cv2.rectangle(card, (0, 0), (w - 1, h - 1), (214, 214, 214), 1)
     return card
 
 
-def derive_play_tiles(bank: SpriteBank) -> dict:
-    """Build play-scale corners from truth-labelled hand corners."""
+def paste_dark(canvas: np.ndarray, patch: np.ndarray, x: int, y: int) -> None:
+    """Paste ``patch`` clipped to the canvas, the darker pixel wins (ink on a white face)."""
 
+    x0, y0 = max(0, x), max(0, y)
+    x1 = min(canvas.shape[1], x + patch.shape[1])
+    y1 = min(canvas.shape[0], y + patch.shape[0])
+    if x1 <= x0 or y1 <= y0:
+        return
+    roi = canvas[y0:y1, x0:x1]
+    np.minimum(roi, patch[y0 - y:y1 - y, x0 - x:x1 - x], out=roi)
+
+
+def find_pip(tile: np.ndarray, off, glyph):
+    """Locate the small suit pip under the rank glyph of a hand corner tile.
+
+    Returns (x0, y0, x1, y1) in tile pixels (end exclusive, 1px margin) or None
+    when the tile is cut above the pip (hand row 2) or nothing pip-like is there.
+    """
+
+    gx, gy = off
+    gw, gh = glyph
+    y_start = gy + gh
+    if y_start + 4 >= tile.shape[0]:
+        return None
+    ink = ink_mask(tile)
+    cx0, cx1 = max(0, gx - 2), min(tile.shape[1], gx + gw + 3)
+    profile = ink[y_start:, cx0:cx1].sum(axis=1)
+    rows = np.flatnonzero(profile > 0)
+    if rows.size == 0:
+        return None
+    start = int(rows[0])
+    end, zeros = start, 0
+    for y in range(start, profile.size):
+        if profile[y] > 0:
+            end, zeros = y, 0
+        else:
+            zeros += 1
+            if zeros >= 3:
+                break
+    height = end - start + 1
+    if not (2 <= start <= 10) or not (PIP_MIN_H <= height <= PIP_MAX_H):
+        return None
+    if y_start + end >= tile.shape[0] - 1:
+        return None  # pip touches the tile edge: it was cut
+    cols = np.flatnonzero(ink[y_start + start:y_start + end + 1, cx0:cx1].sum(axis=0) > 0)
+    x0, x1 = cx0 + int(cols[0]), cx0 + int(cols[-1]) + 1
+    return (max(0, x0 - 1), y_start + start - 1, min(tile.shape[1], x1 + 1), y_start + end + 2)
+
+
+def compose_play_card(tile, off, glyph, spec, pip=None, big=False, joker=False):
+    """Render one play-scale card: scaled hand corner + small pip (+ big pip).
+
+    ``pip`` is a hand-scale pip crop grafted under the glyph when the hand tile
+    has none of its own (rows 3..9 only appear in hand row 2, which the 140px
+    strip cuts above the pip). Returns (card, (off_x, off_y), (glyph_w, glyph_h));
+    the label box is the rank glyph only, never the pip.
+    """
+
+    s = spec["scale"]
+    card = play_card(spec["w"], spec["h"])
+    resized = cv2.resize(
+        tile, (max(1, round(tile.shape[1] * s)), max(1, round(tile.shape[0] * s))),
+        interpolation=cv2.INTER_AREA,
+    )
+    x0 = y0 = spec["pad"]
+    height = min(resized.shape[0], card.shape[0] - y0)
+    width = min(resized.shape[1], card.shape[1] - x0)
+    card[y0:y0 + height, x0:x0 + width] = resized[:height, :width]
+    own = None if joker else find_pip(tile, off, glyph)
+    # The hand tile also contains the *next* card's glyph (hand pitch 42 < tile
+    # width). Wipe everything right of this card's own glyph/pip so a stacked play
+    # does not show a ghost glyph on the last card.
+    right = off[0] + glyph[0]
+    if own:
+        right = max(right, own[2])
+    glyph_right = x0 + round(right * s) + 2
+    if glyph_right < spec["w"]:
+        card[y0:y0 + height, max(x0, glyph_right):spec["w"] - 1] = FACE
+    gx = x0 + round(off[0] * s)
+    gy = y0 + round(off[1] * s)
+    gw = max(3, round(glyph[0] * s))
+    gh = max(5, round(glyph[1] * s))
+    pip_img = None
+    if own:
+        pip_img = tile[own[1]:own[3], own[0]:own[2]]
+    elif pip is not None and not joker:
+        pip_img = pip
+        small = cv2.resize(
+            pip, (max(3, round(pip.shape[1] * s)), max(3, round(pip.shape[0] * s))),
+            interpolation=cv2.INTER_AREA,
+        )
+        paste_dark(card, small, gx, gy + gh + round((PIP_GAP - 1) * s))
+    if big and pip_img is not None:
+        z = s * BIG_PIP_ZOOM
+        big_img = cv2.resize(
+            pip_img, (max(3, round(pip_img.shape[1] * z)), max(3, round(pip_img.shape[0] * z))),
+            interpolation=cv2.INTER_AREA if z < 1 else cv2.INTER_LINEAR,
+        )
+        bx = round(spec["w"] * BIG_PIP_CX - big_img.shape[1] / 2)
+        by = gy + round(BIG_PIP_DROP * s / 0.5)
+        paste_dark(card, big_img, bx, by)
+    return card, (gx, gy), (gw, gh)
+
+
+def build_pip_bank(bank: SpriteBank) -> list:
+    """[(pip crop, source clip)] cut from real row-1 hand tiles of the training clips."""
+
+    pips = []
+    for entry in bank.entries:
+        if entry["scale"] != "hand" or entry["rank"] in JOKERS or entry["tile_h"] < HAND_ROW1_H - 4:
+            continue
+        tile = cv2.imread(str(C.DATA_ROOT / entry["path"]))
+        if tile is None:
+            continue
+        box = find_pip(tile, (entry["off_x"], entry["off_y"]), (entry["glyph_w"], entry["glyph_h"]))
+        if box:
+            pips.append((tile[box[1]:box[3], box[0]:box[2]].copy(), entry["source"]))
+    return pips
+
+
+def derive_play_tiles(bank: SpriteBank, pips: list) -> dict:
+    """Build play-scale corners (with suit pips) from truth-labelled hand corners.
+
+    Every rank gets a plain card and a ``*_top`` card that also shows the big
+    centre pip (only the top card of a played stack shows it).
+    """
+
+    if not pips:
+        raise SystemExit("no suit pip found on any row-1 hand tile: check HAND_ROW1_H / find_pip")
     stats = Counter()
+    rng = np.random.default_rng(11)
     hand_entries = [entry for entry in bank.entries if entry["scale"] == "hand"]
     for entry in hand_entries:
         tile = cv2.imread(str(C.DATA_ROOT / entry["path"]))
         if tile is None:
             continue
+        joker = entry["rank"] in JOKERS
+        pip = pips[int(rng.integers(len(pips)))][0]
         for scale, spec in PLAY_CARD.items():
-            card = play_card(spec["w"], spec["h"])
-            resized = cv2.resize(
-                tile,
-                (max(1, round(tile.shape[1] * spec["scale"])), max(1, round(tile.shape[0] * spec["scale"]))),
-                interpolation=cv2.INTER_AREA,
-            )
-            y0, x0 = spec["pad"], spec["pad"]
-            height = min(resized.shape[0], card.shape[0] - y0)
-            width = min(resized.shape[1], card.shape[1] - x0)
-            card[y0:y0 + height, x0:x0 + width] = resized[:height, :width]
-            # The hand tile also contains the *next* card's glyph (hand pitch
-            # 42 < tile width). Wipe everything right of this card's own glyph
-            # so a stacked play does not show a ghost glyph on the last card.
-            glyph_right = x0 + round((entry["off_x"] + entry["glyph_w"]) * spec["scale"]) + 2
-            if glyph_right < spec["w"]:
-                card[y0:y0 + height, max(x0, glyph_right):spec["w"] - 1] = (252, 252, 250)
-            off = (
-                x0 + round(entry["off_x"] * spec["scale"]),
-                y0 + round(entry["off_y"] * spec["scale"]),
-            )
-            glyph = (
-                max(3, round(entry["glyph_w"] * spec["scale"])),
-                max(5, round(entry["glyph_h"] * spec["scale"])),
-            )
-            if bank.add(card, off, entry["rank"], scale, entry["source"], glyph):
-                stats[f"{scale}:{entry['rank']}"] += 1
+            for suffix, big in (("", False), ("_top", True)):
+                card, off, glyph = compose_play_card(
+                    tile, (entry["off_x"], entry["off_y"]), (entry["glyph_w"], entry["glyph_h"]),
+                    spec, pip, big and not joker, joker,
+                )
+                if bank.add(card, off, entry["rank"], scale + suffix, entry["source"], glyph):
+                    stats[f"{scale}{suffix}:{entry['rank']}"] += 1
     return dict(stats)
+
+
+def _face_block(w: int, h: int, rng) -> np.ndarray:
+    block = np.full((h, w, 3), FACE, np.uint8)
+    left, top, right, bottom = (bool(v) for v in rng.integers(0, 2, 4))
+    edge = (214, 214, 214)
+    if left:
+        block[:, 0] = edge
+    if top:
+        block[0, :] = edge
+    if right:
+        block[:, -1] = edge
+    if bottom:
+        block[-1, :] = edge
+    return block
+
+
+def extract_pip_negatives(bank: SpriteBank, pips: list, per_kind: int = 60) -> int:
+    """Suit-only play-zone patches with no rank glyph: small pip, big pip, a pip
+    cut by the crop edge and a bare half card body. Never labelled."""
+
+    if not pips:
+        return 0
+    rng = np.random.default_rng(23)
+    total = 0
+    for kind in ("small", "big", "cut", "half"):
+        for _ in range(per_kind):
+            scale_name = ("outside", "self")[int(rng.integers(2))]
+            spec = PLAY_CARD[scale_name]
+            image, source = pips[int(rng.integers(len(pips)))]
+            if kind == "half":
+                patch = _face_block(int(rng.integers(18, spec["w"] + 1)), int(rng.integers(10, 36)), rng)
+            else:
+                zoom = spec["scale"] * (BIG_PIP_ZOOM if kind == "big" else 1.0)
+                pip_img = cv2.resize(
+                    image, (max(3, round(image.shape[1] * zoom)), max(3, round(image.shape[0] * zoom))),
+                    interpolation=cv2.INTER_AREA if zoom < 1 else cv2.INTER_LINEAR,
+                )
+                margin = int(rng.integers(1, 5))
+                patch = _face_block(pip_img.shape[1] + 2 * margin, pip_img.shape[0] + 2 * margin, rng)
+                paste_dark(patch, pip_img, margin, margin)
+                if kind == "cut":
+                    cut = int(rng.integers(1, max(2, patch.shape[0] // 2)))
+                    patch = patch[cut:] if rng.random() < 0.5 else patch[:-cut]
+            if bank.add_negative(patch, source, PIP_NEG_DIR):
+                total += 1
+    return total
 
 
 def build_mosaics(bank: SpriteBank) -> None:
@@ -465,6 +650,9 @@ def main() -> int:
     hand_count, labelled = extract_hand(bank, truth)
     print(f"  hand tiles: {hand_count}, labelled frames: {len(labelled)}")
 
+    pips = build_pip_bank(bank)
+    print(f"  suit pips cut from row-1 hand tiles: {len(pips)}")
+
     play_stats = {}
     if not args.skip_play:
         print("[2/4] play-zone geometry + empty crops (old MNN model locates corners)")
@@ -472,11 +660,12 @@ def main() -> int:
 
         play_stats = extract_play(bank, OldDetector(), pitch)
         print(f"  play geometry: {play_stats}")
-        derived = derive_play_tiles(bank)
+        derived = derive_play_tiles(bank, pips)
         print(f"  play tiles derived from hand glyphs: {sum(derived.values())}")
     if not args.skip_neg:
         print("[3/4] negatives")
         print(f"  negatives: {extract_negatives(bank)}")
+        print(f"  suit-only negatives: {extract_pip_negatives(bank, pips)}")
 
     bank.save()
     build_mosaics(bank)

@@ -9,6 +9,9 @@ Every scene reproduces the app's real crops (see common.py):
   and 320x320 resize the app performs (the rest of the canvas is black);
 * pure negatives: felt, overlay boards, buttons, borders, avatars.
 
+Suit pips (small, and the big one on the top card of a stack) are drawn on the
+play cards and in suit-only scenes but are never labelled: they are background
+the model must learn to ignore.
 Labels are the rank glyph boxes only (one box per visible card), written in
 YOLO txt format with class id == Rank enum order.
 
@@ -35,6 +38,7 @@ HAND_STRIP_W = C.HAND_RIGHT - C.HAND_LEFT      # 870
 HAND_STRIP_H = C.HAND_BOTTOM - C.HAND_TOP      # 140
 HAND_ROW_TOPS = (42, 104)                       # measured inside the strip
 OUTSIDE_PITCH = 15.0
+HAND_ROW1_H = 60  # row-1 hand tiles include the small suit pip (see extract_sprites)
 SELF_PITCH = 22.0
 FADE_PROB = 0.15  # share of play scenes drawn as a semi-transparent fade-in frame
 
@@ -57,6 +61,11 @@ class Assets:
             for path in sorted((C.SPRITE_DIR / "_neg").glob("*.png"))
         ]
         self.negatives = [image for image in self.negatives if image is not None]
+        self.pipneg = [
+            image
+            for image in (cv2.imread(str(path)) for path in sorted((C.SPRITE_DIR / "_pipneg").glob("*.png")))
+            if image is not None
+        ]
         self.felt = [image for image in self.negatives if _is_felt(image)]
         if not self.felt:
             self.felt = self.negatives
@@ -193,6 +202,10 @@ def make_play_scene(assets: Assets, rng: random.Random, self_zone: bool):
     while count > 1 and last_glyph_right(count) > w - 2:
         count -= 1
     ranks, tiles = ranks[:count], tiles[:count]
+    # Only the top card of a played stack shows the big centre pip.
+    top_pool = assets.tiles.get((scale_name + "_top", ranks[-1]))
+    if top_pool:
+        tiles[-1] = rng.choice(top_pool)
     stacked_width = (count - 1) * step + card_w * card_scale
     x0 = (w - stacked_width) / 2 + rng.uniform(-3, 3)
     x0 = min(max(x0, 0.0), max(0.0, w - last_glyph_right(count) - 1))
@@ -233,6 +246,8 @@ def make_hand_scene(assets: Assets, rng: random.Random):
         tiles = []
         for rank in ranks:
             pool = assets.tiles[("hand", rank)]
+            if row == 0:  # row 1 shows the small suit pip: prefer the tall tiles
+                pool = [t for t in pool if t["image"].shape[0] >= HAND_ROW1_H - 4] or pool
             tiles.append(rng.choice(pool))
         placed = paste_cards(
             strip, tiles, (start_x, row_top - 2), pitch, 1.0, 1.0, body_h=70
@@ -253,6 +268,34 @@ def make_negative_scene(assets: Assets, rng: random.Random):
     patch = rng.choice(assets.negatives)
     size = rng.choice([w for w in (82, 152, 181, 141, 161, 320)])
     return cv2.resize(patch, (size, size), interpolation=cv2.INTER_LINEAR), [], []
+
+
+def make_pip_scene(assets: Assets, rng: random.Random):
+    """Suit-only scene: 1-3 pips on a white card face, no rank glyph.
+
+    No boxes and no labels: the model only learns that a suit pip is background
+    (a small club under a 3 used to be read as THREE).
+    """
+
+    if not assets.pipneg:
+        return make_negative_scene(assets, rng)
+    zone = rng.choice(["SELF", "TOP", "LEFT_TOP", "LEFT_BOTTOM", "RIGHT_TOP", "RIGHT_BOTTOM"])
+    _, _, w, h = C.zone_crop_rect(zone)
+    canvas = zone_background(zone, w, h, assets, rng)
+    for _ in range(rng.randint(1, 3)):
+        patch = rng.choice(assets.pipneg)
+        zoom = rng.uniform(0.9, 1.15)
+        patch = cv2.resize(
+            patch, None, fx=zoom, fy=zoom,
+            interpolation=cv2.INTER_AREA if zoom < 1 else cv2.INTER_LINEAR,
+        )
+        ph, pw = patch.shape[:2]
+        if ph >= h or pw >= w:
+            continue
+        x = rng.randrange(0, w - pw + 1)
+        y = rng.randrange(0, h - ph + 1)
+        canvas[y:y + ph, x:x + pw] = patch
+    return canvas, [], []
 
 
 def augment(image: np.ndarray, rng: random.Random) -> np.ndarray:
@@ -289,7 +332,10 @@ def render(assets: Assets, rng: random.Random, kind: str | None = None):
 
     if kind is None:
         roll = rng.random()
-        kind = "outside" if roll < 0.45 else "self" if roll < 0.62 else "hand" if roll < 0.92 else "neg"
+        kind = (
+            "outside" if roll < 0.45 else "self" if roll < 0.62 else "hand" if roll < 0.89
+            else "neg" if roll < 0.94 else "pip"
+        )
     if kind == "hand":
         strip, boxes, classes = make_hand_scene(assets, rng)
         strip = augment(strip, rng)
@@ -303,6 +349,8 @@ def render(assets: Assets, rng: random.Random, kind: str | None = None):
         raw, boxes, classes = make_play_scene(assets, rng, self_zone=False)
     elif kind == "self":
         raw, boxes, classes = make_play_scene(assets, rng, self_zone=True)
+    elif kind == "pip":
+        raw, boxes, classes = make_pip_scene(assets, rng)
     else:
         raw, boxes, classes = make_negative_scene(assets, rng)
 

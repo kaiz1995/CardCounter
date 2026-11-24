@@ -163,5 +163,93 @@ class PaddingTest(unittest.TestCase):
             self.assertTrue((image[:196] == 0).all(), f"seed {seed}: black padding changed")
 
 
+import extract_sprites as E  # noqa: E402
+
+HAND_OFF, HAND_GLYPH = (4, 3), (14, 30)
+
+
+def pip_hand_tile(row1: bool = True) -> np.ndarray:
+    """White hand corner: dark 14x30 rank glyph at (4,3); row 1 also has a 12x18 suit pip 6px below it."""
+
+    tile = np.full((E.HAND_ROW1_H if row1 else 44, 56, 3), 250, np.uint8)
+    tile[3:33, 4:18] = 30
+    if row1:
+        tile[39:57, 5:17] = 30
+    return tile
+
+
+class PipSpriteTest(unittest.TestCase):
+    def card(self, scale: str, big: bool = False):
+        return E.compose_play_card(pip_hand_tile(), HAND_OFF, HAND_GLYPH, E.PLAY_CARD[scale], None, big)
+
+    def test_hand_row1_tile_reaches_the_suit_pip(self):
+        strip = np.full((140, 870, 3), 250, np.uint8)
+        glyph = [100, 10, 114, 40]
+        tall = E.cut_tile(strip, glyph, "hand", tall=True)[0]
+        short = E.cut_tile(strip, glyph, "hand", tall=False)[0]
+        self.assertEqual(tall.shape[0], E.HAND_ROW1_H)
+        self.assertEqual(short.shape[0], E.TILES["hand"]["h"])
+
+    def test_pip_is_found_below_the_glyph_and_only_on_row1_tiles(self):
+        box = E.find_pip(pip_hand_tile(), HAND_OFF, HAND_GLYPH)
+        self.assertIsNotNone(box)
+        self.assertGreaterEqual(box[1], HAND_OFF[1] + HAND_GLYPH[1])
+        self.assertIsNone(E.find_pip(pip_hand_tile(False), HAND_OFF, HAND_GLYPH))
+
+    def test_play_card_has_pip_pixels_below_a_label_box_that_stays_on_the_glyph(self):
+        for scale in ("outside", "self"):
+            card, (gx, gy), (gw, gh) = self.card(scale)
+            dark = card.min(axis=2) < 200
+            cols = slice(gx + gw // 4, gx + gw - gw // 4)
+            self.assertGreater(dark[gy + gh + 6:gy + gh + 10, cols].mean(), 0.6, scale)
+            self.assertLess(dark[gy + gh + 1:gy + gh + 2, cols].mean(), 0.5, scale)
+
+    def test_only_top_card_has_the_big_centre_pip(self):
+        for scale in ("outside", "self"):
+            plain, (_, gy), (_, gh) = self.card(scale, big=False)
+            top = self.card(scale, big=True)[0]
+            self.assertEqual(int((plain[gy + 2 * gh:].min(axis=2) < 200).sum()), 0, scale)
+            self.assertGreater(int((top[gy + 2 * gh:].min(axis=2) < 200).sum()), 20, scale)
+
+
+class PipSceneTest(unittest.TestCase):
+    def setUp(self):
+        self.assets = StubAssets()
+        for rank in C.RANKS:
+            for scale in ("outside", "self"):
+                for suffix, big in (("", False), ("_top", True)):
+                    card, off, glyph = E.compose_play_card(
+                        pip_hand_tile(), HAND_OFF, HAND_GLYPH, E.PLAY_CARD[scale], None, big)
+                    self.assets.tiles[(scale + suffix, rank)] = [{
+                        "image": card, "off_x": off[0], "off_y": off[1],
+                        "glyph_w": glyph[0], "glyph_h": glyph[1],
+                    }]
+        self._fade = S.FADE_PROB
+        S.FADE_PROB = 0.0
+
+    def tearDown(self):
+        S.FADE_PROB = self._fade
+
+    def test_every_play_box_has_pip_pixels_under_it_and_none_inside_the_gap(self):
+        checked = 0
+        for seed in range(400):
+            rng = random.Random(seed)
+            image, boxes, _ = S.make_play_scene(self.assets, rng, self_zone=seed % 3 == 0)
+            dark = image.min(axis=2) < 200
+            for box in boxes:
+                x0, x1, y1 = int(box[0]), int(box[2]), int(round(box[3]))
+                width = x1 - x0
+                cols = slice(x0 + width // 4, x1 - width // 4)
+                below = dark[y1 + 6:y1 + 10, cols]
+                if below.shape[0] < 4:
+                    continue
+                checked += 1
+                self.assertGreater(below.mean(), 0.5, f"seed {seed}: no suit pip under box {box}")
+                # a clean row separates the labelled glyph from the pip: the box stops above the pip
+                gap = dark[y1 - 1:y1 + 3, cols].mean(axis=1).min()
+                self.assertLess(gap, 0.2, f"seed {seed}: box {box} reaches the pip")
+        self.assertGreater(checked, 500)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

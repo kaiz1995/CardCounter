@@ -36,6 +36,7 @@ def main() -> int:
     index = json.loads((root / "sprites" / "index.json").read_text(encoding="utf-8"))
     found["sprite tiles"] = Counter(e["source"] for e in index["entries"])
     found["negatives"] = Counter(f.split("_")[0] for f in os.listdir(root / "sprites" / "_neg"))
+    found["suit-only negatives"] = Counter(f.split("_")[0] for f in os.listdir(root / "sprites" / "_pipneg"))
     found["real hand frames"] = Counter(f.split("_")[0] for f in os.listdir(root / "synth" / "real_hand" / "images"))
     lines = (root / "synth" / "dataset_align" / "train_list.txt").read_text(encoding="utf-8").split()
     found["align list (real)"] = Counter(os.path.basename(x).split("_")[0] for x in lines if "real_hand" in x)
