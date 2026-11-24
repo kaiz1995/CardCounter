@@ -414,6 +414,20 @@ def paste_dark(canvas: np.ndarray, patch: np.ndarray, x: int, y: int) -> None:
     np.minimum(roi, patch[y0 - y:y1 - y, x0 - x:x1 - x], out=roi)
 
 
+# The tribute badge (red disc with a white "贡") sits where a TWO's suit pip should be.
+# Share of near-white pixels in the middle of the pip box, measured on the 6 training
+# clips: badge 0.33-0.35, every real suit pip <= 0.12.
+PIP_BADGE_WHITE = 0.22
+
+
+def is_badge(pip: np.ndarray) -> bool:
+    h, w = pip.shape[:2]
+    centre = pip[h // 4:h - h // 4, w // 4:w - w // 4]
+    if centre.size == 0:
+        return False
+    return float((centre.min(axis=2) > 170).mean()) > PIP_BADGE_WHITE
+
+
 def find_pip(tile: np.ndarray, off, glyph):
     """Locate the small suit pip under the rank glyph of a hand corner tile.
 
@@ -448,7 +462,10 @@ def find_pip(tile: np.ndarray, off, glyph):
         return None  # pip touches the tile edge: it was cut
     cols = np.flatnonzero(ink[y_start + start:y_start + end + 1, cx0:cx1].sum(axis=0) > 0)
     x0, x1 = cx0 + int(cols[0]), cx0 + int(cols[-1]) + 1
-    return (max(0, x0 - 1), y_start + start - 1, min(tile.shape[1], x1 + 1), y_start + end + 2)
+    box = (max(0, x0 - 1), y_start + start - 1, min(tile.shape[1], x1 + 1), y_start + end + 2)
+    if is_badge(tile[box[1]:box[3], box[0]:box[2]]):
+        return None  # tribute badge, not a suit pip
+    return box
 
 
 def compose_play_card(tile, off, glyph, spec, pip=None, big=False, joker=False):

@@ -196,6 +196,16 @@ class PipSpriteTest(unittest.TestCase):
         self.assertGreaterEqual(box[1], HAND_OFF[1] + HAND_GLYPH[1])
         self.assertIsNone(E.find_pip(pip_hand_tile(False), HAND_OFF, HAND_GLYPH))
 
+    def test_tribute_badge_is_not_taken_for_a_suit_pip(self):
+        tile = pip_hand_tile()
+        yy, xx = np.mgrid[0:tile.shape[0], 0:tile.shape[1]]
+        dist = (yy - 46) ** 2 + (xx - 12) ** 2
+        tile[39:57, 5:17] = 250
+        tile[dist <= 10 ** 2] = (30, 0, 120)  # dark red disc
+        tile[dist <= 6 ** 2] = 250  # white character in the middle
+        self.assertIsNone(E.find_pip(tile, HAND_OFF, HAND_GLYPH))
+        self.assertIsNotNone(E.find_pip(pip_hand_tile(), HAND_OFF, HAND_GLYPH))
+
     def test_play_card_has_pip_pixels_below_a_label_box_that_stays_on_the_glyph(self):
         for scale in ("outside", "self"):
             card, (gx, gy), (gw, gh) = self.card(scale)
