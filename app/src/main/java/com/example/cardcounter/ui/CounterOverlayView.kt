@@ -8,20 +8,21 @@ import android.graphics.Path
 import android.graphics.RectF
 import android.view.View
 import com.example.cardcounter.domain.GameState
-import com.example.cardcounter.domain.OutsideSeat
 import com.example.cardcounter.domain.Rank
 import com.example.cardcounter.domain.RankCounts
 
-/** 参考原版布局：五个对手累计出牌框 + 底部外面剩余框。 */
+/** 参考原版布局：五个对手累计出牌框 + 底部外面剩余框；手牌没确认时横条醒目标出来。 */
 class CounterOverlayView(context: Context) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
         typeface = android.graphics.Typeface.DEFAULT_BOLD
     }
     private var state: GameState? = null
+    private var handUnconfirmed = false
 
-    fun render(state: GameState) {
+    fun render(state: GameState, handUnconfirmed: Boolean) {
         this.state = state
+        this.handUnconfirmed = handUnconfirmed
         invalidate()
     }
 
@@ -97,7 +98,8 @@ class CounterOverlayView(context: Context) : View(context) {
 
     private fun drawOutsideRemaining(canvas: Canvas, current: GameState?) {
         val rect = OverlayLayout.outsideRemaining
-        drawFrame(canvas, rect, current?.pauseReason != null) {
+        val alert = handUnconfirmed
+        drawFrame(canvas, rect, current?.pauseReason != null || alert) {
             val cellWidth = rect.width.toFloat() / Rank.entries.size
             val headerHeight = 36f
             val remaining = current?.outsideRemaining
@@ -105,7 +107,7 @@ class CounterOverlayView(context: Context) : View(context) {
                 val left = rect.x + index * cellWidth
                 drawCell(
                     canvas, left, rect.y.toFloat(), cellWidth, headerHeight,
-                    rank.label, 22f, COLOR_TEXT, COLOR_HEADER
+                    rank.label, 22f, COLOR_TEXT, if (alert) COLOR_ALERT else COLOR_HEADER
                 )
                 drawCell(
                     canvas,
@@ -120,12 +122,27 @@ class CounterOverlayView(context: Context) : View(context) {
                 )
             }
         }
+        if (alert) drawUnconfirmedTag(canvas)
+    }
+
+    /** 横条左上方的红色小标签：手牌没确认时，这里的剩余张数还没扣自己的牌。 */
+    private fun drawUnconfirmedTag(canvas: Canvas) {
+        val tag = OverlayLayout.handUnconfirmedTag.asRectF()
+        paint.style = Paint.Style.FILL
+        paint.color = COLOR_ALERT
+        canvas.drawRoundRect(tag, 8f, 8f, paint)
+        paint.style = Paint.Style.FILL
+        paint.color = COLOR_TEXT
+        paint.textSize = 16f
+        val metrics = paint.fontMetrics
+        val baseline = tag.centerY() - (metrics.bottom + metrics.top) / 2f
+        canvas.drawText("手牌未确认", tag.centerX(), baseline, paint)
     }
 
     private inline fun drawFrame(
         canvas: Canvas,
         rect: OverlayLayout.Rect,
-        paused: Boolean,
+        highlighted: Boolean,
         content: () -> Unit
     ) {
         val bounds = rect.asRectF()
@@ -138,8 +155,8 @@ class CounterOverlayView(context: Context) : View(context) {
         content()
         canvas.restore()
         paint.style = Paint.Style.STROKE
-        paint.strokeWidth = 2f
-        paint.color = if (paused) COLOR_RED else Color.BLACK
+        paint.strokeWidth = if (highlighted) 4f else 2f
+        paint.color = if (highlighted) COLOR_RED else Color.BLACK
         canvas.drawRoundRect(bounds, 12f, 12f, paint)
     }
 
@@ -180,5 +197,6 @@ class CounterOverlayView(context: Context) : View(context) {
         val COLOR_TEXT = Color.rgb(245, 245, 245)
         val COLOR_ZERO = Color.rgb(111, 114, 117)
         val COLOR_RED = Color.rgb(255, 51, 74)
+        val COLOR_ALERT = Color.rgb(176, 32, 48)
     }
 }
