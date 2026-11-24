@@ -19,6 +19,11 @@ application {
     mainClass.set("com.example.cardcounter.eval.OfflineEvalMainKt")
 }
 
+// `gradlew :eval:run` 的默认工作目录是 eval/，但命令行里的 datasets/... 都相对仓库根写。
+tasks.named<JavaExec>("run") {
+    workingDir = rootProject.projectDir
+}
+
 dependencies {
     implementation(project(":core"))
     implementation("org.json:json:20240303")

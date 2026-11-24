@@ -64,3 +64,19 @@ game_id,event_seq,zone,appear_ms,stable_ms,clear_ms,quantity,cards,tag,review,no
 - 输入 `[1,3,320,320]` float32，RGB，值域 0..1，等比缩放后 letterbox 居中，填充值 114/255。
 - 输出 YOLO 原始头 `[1, 4+15, 2100]`（cx, cy, w, h 为 320 输入画布像素，后接 15 类分数），图内不做 NMS。
 - 格式 ONNX（opset 17），电脑端用 ONNX Runtime Java、手机端用 ONNX Runtime Android 跑同一个文件。
+
+## 5. 逐帧观察 JSONL（离线评测输入）
+
+`:eval` 的 `--obs-dir` 下每局一个 `<gameId>.jsonl`，UTF-8，一行一个 `FrameObservation`：
+
+```json
+{"ts_ms":516146,"table_visible":true,"zones":{"TOP":{"card_visible":true,"still":true,"dets":[{"rank":"FOUR","conf":0.89,"cx":0.5,"cy":0.42,"w":0.12,"h":0.22}]}}}
+```
+
+- `ts_ms`：该视频内的绝对毫秒。行不要求按时间排序，评测工具会按 `ts_ms` 升序回放。
+- `table_visible`：整张牌桌可见（手机 `gameTableVisible`）。
+- `zones`：键与 `PlayZone` 枚举同名；缺省的区表示该帧没有该区观察。
+- `card_visible`：白色牌面面积达到可见阈值（`hasVisibleCardArea`）；`still`：与上一次采样相比画面静止，只用于停稳判定。
+- `dets`：该帧该区的检测框数组；省略或为 `null` 表示这一帧没做识别（对应 `ZoneObservation.detections = null`）。
+- `rank`：`Rank` 枚举名；`conf` 为 0..1；`cx/cy/w/h` 是 320×320 模型输入画布上的 0..1 小数。
+- 检测框视为已完成 NMS（IoU 0.45）与 `conf >= 0.25` 过滤，几何来自手机 `publicPlayBitmap` 的裁剪与 letterbox；评测工具不重复做 NMS 或阈值过滤。
