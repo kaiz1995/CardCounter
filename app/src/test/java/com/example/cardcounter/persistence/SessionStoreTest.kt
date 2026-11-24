@@ -5,12 +5,14 @@ import com.example.cardcounter.domain.GameReducer
 import com.example.cardcounter.domain.OutsideSeat
 import com.example.cardcounter.domain.PauseReason
 import com.example.cardcounter.domain.Rank
-import com.example.cardcounter.domain.RankCompleteness
 import com.example.cardcounter.domain.RankCounts
 import com.example.cardcounter.domain.SessionPhase
+import com.example.cardcounter.storage.VersionedEventLog
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SessionStoreTest {
@@ -19,7 +21,7 @@ class SessionStoreTest {
         // load 即 replay：暂停事件保留在日志尾部时，重启后必须原样恢复 PAUSED。
         val events = listOf(
             GameEvent.NewSession("start"),
-            GameEvent.SelfHandLocked(RankCounts.of(mapOf(Rank.ACE to 3)), "lock"),
+            GameEvent.HandConfirmed(RankCounts.of(mapOf(Rank.ACE to 3)), 3, "hand"),
             GameEvent.SessionPaused(PauseReason.RANK_UNSTABLE, "pause")
         )
         val state = GameReducer.replay(events)
@@ -30,47 +32,37 @@ class SessionStoreTest {
     }
 
     @Test
-    fun conservationPauseSurvivesReplayOnRestart() {
-        // 守恒失败产生的暂停同样不可自动解除。
+    fun conservationPauseSurvivesStoredRoundTripOnRestart() {
+        // 守恒失败产生的暂停同样不可自动解除：存盘再恢复仍是 PAUSED。
         val events = listOf(
             GameEvent.NewSession("start"),
-            GameEvent.SelfHandLocked(RankCounts.zero(), "lock", cardCount = 198),
             GameEvent.SessionPaused(PauseReason.CONSERVATION_FAILURE, "pause")
         )
-        val state = GameReducer.replay(events)
+        val stored = VersionedEventLog.encode(GameReducer.replay(events))
 
-        assertEquals(SessionPhase.PAUSED, state.phase)
-        assertEquals(PauseReason.CONSERVATION_FAILURE, state.pauseReason)
+        val (restored, _) = VersionedEventLog.restoreOrNew(stored)
+
+        assertEquals(SessionPhase.PAUSED, restored.phase)
+        assertEquals(PauseReason.CONSERVATION_FAILURE, restored.pauseReason)
     }
 
     @Test
-    fun eventJsonRoundTripKeepsNewFields() {
+    fun eventJsonRoundTripKeepsAllEventKinds() {
         val events = listOf(
             GameEvent.NewSession("s"),
-            GameEvent.SelfHandLocked(
-                RankCounts.of(mapOf(Rank.ACE to 3)), "h",
-                cardCount = 5, rankCompleteness = RankCompleteness.PARTIAL
-            ),
-            GameEvent.OutsideCardsPlayed(
-                RankCounts.of(mapOf(Rank.KING to 2)), "p", null, 4,
-                RankCompleteness.UNKNOWN
-            ),
-            GameEvent.OutsideCardsPlayed(
-                RankCounts.of(mapOf(Rank.ACE to 1)), "p2", OutsideSeat.TOP, 1
-            ),
-            GameEvent.SelfCardsPlayed(
-                RankCounts.of(mapOf(Rank.TEN to 2)), "sp", 2,
-                RankCompleteness.PARTIAL
-            ),
+            GameEvent.HandConfirmed(RankCounts.of(mapOf(Rank.ACE to 3)), 3, "h"),
+            GameEvent.OutsideCardsPlayed(RankCounts.of(mapOf(Rank.KING to 2)), OutsideSeat.TOP, "p"),
+            GameEvent.OutsideCardsPlayed(RankCounts.of(mapOf(Rank.ACE to 1)), OutsideSeat.RIGHT_BOTTOM, "p2"),
             GameEvent.Reverted("p", "r"),
             GameEvent.SessionPaused(PauseReason.CONSERVATION_FAILURE, "pause"),
+            GameEvent.SessionResumed("resume"),
             GameEvent.SessionClosed("close")
         )
         val array = JSONArray()
-        events.forEach { array.put(EventJsonCodec.encodeEvent(it)) }
+        events.forEach { array.put(VersionedEventLog.encodeEvent(it)) }
         val decoded = buildList {
             for (index in 0 until array.length()) {
-                add(EventJsonCodec.decodeEvent(array.getJSONObject(index)))
+                add(VersionedEventLog.decodeEvent(array.getJSONObject(index)))
             }
         }
 
@@ -78,16 +70,29 @@ class SessionStoreTest {
     }
 
     @Test
-    fun legacyJsonWithoutCompletenessDefaultsToComplete() {
-        // 旧数据没有 rankCompleteness 字段，必须按 COMPLETE 解码。
-        val legacy = JSONObject()
-            .put("id", "old")
-            .put("type", "OutsideCardsPlayed")
-            .put("cards", JSONObject().put(Rank.ACE.name, 2))
-            .put("cardCount", 2)
-        val event = EventJsonCodec.decodeEvent(legacy) as GameEvent.OutsideCardsPlayed
+    fun previousVersionStoredSessionRestartsAsFreshSession() {
+        // 上一版存下的会话（含已删除的事件类型）：直接丢弃，开新局，不崩。
+        val previous = JSONObject()
+            .put("schema", 2)
+            .put("seq", 2)
+            .put(
+                "events",
+                JSONArray()
+                    .put(JSONObject().put("id", "s").put("type", "NewSession"))
+                    .put(
+                        JSONObject().put("id", "lock").put("type", "SelfHandLocked")
+                            .put("cards", JSONObject().put(Rank.ACE.name, 3))
+                            .put("cardCount", 3).put("rankCompleteness", "COMPLETE")
+                    )
+            )
+            .toString()
 
-        assertEquals(RankCompleteness.COMPLETE, event.rankCompleteness)
-        assertEquals(2, event.cardCount)
+        val (state, seq) = VersionedEventLog.restoreOrNew(previous)
+
+        assertEquals(0, seq)
+        assertEquals(SessionPhase.ACTIVE, state.phase)
+        assertFalse(state.handConfirmed)
+        assertEquals(1, state.events.size)
+        assertTrue(state.events.single() is GameEvent.NewSession)
     }
 }
