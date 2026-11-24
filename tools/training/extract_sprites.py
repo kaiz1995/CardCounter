@@ -6,10 +6,11 @@ Sources (whitelist enforced by common.ensure_allowed):
   g2-analysis/rank-ground-truth.md is a per-rank count vector and the game
   sorts the hand by rank, so card k in reading order is known exactly. The
   script only has to find the glyph positions.
-* play zones: dev recordings, located with the shipped 28-class MNN model
-  (high-confidence, single-rank plays only). Played cards are rendered at a
-  smaller scale than hand cards, which is the whole point of a second sprite
-  set.
+* play zones: card geometry is measured (positions only) with the shipped
+  28-class MNN model, fed exactly like the phone (letterbox + 114 grey) on
+  ``common.PLAY_GEOMETRY_VIDEOS``. Played cards are rendered at a smaller scale
+  than hand cards, which is the whole point of a second sprite set; the play
+  sprites themselves are resampled from truth-labelled hand corners.
 * negatives: card-free patches (felt, watermark, avatars, buttons, borders,
   overlays) sampled from frames that are not used as sprite sources.
 
@@ -165,12 +166,15 @@ class SpriteBank:
         )
         return True
 
-    def add_negative(self, patch: np.ndarray, source: str) -> None:
+    def add_negative(self, patch: np.ndarray, source: str) -> bool:
+        """Write a negative patch; False when an identical patch was already kept."""
+
         digest = hashlib.sha1(patch.tobytes()).hexdigest()[:10]
         if digest in self.hashes:
-            return
+            return False
         self.hashes.add(digest)
         cv2.imwrite(str(C.SPRITE_DIR / "_neg" / f"{source}_{digest}.png"), patch)
+        return True
 
     def save(self) -> None:
         C.save_json(
@@ -290,7 +294,7 @@ def extract_play(bank: SpriteBank, detector, pitch: defaultdict) -> dict:
     """
 
     stats = Counter()
-    for video in C.source_videos("dev")[:2] + C.source_videos("clip")[:1]:
+    for video in [C.ensure_allowed(C.SOURCE / n) for n in C.PLAY_GEOMETRY_VIDEOS]:
         capture = C.open_video(video)
         duration = capture.get(cv2.CAP_PROP_FRAME_COUNT) / max(1.0, capture.get(cv2.CAP_PROP_FPS))
         capture.release()
@@ -300,13 +304,16 @@ def extract_play(bank: SpriteBank, detector, pitch: defaultdict) -> dict:
                 crop = C.zone_crop(frame, zone)
                 if crop.size == 0:
                     continue
-                detections = detector.detect(crop, conf=0.5, iou=0.4)
+                # Same input as the phone (publicPlayBitmap): proportional resize +
+                # centred 114-grey padding; boxes come back in crop pixels.
+                detections = detector.detect_letterbox(crop, conf=0.5, iou=0.4)
                 if not detections:
                     # Real empty play-zone crop (felt + overlay + count board).
+                    # stable_hash, not hash(): str hashing is randomised per process.
                     if (video.name in C.NEGATIVE_SOURCE_VIDEOS and len(bank.entries) and stats["empty_bg"] < 120
-                            and hash((video.name, zone, int(second))) % 3 == 0):
-                        bank.add_negative(crop.copy(), C.clip_key(video))
-                        stats["empty_bg"] += 1
+                            and C.stable_hash(video.name, zone, int(second)) % 3 == 0):
+                        if bank.add_negative(crop.copy(), C.clip_key(video)):
+                            stats["empty_bg"] += 1
                     continue
                 if len(detections) > 12:
                     continue
@@ -342,12 +349,13 @@ def extract_negatives(bank: SpriteBank, count_per_video: int = 120) -> int:
                 if cards > 0.03:
                     continue
                 scale = 2 if size < 80 else 1
-                bank.add_negative(
+                kept = bank.add_negative(
                     cv2.resize(patch, (size * scale, size * scale), interpolation=cv2.INTER_LINEAR)
                     if scale > 1 else patch,
                     C.clip_key(video),
                 )
-                total += 1
+                if kept:  # duplicates dropped by hash are not counted
+                    total += 1
     return total
 
 
