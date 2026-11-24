@@ -117,7 +117,7 @@ fun hasVisibleCardArea(whiteSamples: Int, totalSamples: Int): Boolean =
 fun isTableGreen(red: Int, green: Int, blue: Int): Boolean =
     green >= 70 && green - red >= 30 && green - blue >= 10
 
-/** 公开出牌的点数位固定在裁剪中部；底部边缘框来自界面文字或面板。 */
+/** 只用于旧模型回放（eval 的 LegacyPipeline）；新模型的框只框点数，手机端不再按纵坐标过滤。 */
 fun isPublicRankBand(centerY: Float): Boolean = centerY < 0.85f
 
 /** 手牌识别在后台一直跑，只在手牌画面停稳后探测；手牌一旦确认，本局不再识别。 */

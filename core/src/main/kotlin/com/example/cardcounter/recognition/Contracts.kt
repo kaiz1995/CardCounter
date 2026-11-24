@@ -31,7 +31,7 @@ data class Detection(
     val h: Float
 )
 
-enum class DetectorBackend { ONNX_CPU, LEGACY_MNN, OFFLINE_REPLAY, DISABLED }
+enum class DetectorBackend { ONNX_CPU, OFFLINE_REPLAY, DISABLED }
 
 /** 输入为已等比缩放并 letterbox 到 320×320 的裁剪（填充值 114），输出已做 NMS。 */
 interface Detector : AutoCloseable {

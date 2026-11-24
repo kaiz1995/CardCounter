@@ -36,7 +36,7 @@ import com.example.cardcounter.service.OverlayService
 import com.example.cardcounter.storage.DiagnosticsLog
 import com.example.cardcounter.storage.LedgerCommand
 import com.example.cardcounter.storage.SessionActor
-import com.example.cardcounter.vision.MnnYoloDetector
+import com.example.cardcounter.vision.OnnxRankDetector
 import java.util.UUID
 import kotlin.math.roundToInt
 
@@ -52,7 +52,7 @@ class CaptureProbeService : Service() {
     private lateinit var handRankMatcher: HandRankMatcher
     private lateinit var handCardPositionDetector: HandCardPositionDetector
     private lateinit var issueSampleStore: IssueSampleStore
-    private var publicPlayYolo: MnnYoloDetector? = null
+    private var publicPlayYolo: OnnxRankDetector? = null
     private var lastRankProbeAt = 0L
     private var frameCount = 0L
     private var firstFrameAt = 0L
@@ -96,7 +96,7 @@ class CaptureProbeService : Service() {
             runCatching { diagnosticsLog.loadRecentJson(json) }
                 .onFailure { Log.w(TAG, "DIAGNOSTICS_RESTORE_FAILED", it) }
         }
-        publicPlayYolo = runCatching { MnnYoloDetector(this) }
+        publicPlayYolo = runCatching { OnnxRankDetector(this) }
             .onFailure { Log.w(TAG, "YOLO_DISABLED", it) }
             .getOrNull()
         callbackThread.start()
@@ -419,7 +419,7 @@ class CaptureProbeService : Service() {
                 .sortedByDescending(RoiFrame::quality)
                 .take(FINALIZE_FRAME_COUNT)
                 .mapNotNull { frame ->
-                    detectYoloCards(frame.bitmap, publicPlay = true)?.let {
+                    detectYoloCards(frame.bitmap)?.let {
                         RankCountsCandidate(
                             cards = fuseSinglePublicPlay(finalized.zone, it.cards, templateCards), minimumConfidence = it.minimumConfidence,
                             yoloCards = it.cards, templateCards = templateCards, cardCount = it.cards.total()
@@ -564,10 +564,9 @@ class CaptureProbeService : Service() {
         val templateInk: BooleanArray
     )
 
-    private fun detectYoloCards(bitmap: Bitmap, publicPlay: Boolean = false): YoloCards? = runCatching {
+    private fun detectYoloCards(bitmap: Bitmap): YoloCards? = runCatching {
         val counts = Rank.entries.associateWith { 0 }.toMutableMap()
         val detections = requireNotNull(publicPlayYolo).detect(bitmap)
-            .filter { !publicPlay || isPublicRankBand(it.centerY) }
         detections.forEach { detection ->
             counts[detection.rank] = counts.getValue(detection.rank) + 1
         }
