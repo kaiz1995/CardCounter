@@ -18,8 +18,10 @@ clip's real frame rate, frames whose hand_strip is byte-identical (MD5) are
 scored once, and the report states the de-duplicated frame count and the number
 of independent hands (one per clip). The glyph locator splits merged clusters
 (repair_rows) BEFORE the grid check, so a frame is not rejected just because two
-touching glyphs merged. Frames that still cannot be located are reported as
-locator rejections, never as model errors.
+touching glyphs merged. When the plain clustering cannot reach the truth count it
+is retried once on a closed ink mask (5x3), which reconnects thin glyphs such as
+a J whose hook is broken into fragments (145608). Frames that still cannot be
+located are reported as locator rejections, never as model errors.
 
 Set B (screenshots): the four real app screenshots under
 app/src/androidTest/assets. All six play zones of every screenshot are checked
@@ -194,23 +196,44 @@ def grid_ok(rows: list[list[list[int]]]) -> bool:
     return True
 
 
-def locate_hand(strip: np.ndarray, expected: int) -> tuple[list[list[int]] | None, str]:
-    """Glyph boxes (strip pixels, truth order) or (None, reason)."""
+def _band_rows(strip: np.ndarray, bands: list[int], tolerant: bool) -> list[list[list[int]]]:
+    """Glyph clusters of every row band, left to right.
 
-    bands = E.hand_row_bands(strip)
-    if not bands:
-        return None, "no_rows"
+    ``tolerant`` closes the ink mask first. A thin J is a 5 px stem plus a hook
+    broken into 3-4 px fragments; each piece alone is under the size gates of
+    ``clusters_from_mask`` so the whole glyph vanishes (145608, one J missing).
+    """
+
+    kernel = np.ones((5, 3), np.uint8)
     rows = []
     for band_top in bands:
         band = strip[band_top:band_top + 38]
-        glyphs = E.clusters_from_mask(E.ink_mask(band))
+        mask = E.ink_mask(band)
+        if tolerant:
+            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+        glyphs = E.clusters_from_mask(mask)
         for g in glyphs:
             g[1] += band_top
             g[3] += band_top
         rows.append(sorted(glyphs, key=lambda g: g[0]))
-    repaired = repair_rows(rows, expected)  # split merged clusters first ...
+    return rows
+
+
+def locate_hand(strip: np.ndarray, expected: int) -> tuple[list[list[int]] | None, str]:
+    """Glyph boxes (strip pixels, truth order) or (None, reason).
+
+    Plain clustering first; only when the glyph count cannot be matched is the
+    tolerant (closed-mask) clustering tried. Sprite extraction does not use this.
+    """
+
+    bands = E.hand_row_bands(strip)
+    if not bands:
+        return None, "no_rows"
+    repaired = repair_rows(_band_rows(strip, bands, False), expected)  # split merged clusters first ...
     if repaired is None:
-        return None, "count"
+        repaired = repair_rows(_band_rows(strip, bands, True), expected)
+        if repaired is None:
+            return None, "count"
     if not grid_ok(repaired):  # ... then judge the grid
         return None, "grid"
     return flatten_rows(repaired), "ok"
