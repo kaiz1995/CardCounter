@@ -1,0 +1,2 @@
+# ultralytics pretrained weights are kept in D:/CardCounterData/weights, never in git
+*.pt

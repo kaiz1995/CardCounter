@@ -28,6 +28,9 @@ os.environ.setdefault("USERNAME", os.environ.get("LOGNAME", "codex"))
 
 RUNS = C.RUNS_DIR
 BUDGET_S = 3 * 3600
+# ultralytics pretrained weights live outside the repo (never in git); the first
+# run downloads them to this path.
+PRETRAINED = str(C.DATA_ROOT / "weights" / "yolo11n.pt")
 
 
 def _yolo():
@@ -41,7 +44,7 @@ def train(
     epochs: int,
     project: str,
     name: str,
-    weights: str = "yolo11n.pt",
+    weights: str = PRETRAINED,
     batch: int = 32,
     patience: int = 15,
     lr0: float = 0.01,
@@ -116,7 +119,7 @@ def main() -> int:
         return 0
 
     if args.stage == "synth":
-        weights = args.weights or "yolo11n.pt"
+        weights = args.weights or PRETRAINED
         result = train(
             C.SYNTH_DIR / "dataset" / "data.yaml",
             epochs=args.epochs,
