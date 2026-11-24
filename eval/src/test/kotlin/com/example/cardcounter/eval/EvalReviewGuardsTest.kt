@@ -5,7 +5,6 @@ import com.example.cardcounter.domain.GameState
 import com.example.cardcounter.domain.OutsideSeat
 import com.example.cardcounter.domain.PauseReason
 import com.example.cardcounter.domain.Rank
-import com.example.cardcounter.domain.RankCompleteness
 import com.example.cardcounter.domain.RankCounts
 import com.example.cardcounter.recognition.Detection
 import com.example.cardcounter.recognition.FrameObservation
@@ -14,6 +13,7 @@ import com.example.cardcounter.recognition.PlayPipeline
 import com.example.cardcounter.recognition.ZoneObservation
 import com.example.cardcounter.storage.LedgerCommand
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -113,9 +113,15 @@ class EvalReviewGuardsTest {
     // ---- 回放入口 ----
 
     @Test
-    fun partialSelfHandIsNeverLockedAsComplete() {
+    fun partialSelfHandIsNeverConfirmed() {
         val partial = game(selfHand = RankCounts.of(mapOf(Rank.TWO to 2)), selfHandCount = 3)
-        assertEquals(RankCompleteness.PARTIAL, Replay.run(partial, emptyList(), LegacyPipeline()).lockHandCompleteness)
+        val partialReplay = Replay.run(partial, emptyList(), LegacyPipeline())
+        assertFalse(partialReplay.handConfirmed)
+        assertNull(partialReplay.finalState.selfHand)
+
+        val complete = Replay.run(game(), emptyList(), LegacyPipeline())
+        assertTrue(complete.handConfirmed)
+        assertEquals(RankCounts.of(mapOf(Rank.TWO to 2, Rank.KING to 1)), complete.finalState.selfHand)
 
         val missingCount = game(selfHandCount = 0)
         val error = runCatching { Replay.run(missingCount, emptyList(), LegacyPipeline()) }.exceptionOrNull()
@@ -132,14 +138,15 @@ class EvalReviewGuardsTest {
     }
 
     @Test
-    fun outsideZoneFallsBackToSeatAndRejectsMissingBoth() {
-        fun command(seat: OutsideSeat?) =
-            LedgerCommand.AcceptOutsidePlay(king, 1, seat, RankCompleteness.COMPLETE, "e")
+    fun outsideZoneFallsBackToSeatAndRejectsSelfZone() {
+        fun command(seat: OutsideSeat) = LedgerCommand.AcceptOutsidePlay(king, seat, "e")
 
-        assertEquals(PlayZone.LEFT_TOP, Replay.outsideZoneOf(PlayZone.LEFT_TOP, command(null)))
+        assertEquals(PlayZone.LEFT_TOP, Replay.outsideZoneOf(PlayZone.LEFT_TOP, command(OutsideSeat.LEFT_TOP)))
         assertEquals(PlayZone.RIGHT_TOP, Replay.outsideZoneOf(null, command(OutsideSeat.RIGHT_TOP)))
-        assertTrue(runCatching { Replay.outsideZoneOf(null, command(null)) }.exceptionOrNull() is IllegalArgumentException)
-        assertTrue(runCatching { Replay.outsideZoneOf(PlayZone.SELF, command(null)) }.exceptionOrNull() is IllegalArgumentException)
+        assertTrue(
+            runCatching { Replay.outsideZoneOf(PlayZone.SELF, command(OutsideSeat.TOP)) }.exceptionOrNull()
+                is IllegalArgumentException
+        )
     }
 
     @Test
@@ -160,7 +167,7 @@ class EvalReviewGuardsTest {
                 PipelineDecision(LedgerCommand.Pause(PauseReason.CONSERVATION_FAILURE), null, observation.timestampMs),
                 PipelineDecision(
                     LedgerCommand.AcceptOutsidePlay(
-                        RankCounts.of(mapOf(Rank.ACE to 1)), 1, OutsideSeat.TOP, RankCompleteness.COMPLETE, "e1"
+                        RankCounts.of(mapOf(Rank.ACE to 1)), OutsideSeat.TOP, "e1"
                     ),
                     PlayZone.TOP,
                     observation.timestampMs
@@ -377,8 +384,8 @@ class EvalReviewGuardsTest {
 
     @Test
     fun realPipelineSkipsLaterZoneAfterSameFramePause() {
-        // 锁 197 张，外面再出 2 张就超总量 → 守恒暂停。TOP 排在 LEFT_TOP 前面，两区同一帧清桌交出。
-        val meta = game(selfHand = king, selfHandCount = 197)
+        // 自己手里 16 张 K（库存用尽），外面再出 K 就超库存 → 守恒暂停。TOP 排在 LEFT_TOP 前面，两区同一帧清桌交出。
+        val meta = game(selfHand = RankCounts.of(mapOf(Rank.KING to 16)), selfHandCount = 16)
         fun frameOf(ts: Long, top: Int, left: Int) = FrameObservation(
             ts, true, mapOf(PlayZone.TOP to kings(PlayZone.TOP, top), PlayZone.LEFT_TOP to kings(PlayZone.LEFT_TOP, left))
         )
@@ -405,7 +412,7 @@ class EvalReviewGuardsTest {
         val replay = Replay.run(partial, emptyList(), LegacyPipeline())
         for (plays in listOf(listOf(truth(1, 1_000, 2_000)), listOf(truth(1, 1_000, 2_000, cards = null)))) {
             val report = buildGameReport(partial, plays, replay, EventMatcher.match(plays, replay.accepted))
-            assertEquals("self_hand_partial", report.remaining.unavailableReason)
+            assertEquals(SELF_HAND_UNKNOWN, report.remaining.unavailableReason)
             assertTrue(report.remaining.truthRemaining.isEmpty())
         }
     }
@@ -424,13 +431,13 @@ class EvalReviewGuardsTest {
     }
 
     @Test
-    fun unknownSelfHandLocksNominalCountAndReportsNoRemaining() {
+    fun unknownSelfHandIsNotConfirmedAndReportsNoRemaining() {
         val unknown = game(selfHand = RankCounts.zero(), selfHandCount = null)
         val replay = Replay.run(unknown, emptyList(), LegacyPipeline())
-        assertEquals(RankCompleteness.UNKNOWN, replay.lockHandCompleteness)
-        assertEquals(33, Replay.NOMINAL_HAND_COUNT)
-        assertEquals(Replay.NOMINAL_HAND_COUNT, replay.finalState.selfLockedHandCount)
-        assertNull(replay.finalState.selfLockedHand)
+        assertFalse(replay.handConfirmed)
+        assertNull(replay.finalState.selfHand)
+        // 未确认：横条不扣自己的牌。
+        assertEquals(com.example.cardcounter.domain.Rank.initialInventory, replay.finalState.outsideRemaining)
 
         val plays = listOf(truth(1, 1_000, 2_000))
         val report = buildGameReport(unknown, plays, replay, EventMatcher.match(plays, replay.accepted))

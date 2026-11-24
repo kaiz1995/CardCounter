@@ -1,5 +1,6 @@
 package com.example.cardcounter.eval
 
+import com.example.cardcounter.capture.PlayZone
 import com.example.cardcounter.recognition.PlayPipeline
 import java.io.PrintStream
 import java.nio.charset.StandardCharsets
@@ -86,7 +87,9 @@ object OfflineEvalCli {
         for (meta in selected) {
             val truthPath = options.truthDir.resolve("${meta.gameId}.csv")
             val obsPath = resolveObservations(options.obsDir, meta.gameId)
+            // 自己出的牌完全不管：真值里自己那一区的出牌不参与对齐和剩余牌推算。
             val truth = TruthCsv.parse(readText(truthPath), truthPath.toString(), meta.gameId)
+                .filter { it.zone != PlayZone.SELF }
             val frames = ObservationJsonl.parse(readText(obsPath), obsPath.toString())
             val pipeline = pipelineFactory.create(meta)
             val replay = Replay.run(meta, frames, pipeline) { (pipeline as? LegacyPipeline)?.audits.orEmpty() }

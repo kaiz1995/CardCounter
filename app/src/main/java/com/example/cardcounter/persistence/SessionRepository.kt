@@ -28,7 +28,7 @@ class SessionRepository private constructor(context: Context) : LedgerGateway {
         persist(state)
     }
 
-    /** 完整派发结果：Accepted / AcceptedQuantityOnly / DuplicateIgnored / Rejected / Paused。 */
+    /** 完整派发结果：Accepted / DuplicateIgnored / Rejected / Paused。 */
     override fun dispatchDetailed(event: GameEvent): DispatchResult {
         val result = GameReducer.apply(state, event)
         when (result) {

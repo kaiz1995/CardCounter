@@ -21,7 +21,7 @@
 | A0 构建 | **通过** | `assembleDebug` BUILD SUCCESSFUL，APK 47,089,539 字节 |
 | A1 组件单测 | **通过** | `testDebugUnitTest` **87/87**（0 fail / 0 error），含 Phase 1 新增 22 例 reducer 测试、Phase 2 新增 12 例 storage 测试 |
 | P0 交付物 | **通过** | docs/rebuild/ 四件套入库；manifest 逐视频 SHA256 实测（主代理抽查 1 例一致）；9局/ 与 source/ 确认为两批不同素材 |
-| P1 账本契约 | **通过**（A1 级） | DispatchResult 五态语义；quantity≠total 拒绝；超库存/守恒失败 → PAUSED 且原事件不进账；重复事件 DuplicateIgnored；`withoutRecoverablePause` 已删除，重启不解除暂停有测试锁定 |
+| P1 账本契约 | **通过**（A1 级） | DispatchResult 四态语义；手牌点数合计≠牌边缘张数拒绝；超库存/守恒失败 → PAUSED 且原事件不进账；重复事件 DuplicateIgnored；`withoutRecoverablePause` 已删除，重启不解除暂停有测试锁定 |
 | P2 单写者存储 | **通过**（A1 级） | SessionActor 单线程串行（并发测试无丢失）；VersionedEventLog CAS 旧版本写入被拒；诊断词表 OBSERVED/STABLE/ACCEPTED/REJECTED/RETRY/PAUSED/DUPLICATE；显式 Resume 仅 PAUSED→ACTIVE |
 | A2 离线整局 | **未验证** | 需要 30 局标注数据 + offline runner（Phase 5） |
 | A3 真机链路 | **未验证** | 需要 Mate 60 真机（Phase 6） |
@@ -31,15 +31,15 @@
 
 | 阻断项 | 状态 |
 |---|---|
-| 首出前产生正式出牌事件 | 领域层已保证（PRE_PLAY 不接受出牌事件，测试锁定）；首出状态机细分属 Phase 4 |
-| 误扣外部剩余 | reducer 单测锁定（SelfCardsPlayed 不扣外面） |
+| 首出前产生正式出牌事件 | 规则已改：新会话直接可记录，外面出牌在确认手牌前照常记（横条先不扣自己的牌，确认后补扣），测试锁定；首出状态机细分属 Phase 4 |
+| 误扣外部剩余 | 自己出的牌完全不进账（没有对应事件）；reducer 单测锁定外面剩余只受自己确认的手牌和外面出牌影响 |
 | 同一静态牌组重复扣减 | DuplicateIgnored + evidenceId 兼作事件 id（测试锁定） |
 | 事件未入账却日志 ACCEPTED | ACCEPTED 日志与 DispatchResult.Accepted 同源产生 |
 | 识别失败静默丢失 | NO_CONSENSUS → RETRY 诊断记录保留证据 |
 | 重启自动解除未确认暂停 | **已修复**（withoutRecoverablePause 删除 + 测试锁定） |
 | 持久化后 replay 与实时不一致 | replayMatchesLiveState 测试锁定 |
 | MNN/TFLite 后端不可观察 | **未处理**（Phase 3 范围） |
-| 数量与 Rank 矛盾仍显示伪精确 | **已修复**（COMPLETE 不一致 → Rejected；数量账 → outsideRemaining=null） |
+| 数量与 Rank 矛盾仍显示伪精确 | **已修复**（只接受点数完整的出牌；各家张数和外面总张数由点数向量推出，不再有独立数量账；手牌确认时点数合计必须等于牌边缘张数，对不上 → Rejected） |
 
 ## 主代理审查记录（子代理产出修正项）
 
@@ -49,8 +49,8 @@
 
 ## 已知残留（不阻断 A1，已记录）
 
-- UNKNOWN 锁手后 COMPLETE 出牌事件的 per-Rank 校验退化为全额库存口径（总量守恒仍含锁手张数；rankLedgerComplete=false 时 outsideRemaining=null，不产生伪精确）。
-- PARTIAL 自出牌会把 rankLedgerComplete 置 false（过度保守方向，安全但损失精度），Phase 4 可再评估。
+- 手牌确认前外面出牌照常记、横条不扣自己的牌；确认后补扣，任一点数超库存则守恒失败暂停，确认事件不进账。
+- 自己出的牌不记、不算、不显示；本局手牌确认后不能再改，自动锁定改为手动确认属下一轮界面重写。
 - `replay` 对程序级异常事件静默跳过（旧行为是整体 corrupted）；写入了 replaySkipsRejectedDuplicateAndIllegalEvents 测试固化现行为。
 
 ## 未验证项

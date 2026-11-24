@@ -11,7 +11,7 @@ data class ObservationRecord(
     val zone: String,
     /** SELF / OUTSIDE。 */
     val source: String,
-    /** 独立数量账；未知为 null。 */
+    /** 这一手的张数（仅诊断观察用，不是账本数据）；未知为 null。 */
     val quantity: Int?,
     /** Rank 向量总数；未知为 null。 */
     val rankTotal: Int?,
@@ -31,12 +31,11 @@ class DiagnosticsLog(
     private val clock: () -> Long = System::currentTimeMillis,
     private val capacity: Int = DEFAULT_CAPACITY
 ) {
-    /** decision 词表固定为方案 2.5；Accept 细分用 ACCEPTED_QUANTITY_ONLY。 */
+    /** decision 词表固定；记牌只接受点数完整的出牌，没有“只记张数”这一档。 */
     object Decision {
         const val OBSERVED = "OBSERVED"
         const val STABLE = "STABLE"
         const val ACCEPTED = "ACCEPTED"
-        const val ACCEPTED_QUANTITY_ONLY = "ACCEPTED_QUANTITY_ONLY"
         const val REJECTED = "REJECTED"
         const val RETRY = "RETRY"
         const val PAUSED = "PAUSED"
@@ -45,7 +44,6 @@ class DiagnosticsLog(
         /** 派发结果 → 决策词表。 */
         fun forResult(result: DispatchResult): String = when (result) {
             is DispatchResult.Accepted -> ACCEPTED
-            is DispatchResult.AcceptedQuantityOnly -> ACCEPTED_QUANTITY_ONLY
             is DispatchResult.DuplicateIgnored -> DUPLICATE
             is DispatchResult.Rejected -> REJECTED
             is DispatchResult.Paused -> PAUSED

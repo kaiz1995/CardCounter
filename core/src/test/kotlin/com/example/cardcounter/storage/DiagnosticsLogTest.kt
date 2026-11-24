@@ -23,11 +23,10 @@ class DiagnosticsLogTest {
 
     @Test
     fun decisionVocabularyIsFixedAndCoversDispatchResults() {
-        // 词表固定为方案 2.5。
+        // 词表固定；没有“只记张数”这一档。
         assertEquals("OBSERVED", DiagnosticsLog.Decision.OBSERVED)
         assertEquals("STABLE", DiagnosticsLog.Decision.STABLE)
         assertEquals("ACCEPTED", DiagnosticsLog.Decision.ACCEPTED)
-        assertEquals("ACCEPTED_QUANTITY_ONLY", DiagnosticsLog.Decision.ACCEPTED_QUANTITY_ONLY)
         assertEquals("REJECTED", DiagnosticsLog.Decision.REJECTED)
         assertEquals("RETRY", DiagnosticsLog.Decision.RETRY)
         assertEquals("PAUSED", DiagnosticsLog.Decision.PAUSED)
@@ -36,10 +35,6 @@ class DiagnosticsLogTest {
         // 派发结果 → 词表映射。
         val state = GameReducer.newSession()
         assertEquals(DiagnosticsLog.Decision.ACCEPTED, DiagnosticsLog.Decision.forResult(DispatchResult.Accepted(state)))
-        assertEquals(
-            DiagnosticsLog.Decision.ACCEPTED_QUANTITY_ONLY,
-            DiagnosticsLog.Decision.forResult(DispatchResult.AcceptedQuantityOnly(state))
-        )
         assertEquals(DiagnosticsLog.Decision.DUPLICATE, DiagnosticsLog.Decision.forResult(DispatchResult.DuplicateIgnored(state)))
         assertEquals(DiagnosticsLog.Decision.REJECTED, DiagnosticsLog.Decision.forResult(DispatchResult.Rejected(state, "x")))
         assertEquals(DiagnosticsLog.Decision.PAUSED, DiagnosticsLog.Decision.forResult(DispatchResult.Paused(state, PauseReason.RANK_UNSTABLE)))

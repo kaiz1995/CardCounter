@@ -64,7 +64,7 @@ data class GameReport(
         put("rejectionCount", rejections)
         put("retryCount", replay.retryCount)
         put("suppressedDuplicateCount", replay.suppressedDuplicateCount)
-        put("lockHandCompleteness", replay.lockHandCompleteness.name)
+        put("selfHandConfirmed", replay.handConfirmed)
         put(
             "matchWindows",
             JSONObject().put("beforeSlackMs", match.windows.beforeSlackMs)
@@ -140,7 +140,7 @@ fun buildGameReport(
     video = meta.video,
     match = match,
     replay = replay,
-    remaining = remainingOf(meta, truth, replay.finalState, replay.lockHandCompleteness),
+    remaining = remainingOf(meta, truth, replay.finalState),
     decisions = replay.decisions.map(::decisionRecord)
 )
 
@@ -150,18 +150,19 @@ const val SELF_HAND_UNKNOWN = "self_hand_unknown"
 private fun remainingOf(
     meta: GameMeta,
     truth: List<TruthPlay>,
-    finalState: GameState,
-    completeness: com.example.cardcounter.domain.RankCompleteness
+    finalState: GameState
 ): RemainingReport {
     val unavailable = when {
-        completeness == com.example.cardcounter.domain.RankCompleteness.UNKNOWN -> SELF_HAND_UNKNOWN
-        completeness != com.example.cardcounter.domain.RankCompleteness.COMPLETE -> "self_hand_partial"
-        !meta.selfHandComplete -> "self_hand_partial"
+        // 手牌为空或不完整就不确认：横条没扣自己的牌，终局剩余牌不可算。
+        // 真值手牌不完整时，就算管线自己确认了手牌，也不能拿残缺的 selfHand 去算真值剩余。
+        !meta.selfHandComplete || !finalState.handConfirmed -> SELF_HAND_UNKNOWN
         // 真值里有看不清点数的外面出牌（cards 留空）：真值剩余本身就不知道，不能拿 0 张去比。
         truth.any { it.zone != PlayZone.SELF && !it.hasRanks } -> TRUTH_RANKS_INCOMPLETE
-        !finalState.rankLedgerComplete -> "rank_ledger_incomplete"
-        finalState.outsideRemaining == null -> "rank_ledger_incomplete"
         else -> null
+    }
+    if (unavailable != null) {
+        // 手牌未确认或真值外面区点数不全时，真值剩余本身算不出来，不给残缺值。
+        return RemainingReport(emptyMap(), emptyMap(), emptyMap(), unavailable)
     }
     val truthOutside = truth
         .filter { it.zone != PlayZone.SELF }
@@ -170,13 +171,6 @@ private fun remainingOf(
         Rank.initialInventory[rank] - meta.selfHand[rank] - truthOutside[rank]
     }
     val evalRemaining = finalState.outsideRemaining
-    if (unavailable != null || evalRemaining == null) {
-        // 手牌点数不全或真值外面区点数不全时，真值剩余本身算不出来，不给残缺值。
-        val truthUnknown = unavailable == "self_hand_partial" || unavailable == SELF_HAND_UNKNOWN ||
-            unavailable == TRUTH_RANKS_INCOMPLETE
-        val knownTruth = if (truthUnknown) emptyMap() else truthRemaining
-        return RemainingReport(emptyMap(), knownTruth, emptyMap(), unavailable ?: "rank_ledger_incomplete")
-    }
     val evalMap = Rank.entries.associateWith { evalRemaining[it] }
     return RemainingReport(
         evalRemaining = evalMap,
@@ -190,26 +184,21 @@ private fun decisionRecord(decision: RecordedDecision): DecisionRecord {
     val command = decision.command
     val kind = when (command) {
         is LedgerCommand.AcceptOutsidePlay -> "AcceptOutsidePlay"
-        is LedgerCommand.AcceptSelfPlay -> "AcceptSelfPlay"
-        is LedgerCommand.LockHand -> "LockHand"
+        is LedgerCommand.ConfirmHand -> "ConfirmHand"
         is LedgerCommand.NewSession -> "NewSession"
         is LedgerCommand.Pause -> "Pause"
         LedgerCommand.Resume -> "Resume"
     }
     val cards = when (command) {
         is LedgerCommand.AcceptOutsidePlay -> command.cards
-        is LedgerCommand.AcceptSelfPlay -> command.cards
+        is LedgerCommand.ConfirmHand -> command.cards
         else -> RankCounts.zero()
     }
-    val cardCount = when (command) {
-        is LedgerCommand.AcceptOutsidePlay -> command.cardCount
-        is LedgerCommand.AcceptSelfPlay -> command.cardCount
-        else -> 0
-    }
+    // 张数就是点数向量合计，不另记一份。
+    val cardCount = cards.total()
     val seat = (command as? LedgerCommand.AcceptOutsidePlay)?.seat?.name
     val result = when (decision.result) {
         is DispatchResult.Accepted -> "Accepted"
-        is DispatchResult.AcceptedQuantityOnly -> "AcceptedQuantityOnly"
         is DispatchResult.DuplicateIgnored -> "DuplicateIgnored"
         is DispatchResult.Rejected -> "Rejected"
         is DispatchResult.Paused -> "Paused"
@@ -280,14 +269,12 @@ object SummaryWriter {
             "口径：张数正确率 = 张数完全正确的命中手 / 真值手数；" +
                 "点数正确率 = 点数完全正确的命中手 / 点数已知的真值手数（cards 为空的手不计入分母）。"
         )
-        val unknownHand = reports.filter {
-            it.replay.lockHandCompleteness == com.example.cardcounter.domain.RankCompleteness.UNKNOWN
-        }
+        val unknownHand = reports.filter { !it.replay.handConfirmed }
         if (unknownHand.isNotEmpty()) {
             appendLine()
             appendLine(
-                "手牌未知（selfHandCount=null）的 ${unknownHand.size} 局按标称 ${Replay.NOMINAL_HAND_COUNT} 张锁定：" +
-                    "这些局的守恒暂停可能是标称张数造成的，剩余牌不可算。"
+                "手牌未知（${SELF_HAND_UNKNOWN}）的 ${unknownHand.size} 局不确认手牌：" +
+                    "横条不扣自己的牌，外面出牌照常记，终局剩余牌不可算。"
             )
         }
         val flagged = reports.filter { it.flagged }

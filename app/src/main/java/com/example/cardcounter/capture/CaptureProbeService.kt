@@ -28,7 +28,6 @@ import androidx.core.content.ContextCompat
 import com.example.cardcounter.R
 import com.example.cardcounter.domain.DispatchResult
 import com.example.cardcounter.domain.Rank
-import com.example.cardcounter.domain.RankCompleteness
 import com.example.cardcounter.domain.RankCounts
 import com.example.cardcounter.domain.SessionPhase
 import com.example.cardcounter.persistence.SessionRepository
@@ -80,7 +79,7 @@ class CaptureProbeService : Service() {
     @Volatile private var handRevision = 0L
     @Volatile private var firstPlayArmed = false
     @Volatile private var manualNewGameRequested = false
-    @Volatile private var lastStablePrePlayHand: RankCounts? = null
+    @Volatile private var lastStablePrePlayHand: Pair<RankCounts, Int>? = null
     private val firstPlayGate = FirstPlayBoundaryGate()
     private lateinit var sessionLedger: SessionRepository
     private lateinit var sessionActor: SessionActor
@@ -185,7 +184,8 @@ class CaptureProbeService : Service() {
             firstFrameAt = 0L
             lastReportAt = 0L
             lastReportFrames = 0L
-            val activeSession = sessionLedger.state.phase == SessionPhase.ACTIVE
+            // 新会话一开始就是 ACTIVE，只有手牌已确认的会话才算“已开局”。
+            val activeSession = sessionLedger.state.let { it.phase == SessionPhase.ACTIVE && it.handConfirmed }
             resetSessionTracking(firstPlayIsArmed = activeSession)
             reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 3).also {
                 it.setOnImageAvailableListener(::onImageAvailable, callbackHandler)
@@ -299,8 +299,8 @@ class CaptureProbeService : Service() {
                                 return@post
                             }
                             val baselineValid = isValidBaseline(positionCount, cards)
-                            if (stableRankCandidates >= 2 && baselineValid) {
-                                lastStablePrePlayHand = cards
+                            if (stableRankCandidates >= 2 && baselineValid && positionCount != null) {
+                                lastStablePrePlayHand = cards to positionCount
                             }
                             Log.i(
                                 TAG,
@@ -386,22 +386,32 @@ class CaptureProbeService : Service() {
     }
 
     private fun lockPrePlayHand() {
-        val cards = lastStablePrePlayHand ?: return
-        if (sessionLedger.state.phase != SessionPhase.PRE_PLAY) return
-        sessionActor.post(LedgerCommand.LockHand(cards, cards.total(), RankCompleteness.COMPLETE))
+        val (cards, handCount) = lastStablePrePlayHand ?: return
+        if (sessionLedger.state.handConfirmed) return
+        // 张数用按牌边缘数出来的，不拿点数合计顶替：两者对不上账本就拒绝，本局手牌保持未确认，不会锁错。
+        val result = sessionActor.post(LedgerCommand.ConfirmHand(cards, handCount))
         OverlayService.refresh(this)
-        Log.i(TAG, "SELF_HAND_LOCKED total=${cards.total()} cards=$cards")
+        Log.i(
+            TAG,
+            "SELF_HAND_CONFIRM total=${cards.total()} positionCount=$handCount cards=$cards " +
+                "result=${result.javaClass.simpleName}"
+        )
     }
 
-    /** 手动新局先拿稳定几何数量，再把牌面候选作为显示猜测锁入新会话。 */
+    /** 手动新局先拿稳定几何数量，再拿牌面候选确认手牌；点数合计和张数对不上会被拒，手牌保持未确认。 */
     private fun completeManualNewGame(cards: RankCounts, handCount: Int) {
         if (!manualNewGameRequested || handCount <= 0) return
         manualNewGameRequested = false
         sessionActor.post(LedgerCommand.NewSession())
-        sessionActor.post(LedgerCommand.LockHand(cards, handCount, RankCompleteness.COMPLETE))
-        callbackHandler.post { resetSessionTracking(firstPlayIsArmed = true) }
+        val result = sessionActor.post(LedgerCommand.ConfirmHand(cards, handCount))
+        // 手牌真的确认了才进入出牌记录；被拒就留在识别阶段继续认手牌，不能把手牌识别关掉。
+        val confirmed = result is DispatchResult.Accepted
+        callbackHandler.post { resetSessionTracking(firstPlayIsArmed = confirmed) }
         OverlayService.refresh(this)
-        Log.i(TAG, "MANUAL_NEW_GAME_LOCKED count=$handCount rankTotal=${cards.total()}")
+        Log.i(
+            TAG,
+            "MANUAL_NEW_GAME_CONFIRM count=$handCount rankTotal=${cards.total()} result=${result.javaClass.simpleName}"
+        )
     }
 
     /** 截屏回调仅缓存小 ROI；牌面连续停稳后才推理，清桌是未停稳的兜底。 */
@@ -442,6 +452,8 @@ class CaptureProbeService : Service() {
     private fun finalizeRoiEvent(finalized: RoiPlayEventCache.Finalized<RoiFrame>) {
         try {
             if (finalized.generation != captureGeneration || !firstPlayArmed) return
+            // 自己出的牌完全不管：不识别、不记、不显示。
+            if (finalized.zone.source == PlaySource.SELF) return
             val templateCards = finalized.frames.maxByOrNull(RoiFrame::quality)?.let { frame ->
                 handRankMatcher.detectPlay(handRankMatcher.prepare(frame.templateInk), finalized.zone)
             } ?: RankCounts.zero()
@@ -537,17 +549,8 @@ class CaptureProbeService : Service() {
     }
 
     /** 稳定出牌 → 单写者账本命令；evidenceId 兼作账本事件 id，重试不会重复扣牌。 */
-    private fun StablePlay.toLedgerCommand(): LedgerCommand {
-        val evidenceId = UUID.randomUUID().toString()
-        return when (zone.source) {
-            PlaySource.SELF -> LedgerCommand.AcceptSelfPlay(
-                cards, cards.total(), RankCompleteness.COMPLETE, evidenceId
-            )
-            PlaySource.OUTSIDE -> LedgerCommand.AcceptOutsidePlay(
-                cards, cards.total(), requireNotNull(zone.seat), RankCompleteness.COMPLETE, evidenceId
-            )
-        }
-    }
+    private fun StablePlay.toLedgerCommand(): LedgerCommand.AcceptOutsidePlay =
+        LedgerCommand.AcceptOutsidePlay(cards, requireNotNull(zone.seat), UUID.randomUUID().toString())
 
     /** 诊断记账统一入口：入环形缓冲并轮换持久化到独立 SharedPreferences key。 */
     private fun recordDiagnostics(

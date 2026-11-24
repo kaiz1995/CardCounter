@@ -2,13 +2,13 @@ package com.example.cardcounter.domain
 
 object GameReducer {
     fun newSession(event: GameEvent.NewSession = GameEvent.NewSession()): GameState =
-        GameState(phase = SessionPhase.PRE_PLAY, events = listOf(event)).also {
+        GameState(phase = SessionPhase.ACTIVE, events = listOf(event)).also {
             it.requireInvariant()
         }
 
     /**
-     * 派发单个事件。真·程序错误（phase 非法、未锁手等）抛 IllegalArgumentException；
-     * 领域性拒绝（重复、数量与 Rank 不一致、超库存、守恒失败）返回结果对象，不抛异常。
+     * 派发单个事件。真·程序错误（phase 非法等）抛 IllegalArgumentException；
+     * 领域性拒绝（重复、张数对不上、已确认再确认、超库存、守恒失败）返回结果对象，不抛异常。
      */
     fun apply(state: GameState, event: GameEvent): DispatchResult {
         if (state.events.any { it.id == event.id }) {
@@ -16,9 +16,8 @@ object GameReducer {
         }
         return when (event) {
             is GameEvent.NewSession -> accept(newSession(event))
-            is GameEvent.SelfHandLocked -> lockHand(state, event)
+            is GameEvent.HandConfirmed -> confirmHand(state, event)
             is GameEvent.OutsideCardsPlayed -> addOutsidePlay(state, event)
-            is GameEvent.SelfCardsPlayed -> addSelfPlay(state, event)
             is GameEvent.Reverted -> revert(state, event)
             is GameEvent.SessionPaused -> pause(state, event)
             is GameEvent.SessionResumed -> resume(state, event)
@@ -50,126 +49,64 @@ object GameReducer {
         return DispatchResult.Accepted(state)
     }
 
-    private fun lockHand(state: GameState, event: GameEvent.SelfHandLocked): DispatchResult {
-        require(state.phase == SessionPhase.PRE_PLAY) { "当前不能锁定手牌" }
-        require(event.cardCount > 0) { "自己手牌不能为空" }
-        require(event.cardCount <= Rank.initialInventory.total()) { "自己手牌超过固定库存" }
-        if (event.rankCompleteness == RankCompleteness.UNKNOWN && event.cards.total() != 0) {
+    /**
+     * 确认自己的手牌：每局只能一次，点数合计必须等于按牌边缘数出来的张数。
+     * 已记的外面出牌加上这手牌会让某个点数超库存 → 守恒失败暂停，确认事件不进账。
+     */
+    private fun confirmHand(state: GameState, event: GameEvent.HandConfirmed): DispatchResult {
+        require(state.phase == SessionPhase.ACTIVE) { "当前不能确认手牌" }
+        if (state.handConfirmed) {
+            return DispatchResult.Rejected(state, "本局手牌已确认，不能修改")
+        }
+        val total = event.cards.total()
+        if (total != event.handCount) {
             return DispatchResult.Rejected(
                 state,
-                "UNKNOWN 锁手必须携带全零 Rank 向量，实际 total=${event.cards.total()}"
+                "手牌点数合计与牌边缘张数对不上: cards.total()=$total, handCount=${event.handCount}"
             )
         }
-        // PARTIAL/UNKNOWN 锁手降级为数量账场景：Rank 账本永久不再可信。
-        val next = when (event.rankCompleteness) {
-            RankCompleteness.UNKNOWN -> state.copy(
-                phase = SessionPhase.ACTIVE,
-                selfLockedHand = null,
-                selfLockedHandCount = event.cardCount,
-                rankLedgerComplete = false,
-                events = state.events + event
-            )
-            RankCompleteness.PARTIAL -> state.copy(
-                phase = SessionPhase.ACTIVE,
-                selfLockedHand = event.cards,
-                selfLockedHandCount = event.cardCount,
-                rankLedgerComplete = false,
-                events = state.events + event
-            )
-            RankCompleteness.COMPLETE -> state.copy(
-                phase = SessionPhase.ACTIVE,
-                selfLockedHand = event.cards,
-                selfLockedHandCount = event.cardCount,
-                events = state.events + event
+        if (total <= 0) {
+            return DispatchResult.Rejected(state, "手牌不能为空")
+        }
+        // 手牌单个点数本身就超库存：错的一定是手牌，不是外面的账。拒绝，让用户改到一致，不停记。
+        val overInventory = Rank.entries.firstOrNull { event.cards[it] > Rank.initialInventory[it] }
+        if (overInventory != null) {
+            return DispatchResult.Rejected(
+                state,
+                "手牌点数超过库存: ${overInventory.label} 手牌=${event.cards[overInventory]}, " +
+                    "库存=${Rank.initialInventory[overInventory]}"
             )
         }
-        return accept(next)
+        if (Rank.entries.any { event.cards[it] + state.outsidePlayed[it] > Rank.initialInventory[it] }) {
+            return pauseForConservation(state)
+        }
+        return accept(state.copy(selfHand = event.cards, events = state.events + event))
     }
 
+    /** 外面出牌：任一点数 外面累计 + 本手 > 库存 − 自己手牌（已确认才扣）→ 守恒失败暂停，本手不进账。 */
     private fun addOutsidePlay(state: GameState, event: GameEvent.OutsideCardsPlayed): DispatchResult {
         require(state.phase == SessionPhase.ACTIVE) { "当前不接受自动出牌事件" }
-        require(event.cardCount > 0) { "出牌张数必须为正数" }
-        if (event.rankCompleteness == RankCompleteness.COMPLETE) {
-            if (event.cardCount != event.cards.total()) {
-                return DispatchResult.Rejected(
-                    state,
-                    "数量账与 Rank 账不一致: cardCount=${event.cardCount}, cards.total()=${event.cards.total()}"
-                )
-            }
-            val locked = state.selfLockedHand
-            val overRank = Rank.entries.firstOrNull { rank ->
-                state.outsidePlayed[rank] + event.cards[rank] >
-                    Rank.initialInventory[rank] - (locked?.get(rank) ?: 0)
-            }
-            if (overRank != null) {
-                return pauseForConservation(state)
-            }
-            if (!withinConservation(state, event.cardCount)) {
-                return pauseForConservation(state)
-            }
-            val bySeat = event.seat?.let { seat ->
-                state.outsidePlayedBySeat + (seat to state.playedBy(seat).plus(event.cards))
-            } ?: state.outsidePlayedBySeat
-            val countBySeat = event.seat?.let { seat ->
-                state.outsidePlayedCountBySeat + (seat to state.playedCountBy(seat) + event.cardCount)
-            } ?: state.outsidePlayedCountBySeat
-            return accept(
-                state.copy(
-                    outsidePlayed = state.outsidePlayed.plus(event.cards),
-                    outsidePlayedCount = state.outsidePlayedCount + event.cardCount,
-                    outsidePlayedBySeat = bySeat,
-                    outsidePlayedCountBySeat = countBySeat,
-                    events = state.events + event
-                )
-            )
+        if (event.cards.total() <= 0) {
+            return DispatchResult.Rejected(state, "出牌张数必须为正数")
         }
-        // PARTIAL/UNKNOWN：只加数量账，不动 Rank 账本，并永久降级 rankLedgerComplete。
-        if (!withinConservation(state, event.cardCount)) {
+        val own = state.selfHand ?: RankCounts.zero()
+        val over = Rank.entries.any { rank ->
+            state.outsidePlayed[rank] + event.cards[rank] > Rank.initialInventory[rank] - own[rank]
+        }
+        if (over) {
             return pauseForConservation(state)
         }
-        val countBySeat = event.seat?.let { seat ->
-            state.outsidePlayedCountBySeat + (seat to state.playedCountBy(seat) + event.cardCount)
-        } ?: state.outsidePlayedCountBySeat
-        val next = state.copy(
-            outsidePlayedCount = state.outsidePlayedCount + event.cardCount,
-            outsidePlayedCountBySeat = countBySeat,
-            rankLedgerComplete = false,
-            events = state.events + event
-        )
-        next.requireInvariant()
-        return DispatchResult.AcceptedQuantityOnly(next)
-    }
-
-    private fun addSelfPlay(state: GameState, event: GameEvent.SelfCardsPlayed): DispatchResult {
-        require(state.phase == SessionPhase.ACTIVE) { "当前不接受自己出牌事件" }
-        require(event.cardCount > 0) { "出牌张数必须为正数" }
-        val locked = requireNotNull(state.selfLockedHandCount) { "未锁定自己手牌" }
-        if (event.rankCompleteness == RankCompleteness.COMPLETE &&
-            event.cardCount != event.cards.total()
-        ) {
-            return DispatchResult.Rejected(
-                state,
-                "数量账与 Rank 账不一致: cardCount=${event.cardCount}, cards.total()=${event.cards.total()}"
+        return accept(
+            state.copy(
+                outsidePlayed = state.outsidePlayed.plus(event.cards),
+                outsidePlayedBySeat = state.outsidePlayedBySeat +
+                    (event.seat to state.playedBy(event.seat).plus(event.cards)),
+                events = state.events + event
             )
-        }
-        if (state.selfPlayedCount + event.cardCount > locked) {
-            return pauseForConservation(state)
-        }
-        val next = state.copy(
-            selfPlayedCount = state.selfPlayedCount + event.cardCount,
-            rankLedgerComplete =
-                if (event.rankCompleteness == RankCompleteness.COMPLETE) state.rankLedgerComplete
-                else false,
-            events = state.events + event
         )
-        next.requireInvariant()
-        return if (event.rankCompleteness == RankCompleteness.COMPLETE) {
-            DispatchResult.Accepted(next)
-        } else {
-            DispatchResult.AcceptedQuantityOnly(next)
-        }
     }
 
+    /** 只能撤销已接受的外面出牌；HandConfirmed 不能撤销。 */
     private fun revert(state: GameState, event: GameEvent.Reverted): DispatchResult {
         require(state.phase == SessionPhase.ACTIVE || state.phase == SessionPhase.PAUSED) {
             "当前不能撤销"
@@ -180,28 +117,11 @@ object GameReducer {
         if (target.id in state.revertedEventIds) {
             return DispatchResult.Rejected(state, "事件已撤销: ${target.id}")
         }
-        // 只有 COMPLETE 事件进过 Rank 账本；数量账事件只需回退数量。
-        val rankUndo = if (target.rankCompleteness == RankCompleteness.COMPLETE) {
-            target.cards
-        } else {
-            RankCounts.zero()
-        }
-        val bySeat = target.seat?.let { seat ->
-            if (target.rankCompleteness == RankCompleteness.COMPLETE) {
-                state.outsidePlayedBySeat + (seat to state.playedBy(seat).minus(target.cards))
-            } else {
-                state.outsidePlayedBySeat
-            }
-        } ?: state.outsidePlayedBySeat
-        val countBySeat = target.seat?.let { seat ->
-            state.outsidePlayedCountBySeat + (seat to state.playedCountBy(seat) - target.cardCount)
-        } ?: state.outsidePlayedCountBySeat
         return accept(
             state.copy(
-                outsidePlayed = state.outsidePlayed.minus(rankUndo),
-                outsidePlayedCount = state.outsidePlayedCount - target.cardCount,
-                outsidePlayedBySeat = bySeat,
-                outsidePlayedCountBySeat = countBySeat,
+                outsidePlayed = state.outsidePlayed.minus(target.cards),
+                outsidePlayedBySeat = state.outsidePlayedBySeat +
+                    (target.seat to state.playedBy(target.seat).minus(target.cards)),
                 revertedEventIds = state.revertedEventIds + target.id,
                 events = state.events + event
             )
@@ -209,9 +129,7 @@ object GameReducer {
     }
 
     private fun pause(state: GameState, event: GameEvent.SessionPaused): DispatchResult {
-        require(state.phase == SessionPhase.PRE_PLAY || state.phase == SessionPhase.ACTIVE) {
-            "当前不能暂停"
-        }
+        require(state.phase == SessionPhase.ACTIVE) { "当前不能暂停" }
         return accept(
             state.copy(
                 phase = SessionPhase.PAUSED,
@@ -223,7 +141,7 @@ object GameReducer {
 
     /**
      * 显式恢复：仅 PAUSED → ACTIVE，清空暂停原因并追加 SessionResumed 事件。
-     * PRE_PLAY/ACTIVE/CLOSED 收到 Resume 一律 Rejected；
+     * ACTIVE/CLOSED 收到 Resume 一律 Rejected；
      * 重启回放不会产生 Resume 事件，暂停状态仍保留。
      */
     private fun resume(state: GameState, event: GameEvent.SessionResumed): DispatchResult {
@@ -244,11 +162,6 @@ object GameReducer {
 
     private fun close(state: GameState, event: GameEvent.SessionClosed): GameState =
         state.copy(phase = SessionPhase.CLOSED, events = state.events + event)
-
-    private fun withinConservation(state: GameState, outsideAdded: Int): Boolean {
-        val locked = state.selfLockedHandCount ?: return false
-        return state.outsidePlayedCount + outsideAdded + locked <= Rank.initialInventory.total()
-    }
 
     /** 守恒失败：追加暂停事件并暂停会话，触发守恒失败的原始事件不进 events。 */
     private fun pauseForConservation(state: GameState): DispatchResult {

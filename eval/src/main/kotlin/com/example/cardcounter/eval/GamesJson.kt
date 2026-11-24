@@ -15,12 +15,12 @@ data class GameMeta(
     val endMs: Long,
     val complete: Boolean,
     val selfHand: RankCounts,
-    /** null = 手牌张数未知（没做手牌识别）；回放按 UNKNOWN 锁标称张数，剩余牌不可算。 */
+    /** null = 手牌张数未知（没做手牌识别）；回放不确认手牌，剩余牌不可算（self_hand_unknown）。 */
     val selfHandCount: Int?,
     val review: String,
     val notes: String
 ) {
-    /** 手牌点数是否完整：只有完整时才允许声称外面剩余牌精确。 */
+    /** 手牌点数是否完整：只有完整时才发 ConfirmHand、才允许声称外面剩余牌精确。 */
     val selfHandComplete: Boolean
         get() = selfHandCount.let { it != null && it > 0 && selfHand.total() == it }
 

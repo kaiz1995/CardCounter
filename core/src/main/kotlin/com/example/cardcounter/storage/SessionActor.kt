@@ -5,7 +5,6 @@ import com.example.cardcounter.domain.GameEvent
 import com.example.cardcounter.domain.GameState
 import com.example.cardcounter.domain.OutsideSeat
 import com.example.cardcounter.domain.PauseReason
-import com.example.cardcounter.domain.RankCompleteness
 import com.example.cardcounter.domain.RankCounts
 import java.util.UUID
 import java.util.concurrent.Callable
@@ -16,7 +15,7 @@ import java.util.concurrent.TimeUnit
 
 /**
  * 账本命令：所有账本写入都必须包装成命令提交给 [SessionActor] 串行执行。
- * Accept 类命令携带 evidenceId，作为账本事件 id，实现重试幂等去重。
+ * ConfirmHand / AcceptOutsidePlay 携带 evidenceId，作为账本事件 id，实现重试幂等去重。
  */
 sealed class LedgerCommand {
     abstract val evidenceId: String?
@@ -26,28 +25,17 @@ sealed class LedgerCommand {
         override val evidenceId: String = UUID.randomUUID().toString()
     ) : LedgerCommand()
 
-    /** 锁定自己起始手牌（前置转移完成后才允许）。 */
-    data class LockHand(
+    /** 确认自己的手牌（每局一次）；handCount 是按牌边缘数出来的张数，必须等于 cards.total()。 */
+    data class ConfirmHand(
         val cards: RankCounts,
-        val cardCount: Int,
-        val rankCompleteness: RankCompleteness,
+        val handCount: Int,
         override val evidenceId: String = UUID.randomUUID().toString()
     ) : LedgerCommand()
 
-    /** 接受一次外面出牌。 */
+    /** 接受一次外面出牌（点数完整，必须带座位）。 */
     data class AcceptOutsidePlay(
         val cards: RankCounts,
-        val cardCount: Int,
-        val seat: OutsideSeat?,
-        val rankCompleteness: RankCompleteness,
-        override val evidenceId: String
-    ) : LedgerCommand()
-
-    /** 接受一次自己出牌（只做事件边界记录，不扣外面剩余）。 */
-    data class AcceptSelfPlay(
-        val cards: RankCounts,
-        val cardCount: Int,
-        val rankCompleteness: RankCompleteness,
+        val seat: OutsideSeat,
         override val evidenceId: String
     ) : LedgerCommand()
 
@@ -123,14 +111,11 @@ class SessionActor(private val repository: LedgerGateway) {
 
     private fun toEvent(command: LedgerCommand): GameEvent = when (command) {
         is LedgerCommand.NewSession -> GameEvent.NewSession(command.evidenceId)
-        is LedgerCommand.LockHand -> GameEvent.SelfHandLocked(
-            command.cards, command.evidenceId, command.cardCount, command.rankCompleteness
+        is LedgerCommand.ConfirmHand -> GameEvent.HandConfirmed(
+            command.cards, command.handCount, command.evidenceId
         )
         is LedgerCommand.AcceptOutsidePlay -> GameEvent.OutsideCardsPlayed(
-            command.cards, command.evidenceId, command.seat, command.cardCount, command.rankCompleteness
-        )
-        is LedgerCommand.AcceptSelfPlay -> GameEvent.SelfCardsPlayed(
-            command.cards, command.evidenceId, command.cardCount, command.rankCompleteness
+            command.cards, command.seat, command.evidenceId
         )
         is LedgerCommand.Pause -> GameEvent.SessionPaused(command.reason)
         LedgerCommand.Resume -> GameEvent.SessionResumed()

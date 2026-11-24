@@ -6,8 +6,6 @@ import com.example.cardcounter.domain.DispatchResult
 import com.example.cardcounter.domain.GameEvent
 import com.example.cardcounter.domain.GameReducer
 import com.example.cardcounter.domain.GameState
-import com.example.cardcounter.domain.Rank
-import com.example.cardcounter.domain.RankCompleteness
 import com.example.cardcounter.domain.RankCounts
 import com.example.cardcounter.domain.SessionPhase
 import com.example.cardcounter.recognition.FrameObservation
@@ -50,17 +48,17 @@ data class RecordedDecision(
     val command: LedgerCommand,
     val result: DispatchResult
 ) {
-    /** 真正进入账本（含只进数量账）。 */
+    /** 真正进入账本。 */
     val isAccepted: Boolean
-        get() = result is DispatchResult.Accepted || result is DispatchResult.AcceptedQuantityOnly
+        get() = result is DispatchResult.Accepted
 }
 
-/** 进入账本的一手牌，供匹配器使用。 */
+/** 进入账本的一手外面出牌，供匹配器使用；张数就是点数向量合计。 */
 data class AcceptedPlay(
     val timestampMs: Long,
     val zone: PlayZone,
     val cards: RankCounts,
-    val cardCount: Int
+    val cardCount: Int = cards.total()
 )
 
 data class ReplayResult(
@@ -69,21 +67,21 @@ data class ReplayResult(
     val audits: List<LegacyAudit>,
     val finalState: GameState,
     val pauseCount: Int,
-    val rejectionCount: Int,
-    val lockHandCompleteness: RankCompleteness
+    val rejectionCount: Int
 ) {
+    /** 本局是否确认了自己的手牌；没确认时横条不扣自己的牌，剩余牌不可算。 */
+    val handConfirmed: Boolean get() = finalState.handConfirmed
     val retryCount: Int get() = audits.count { it.outcome == LegacyOutcome.NO_CONSENSUS }
     val suppressedDuplicateCount: Int get() = audits.count { it.outcome == LegacyOutcome.DUPLICATE_SUPPRESSED }
     val notActiveCount: Int get() = audits.count { it.outcome == LegacyOutcome.NOT_ACTIVE }
 }
 
 object Replay {
-    /** 手牌未知时锁定的标称张数：4 副牌 198 张平分 6 家。 */
-    val NOMINAL_HAND_COUNT: Int = Rank.initialInventory.total() / 6
-
     /**
-     * 开新局 → 锁手牌 → 按时间顺序喂帧 → 把每个决策交给同一个 SessionActor。
+     * 开新局 → 手牌完整就确认 → 按时间顺序喂帧 → 把每个决策交给同一个 SessionActor。
      * 与手机一样，状态机只读账本，写入全部经单写者串行执行。
+     * games.json 的 selfHand 点数合计等于 selfHandCount 才发 ConfirmHand；
+     * 为空或不完整就不确认（横条按未确认算），报告统一标 self_hand_unknown。
      */
     fun run(
         game: GameMeta,
@@ -92,18 +90,8 @@ object Replay {
         /** 回放结束后才取：审计记录是回放过程中产生的。 */
         audits: () -> List<LegacyAudit> = { emptyList() }
     ): ReplayResult {
-        // 不拿 selfHand 合计顶替：手牌点数残缺时会被误当成完整，伪造出终局剩余牌。
         val known = game.selfHandCount
-        require(known == null || known > 0) { "游戏 ${game.gameId} 的 selfHandCount 必须为正，无法锁定手牌" }
-        // 手牌未知：按 UNKNOWN 锁标称张数，只进数量账。交贡、买 3 买 4 会让真实张数偏离标称值，
-        // 这类局的守恒暂停可能是标称张数造成的，汇总里会单独提示。
-        val handCount = known ?: NOMINAL_HAND_COUNT
-        val completeness = when {
-            known == null -> RankCompleteness.UNKNOWN
-            game.selfHandComplete -> RankCompleteness.COMPLETE
-            else -> RankCompleteness.PARTIAL
-        }
-        val lockCards = if (known == null) RankCounts.zero() else game.selfHand
+        require(known == null || known > 0) { "游戏 ${game.gameId} 的 selfHandCount 必须为正，无法确认手牌" }
 
         val ledger = InMemoryLedger()
         val actor = SessionActor(ledger)
@@ -112,13 +100,13 @@ object Replay {
         var rejections = 0
         try {
             actor.post(LedgerCommand.NewSession("eval-session-${game.gameId}"))
-            val lockResult = actor.post(
-                LedgerCommand.LockHand(
-                    lockCards, handCount, completeness, "eval-lock-${game.gameId}"
+            if (game.selfHandComplete) {
+                val confirmResult = actor.post(
+                    LedgerCommand.ConfirmHand(game.selfHand, game.selfHand.total(), "eval-hand-${game.gameId}")
                 )
-            )
-            check(lockResult.isAcceptedLedgerResult()) {
-                "锁定手牌失败: ${(lockResult as? DispatchResult.Rejected)?.reason ?: lockResult}"
+                check(confirmResult is DispatchResult.Accepted) {
+                    "确认手牌失败: ${(confirmResult as? DispatchResult.Rejected)?.reason ?: confirmResult}"
+                }
             }
             fun commit(decision: PipelineDecision) {
                 val result = actor.post(decision.command)
@@ -147,10 +135,7 @@ object Replay {
             if (!decision.isAccepted) return@mapNotNull null
             when (val command = decision.command) {
                 is LedgerCommand.AcceptOutsidePlay -> AcceptedPlay(
-                    decision.timestampMs, outsideZoneOf(decision.zone, command), command.cards, command.cardCount
-                )
-                is LedgerCommand.AcceptSelfPlay -> AcceptedPlay(
-                    decision.timestampMs, PlayZone.SELF, command.cards, command.cardCount
+                    decision.timestampMs, outsideZoneOf(decision.zone, command), command.cards
                 )
                 else -> null
             }
@@ -161,8 +146,7 @@ object Replay {
             audits = audits(),
             finalState = ledger.state,
             pauseCount = pauses,
-            rejectionCount = rejections,
-            lockHandCompleteness = completeness
+            rejectionCount = rejections
         )
     }
 
@@ -178,19 +162,14 @@ object Replay {
             }
             .sortedBy { it.timestampMs }
 
-    /** 优先用决策自带的出牌区；没有时按座位找，两者都没有就无法对齐真值。 */
+    /** 优先用决策自带的出牌区；没有时按座位找（座位必填，一定找得到外面区）。 */
     internal fun outsideZoneOf(zone: PlayZone?, command: LedgerCommand.AcceptOutsidePlay): PlayZone {
         if (zone != null) {
             require(zone.source == PlaySource.OUTSIDE) { "外面出牌决策的出牌区不是外面区: $zone" }
             return zone
         }
-        val seat = requireNotNull(command.seat) { "外面出牌决策既没有出牌区也没有座位，无法对齐真值" }
-        return PlayZone.entries.first { it.source == PlaySource.OUTSIDE && it.seat == seat }
+        return PlayZone.entries.first { it.source == PlaySource.OUTSIDE && it.seat == command.seat }
     }
 
-    private fun LedgerCommand.isPlay(): Boolean =
-        this is LedgerCommand.AcceptOutsidePlay || this is LedgerCommand.AcceptSelfPlay
-
-    private fun DispatchResult.isAcceptedLedgerResult(): Boolean =
-        this is DispatchResult.Accepted || this is DispatchResult.AcceptedQuantityOnly
+    private fun LedgerCommand.isPlay(): Boolean = this is LedgerCommand.AcceptOutsidePlay
 }

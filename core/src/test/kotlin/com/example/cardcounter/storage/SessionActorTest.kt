@@ -6,10 +6,11 @@ import com.example.cardcounter.domain.GameReducer
 import com.example.cardcounter.domain.GameState
 import com.example.cardcounter.domain.OutsideSeat
 import com.example.cardcounter.domain.PauseReason
-import com.example.cardcounter.domain.RankCompleteness
+import com.example.cardcounter.domain.Rank
 import com.example.cardcounter.domain.RankCounts
 import com.example.cardcounter.domain.SessionPhase
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.Collections
@@ -36,13 +37,15 @@ class SessionActorTest {
         }
     }
 
+    private val king = RankCounts.of(mapOf(Rank.KING to 1))
+    private val ace = RankCounts.of(mapOf(Rank.ACE to 1))
+    private val two = RankCounts.of(mapOf(Rank.TWO to 1))
+
     @Test
     fun concurrentSubmitAllTakeEffectWithoutLoss() {
         val ledger = FakeLedger()
         val actor = SessionActor(ledger)
-        // 锁定数量账（UNKNOWN：cards 必须全零），留出充足守恒余量。
-        val lockResult = actor.post(LedgerCommand.LockHand(RankCounts.zero(), 1, RankCompleteness.UNKNOWN))
-        assertTrue(lockResult is DispatchResult.Accepted)
+        assertTrue(actor.post(LedgerCommand.ConfirmHand(king, 1)) is DispatchResult.Accepted)
 
         val n = 32
         val fire = CountDownLatch(1)
@@ -52,10 +55,10 @@ class SessionActorTest {
         repeat(n) { index ->
             pool.execute {
                 fire.await()
+                // A、2 各 16 张：32 手各 1 张刚好出满，不触发守恒。
                 actor.submit(
                     LedgerCommand.AcceptOutsidePlay(
-                        RankCounts.zero(), 1, OutsideSeat.TOP,
-                        RankCompleteness.PARTIAL, "evidence-$index"
+                        if (index % 2 == 0) ace else two, OutsideSeat.TOP, "evidence-$index"
                     )
                 ) { result ->
                     results.add(result)
@@ -64,20 +67,18 @@ class SessionActorTest {
             }
         }
         fire.countDown()
-        // 无丢失：n 个命令全部执行并回调。
         assertTrue(done.await(10, TimeUnit.SECONDS))
         pool.shutdown()
         assertTrue(pool.awaitTermination(10, TimeUnit.SECONDS))
         actor.shutdown()
 
-        // 全部被接受（单写者串行累加，守恒 1 + 32 <= 198）。
         assertEquals(n, results.size)
         results.forEach { result ->
-            assertTrue("意外结果: $result", result is DispatchResult.AcceptedQuantityOnly)
+            assertTrue("意外结果: $result", result is DispatchResult.Accepted)
         }
-        // 账本无丢失：每个 evidenceId 恰好入账一次。
         val finalState = ledger.state
         assertEquals(n, finalState.outsidePlayedCount)
+        assertEquals(n, finalState.playedCountBy(OutsideSeat.TOP))
         val ids = finalState.events.filterIsInstance<GameEvent.OutsideCardsPlayed>().map { it.id }
         assertEquals(n, ids.size)
         assertEquals(n, ids.toSet().size)
@@ -87,12 +88,9 @@ class SessionActorTest {
     fun duplicateEvidenceIdIsIgnoredExactlyOnce() {
         val ledger = FakeLedger()
         val actor = SessionActor(ledger)
-        actor.post(LedgerCommand.LockHand(RankCounts.zero(), 1, RankCompleteness.UNKNOWN))
 
-        val command = LedgerCommand.AcceptOutsidePlay(
-            RankCounts.zero(), 1, OutsideSeat.TOP, RankCompleteness.PARTIAL, "dup"
-        )
-        assertTrue(actor.post(command) is DispatchResult.AcceptedQuantityOnly)
+        val command = LedgerCommand.AcceptOutsidePlay(ace, OutsideSeat.TOP, "dup")
+        assertTrue(actor.post(command) is DispatchResult.Accepted)
         // 同一 evidenceId 重试：幂等，不重复扣牌。
         assertTrue(actor.post(command) is DispatchResult.DuplicateIgnored)
         assertEquals(1, ledger.state.outsidePlayedCount)
@@ -100,21 +98,34 @@ class SessionActorTest {
     }
 
     @Test
+    fun confirmHandGoesThroughActorOnlyOncePerSession() {
+        val ledger = FakeLedger()
+        val actor = SessionActor(ledger)
+        val hand = RankCounts.of(mapOf(Rank.KING to 2, Rank.ACE to 1))
+
+        // 张数对不上：被拒，状态不变。
+        assertTrue(actor.post(LedgerCommand.ConfirmHand(hand, 4, "bad")) is DispatchResult.Rejected)
+        assertFalse(ledger.state.handConfirmed)
+
+        assertTrue(actor.post(LedgerCommand.ConfirmHand(hand, 3, "ok")) is DispatchResult.Accepted)
+        assertEquals(hand, ledger.state.selfHand)
+
+        val again = actor.post(LedgerCommand.ConfirmHand(king, 1, "again"))
+        assertTrue(again is DispatchResult.Rejected)
+        assertEquals(hand, ledger.state.selfHand)
+        actor.shutdown()
+    }
+
+    @Test
     fun pausedRejectsAutomaticPlayAndExplicitResumeRestores() {
         val ledger = FakeLedger()
         val actor = SessionActor(ledger)
-        actor.post(LedgerCommand.LockHand(RankCounts.zero(), 1, RankCompleteness.UNKNOWN))
 
-        // 暂停。
         assertTrue(actor.post(LedgerCommand.Pause(PauseReason.RANK_UNSTABLE)) is DispatchResult.Accepted)
         assertEquals(SessionPhase.PAUSED, ledger.state.phase)
 
         // PAUSED 拒绝自动出牌事件：数量不得变化。
-        val rejected = actor.post(
-            LedgerCommand.AcceptOutsidePlay(
-                RankCounts.zero(), 1, OutsideSeat.TOP, RankCompleteness.PARTIAL, "while-paused"
-            )
-        )
+        val rejected = actor.post(LedgerCommand.AcceptOutsidePlay(ace, OutsideSeat.TOP, "while-paused"))
         assertTrue("PAUSED 必须拒绝自动事件，实际: $rejected", rejected is DispatchResult.Rejected)
         assertEquals(0, ledger.state.outsidePlayedCount)
 
@@ -122,11 +133,8 @@ class SessionActorTest {
         assertTrue(actor.post(LedgerCommand.Resume) is DispatchResult.Accepted)
         assertEquals(SessionPhase.ACTIVE, ledger.state.phase)
         assertTrue(
-            actor.post(
-                LedgerCommand.AcceptOutsidePlay(
-                    RankCounts.zero(), 1, OutsideSeat.TOP, RankCompleteness.PARTIAL, "after-resume"
-                )
-            ) is DispatchResult.AcceptedQuantityOnly
+            actor.post(LedgerCommand.AcceptOutsidePlay(ace, OutsideSeat.TOP, "after-resume")) is
+                DispatchResult.Accepted
         )
         assertEquals(1, ledger.state.outsidePlayedCount)
 
@@ -139,9 +147,9 @@ class SessionActorTest {
     fun resumeRejectedOutsidePausedPhase() {
         val ledger = FakeLedger()
         val actor = SessionActor(ledger)
-        // PRE_PLAY 状态直接 Resume：必须 Rejected。
+        // 新会话本身就是 ACTIVE：直接 Resume 必须 Rejected。
         assertTrue(actor.post(LedgerCommand.Resume) is DispatchResult.Rejected)
-        assertEquals(SessionPhase.PRE_PLAY, ledger.state.phase)
+        assertEquals(SessionPhase.ACTIVE, ledger.state.phase)
         actor.shutdown()
     }
 }

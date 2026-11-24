@@ -2,7 +2,10 @@ package com.example.cardcounter.domain
 
 import java.util.UUID
 
-/** 事件日志保存自己锁牌、按座位的外面出牌和会话控制。 */
+/**
+ * 事件日志只保存：本局唯一一次手牌确认、按座位的外面出牌和会话控制。
+ * 自己出的牌完全不进账，没有对应事件。
+ */
 sealed interface GameEvent {
     val id: String
 
@@ -10,31 +13,21 @@ sealed interface GameEvent {
         override val id: String = UUID.randomUUID().toString()
     ) : GameEvent
 
-    data class SelfHandLocked(
+    /**
+     * 本局唯一一次确认自己的手牌（按点数的完整向量）。
+     * handCount 是按牌边缘数出来的张数，必须等于 cards.total()，对不上不许确认。
+     */
+    data class HandConfirmed(
         val cards: RankCounts,
-        override val id: String = UUID.randomUUID().toString(),
-        /** 手牌几何检测为数量账本；cards 仅保留牌面猜测。 */
-        val cardCount: Int = cards.total(),
-        /** UNKNOWN 时 cards 必须为全零，锁定只进数量账（selfLockedHand 为 null）。 */
-        val rankCompleteness: RankCompleteness = RankCompleteness.COMPLETE
+        val handCount: Int,
+        override val id: String = UUID.randomUUID().toString()
     ) : GameEvent
 
+    /** 外面某一家出的一手牌；只接受点数完整的出牌。 */
     data class OutsideCardsPlayed(
         val cards: RankCounts,
-        override val id: String = UUID.randomUUID().toString(),
-        val seat: OutsideSeat? = null,
-        val cardCount: Int = cards.total(),
-        /** COMPLETE 时 cardCount 必须等于 cards.total()，否则拒绝。 */
-        val rankCompleteness: RankCompleteness = RankCompleteness.COMPLETE
-    ) : GameEvent
-
-    /** 自己出牌只做事件边界记录，绝不扣外面剩余。 */
-    data class SelfCardsPlayed(
-        val cards: RankCounts,
-        override val id: String = UUID.randomUUID().toString(),
-        val cardCount: Int = cards.total(),
-        /** COMPLETE 时 cardCount 必须等于 cards.total()，否则拒绝。 */
-        val rankCompleteness: RankCompleteness = RankCompleteness.COMPLETE
+        val seat: OutsideSeat,
+        override val id: String = UUID.randomUUID().toString()
     ) : GameEvent
 
     data class Reverted(
@@ -67,7 +60,7 @@ enum class PauseReason(val displayName: String) {
     UNKNOWN_SEMANTIC("未知语义"),
     NEW_GAME_UNCLEAR("新局不明"),
     CAPTURE_INTERRUPTED("截屏中断"),
-    /** 任何出牌会导致超库存或总量守恒失败，原事件不进账本。 */
+    /** 手牌确认或外面出牌会让某个点数超过库存，原事件不进账本。 */
     CONSERVATION_FAILURE("守恒失败"),
     CORRUPTED_SESSION("会话损坏")
 }
