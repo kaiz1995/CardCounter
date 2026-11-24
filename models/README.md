@@ -5,11 +5,12 @@
 
 | 项 | 值 |
 |---|---|
-| SHA256 | `95a7b7cd76e907b4f5407501b7c152853d9b7c267b31a67c57dc32aac6a65390` |
+| SHA256 | `95f84f5e88d2190f42d189103bce047c605f402073a731a240de3d5a785ca444` |
 | 字节 | 10,450,050 |
 | opset | 17 |
 | 输入 | `images` `[1,3,320,320]` float32 |
 | 输出 | `output0` `[1,19,2100]` float32，无 NMS |
+| 上一版备份 | `poker_rank15_yolo11n_320_prev2.onnx`，SHA256 `95a7b7cd76e907b4f5407501b7c152853d9b7c267b31a67c57dc32aac6a65390`，同样不入 git |
 
 复现：
 
