@@ -74,13 +74,14 @@ class LegacyPipeline(
         val decisions = mutableListOf<PipelineDecision>()
         val tableVisible = observation.tableVisible
         for (zone in PlayZone.entries) {
-            val observed = observation.zones[zone]
-            val visible = tableVisible && isPlayVisible(observed?.cardVisible == true)
+            // 缺省的区表示这一帧没有该区观察（DATA-FORMATS 第 5 节）：不推进清桌计数，也不动门控。
+            val observed = observation.zones[zone] ?: continue
+            val visible = tableVisible && isPlayVisible(observed.cardVisible)
             // 手机在“看得见桌面但该区没牌”时用零候选清门控；桌面不可见时不动门控。
             if (tableVisible && !visible) {
                 gate.update(zone, RankCounts.zero())
             }
-            val sample = if (visible) ZoneSample(observation.timestampMs, observed!!.still, observed.detections) else null
+            val sample = if (visible) ZoneSample(observation.timestampMs, observed.still, observed.detections) else null
             val finalized = cache.observe(zone, tableVisible, visible, sample, generation) ?: continue
             // 用这一手最后一帧还在桌上的时间：清桌交出要再等 clearSamples 次采样，
             // 若用交出时刻，延迟随采样间隔变化，会掉出真值对齐时间窗。

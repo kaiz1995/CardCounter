@@ -3,7 +3,6 @@ package com.example.cardcounter.eval
 import com.example.cardcounter.capture.PlaySource
 import com.example.cardcounter.capture.PlayZone
 import com.example.cardcounter.domain.Rank
-import kotlin.math.abs
 
 /** 对齐时间窗：真值 [stable - before, clear + after]。 */
 data class MatchWindows(
@@ -71,8 +70,11 @@ data class MatchResult(
 
 object EventMatcher {
     /**
-     * 逐区一对一贪心对齐：按入账时间顺序，优先匹配时间窗内未配对、且 stable_ms 最近的一手。
-     * 时间窗内只剩已配对手 → 重复记；没有可用真值 → 多记。
+     * 逐区对齐，每条入账只认离它最近的真值手。距离 = 入账时间到真值核心区间
+     * [stable_ms, clear_ms] 的距离（落在区间内为 0），且入账时间须落在放宽时间窗内。
+     * 最近的手里有未配对的 → 命中；最近的手都已配对 → 重复扣；时间窗内没有真值 → 多记。
+     * 只认最近的手：落在上一手核心区间里的第二次入账是重复扣，不能被下一手的放宽窗吸收成命中；
+     * 相邻两手放宽窗重叠时，正确入账也不会抢走下一手。
      */
     fun match(
         truth: List<TruthPlay>,
@@ -90,6 +92,13 @@ object EventMatcher {
         return MatchResult(perZone, windows)
     }
 
+    /** 入账时间到真值核心区间 [stable_ms, clear_ms] 的距离，区间内为 0。 */
+    fun coreDistance(truth: TruthPlay, timestampMs: Long): Long = when {
+        timestampMs < truth.stableMs -> truth.stableMs - timestampMs
+        timestampMs > truth.clearMs -> timestampMs - truth.clearMs
+        else -> 0L
+    }
+
     private fun matchZone(
         zone: PlayZone,
         truth: List<TruthPlay>,
@@ -101,25 +110,19 @@ object EventMatcher {
         val duplicates = mutableListOf<DuplicateRecord>()
         val extras = mutableListOf<AcceptedPlay>()
         for (record in accepted) {
-            val open = truth
-                .filter { it !in matched && windows.contains(it, record.timestampMs) }
-                .minWithOrNull(
-                    compareBy<TruthPlay> { abs(it.stableMs - record.timestampMs) }.thenBy { it.eventSeq }
-                )
+            val inWindow = truth.filter { windows.contains(it, record.timestampMs) }
+            if (inWindow.isEmpty()) {
+                extras += record
+                continue
+            }
+            val nearestDistance = inWindow.minOf { coreDistance(it, record.timestampMs) }
+            val nearest = inWindow.filter { coreDistance(it, record.timestampMs) == nearestDistance }
+            val open = nearest.firstOrNull { it !in matched }
             if (open != null) {
                 matched += open
                 hits += MatchedPair(open, record)
-                continue
-            }
-            val already = truth
-                .filter { it in matched && windows.contains(it, record.timestampMs) }
-                .minWithOrNull(
-                    compareBy<TruthPlay> { abs(it.stableMs - record.timestampMs) }.thenBy { it.eventSeq }
-                )
-            if (already != null) {
-                duplicates += DuplicateRecord(record, already)
             } else {
-                extras += record
+                duplicates += DuplicateRecord(record, nearest.first())
             }
         }
         return ZoneMatchResult(

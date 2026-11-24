@@ -40,7 +40,11 @@
 
 - 所有时间为该视频内的绝对毫秒。`startMs` 发牌开始，`endMs` 结算画面出现，`prePlayEndMs` 交贡/还贡/买 3 买 4 全部结束，`firstPlayMs` 第一手正式出牌出现。
 - `complete=false` 表示录屏只覆盖半局（开头或结尾被截）。
-- `gameId` = `g<视频时间戳后 6 位>-<序号从 1 起>`。
+- `gameId` = `g<视频时间戳后 6 位>-<序号从 1 起>`，整个文件内不能重复。
+- `split` 必填，只能是 `dev | tuning | blind | clip`（小写、无空格）；写错直接报错，防止盲测局绕过拦截。
+- 除 `videoSha256`、`review`、`notes` 外的字段都必填，类型严格：时间是非负整数，`complete` 是布尔，`selfHand` 是字符串，不接受 `"true"`、`1.5`、`null` 这类近似值。
+- `selfHandCount` 必须为正；`selfHand` 合计小于它时视为点数不完整，按 `PARTIAL` 锁手牌，终局剩余牌标为不可算。
+- 离线评测只回放 `[prePlayEndMs, endMs]` 内的观察帧；字段为 0 表示这一端不限。
 
 ## 3. 整局真值 `datasets/truth/<gameId>.csv`
 
@@ -57,6 +61,9 @@ game_id,event_seq,zone,appear_ms,stable_ms,clear_ms,quantity,cards,tag,review,no
 - `cards` 点数向量，`Rank` 枚举名加张数，分号分隔、按 `Rank` 枚举顺序：`BIG_JOKER:1;KING:6`。点数看不清时留空，但 `quantity` 仍必填。
 - `tag`：`NORMAL | OCCLUDED | REPLACE_DIRECT | ANIMATION`（`REPLACE_DIRECT` = 同一区没清空就换成下一手）。
 - `review`：`AUTO`（机器预标）| `CONFIRMED`（人工确认无误）| `FIXED`（人工改过）。
+- `event_seq` 为正整数且局内不重复；`appear_ms` 不能为负。
+- 引号按 RFC 4180：双引号只能包裹整个字段，字段内的引号写成 `""`；未闭合的引号或未包裹字段里的引号都报错。
+- 外面区有 `cards` 留空的行时，终局剩余牌标为不可算（`truth_ranks_incomplete`）。
 
 ## 4. 模型契约（新模型）
 
@@ -75,8 +82,9 @@ game_id,event_seq,zone,appear_ms,stable_ms,clear_ms,quantity,cards,tag,review,no
 
 - `ts_ms`：该视频内的绝对毫秒。行不要求按时间排序，评测工具会按 `ts_ms` 升序回放。
 - `table_visible`：整张牌桌可见（手机 `gameTableVisible`）。
-- `zones`：键与 `PlayZone` 枚举同名；缺省的区表示该帧没有该区观察。
-- `card_visible`：白色牌面面积达到可见阈值（`hasVisibleCardArea`）；`still`：与上一次采样相比画面静止，只用于停稳判定。
+- 一行只能有一个 JSON 对象；`ts_ms` 为非负整数，`table_visible` 为布尔，`zones` 必填且是对象（没有任何区时写 `{}`）。
+- `zones`：键与 `PlayZone` 枚举同名；缺省的区表示该帧没有该区观察，评测不把它当成“该区没牌”，不推进清桌计数。
+- `card_visible`、`still` 都必填：`card_visible` 白色牌面面积达到可见阈值（`hasVisibleCardArea`）；`still` 与上一次采样相比画面静止，只用于停稳判定。
 - `dets`：该帧该区的检测框数组；省略或为 `null` 表示这一帧没做识别（对应 `ZoneObservation.detections = null`）。
-- `rank`：`Rank` 枚举名；`conf` 为 0..1；`cx/cy/w/h` 是 320×320 模型输入画布上的 0..1 小数。
+- `rank`：`Rank` 枚举名；`conf` 为 0..1；`cx/cy/w/h` 是 320×320 模型输入画布上的 0..1 小数；`NaN` 等非有限数报错。
 - 检测框视为已完成 NMS（IoU 0.45）与 `conf >= 0.25` 过滤，几何来自手机 `publicPlayBitmap` 的裁剪与 letterbox；评测工具不重复做 NMS 或阈值过滤。

@@ -8,6 +8,7 @@ import com.example.cardcounter.domain.GameReducer
 import com.example.cardcounter.domain.GameState
 import com.example.cardcounter.domain.RankCompleteness
 import com.example.cardcounter.domain.RankCounts
+import com.example.cardcounter.domain.SessionPhase
 import com.example.cardcounter.recognition.FrameObservation
 import com.example.cardcounter.recognition.PlayPipeline
 import com.example.cardcounter.storage.LedgerCommand
@@ -73,10 +74,10 @@ object Replay {
         /** 回放结束后才取：审计记录是回放过程中产生的。 */
         audits: () -> List<LegacyAudit> = { emptyList() }
     ): ReplayResult {
-        val handCount = game.selfHandCount.takeIf { it > 0 } ?: game.selfHand.total()
-        require(handCount > 0) { "游戏 ${game.gameId} 的 selfHandCount 无效，无法锁定手牌" }
-        val completeness =
-            if (game.selfHand.total() == handCount) RankCompleteness.COMPLETE else RankCompleteness.PARTIAL
+        // 不拿 selfHand 合计顶替：手牌点数残缺时会被误当成完整，伪造出终局剩余牌。
+        require(game.selfHandCount > 0) { "游戏 ${game.gameId} 的 selfHandCount 必须为正，无法锁定手牌" }
+        val handCount = game.selfHandCount
+        val completeness = if (game.selfHandComplete) RankCompleteness.COMPLETE else RankCompleteness.PARTIAL
 
         val ledger = InMemoryLedger()
         val actor = SessionActor(ledger)
@@ -93,8 +94,11 @@ object Replay {
             check(lockResult.isAcceptedLedgerResult()) {
                 "锁定手牌失败: ${(lockResult as? DispatchResult.Rejected)?.reason ?: lockResult}"
             }
-            for (frame in frames.sortedBy { it.timestampMs }) {
+            for (frame in framesInPlay(game, frames)) {
                 for (decision in pipeline.onObservation(frame, ledger.state)) {
+                    // 同一帧里前一个区已让账本暂停：手机逐区读最新账本，后面的区直接跳过，
+                    // 不进账本也不记拒绝。这里的管线拿的是帧开始时的账本，所以在提交前补上这一步。
+                    if (ledger.state.phase != SessionPhase.ACTIVE && decision.command.isPlay()) continue
                     val result = actor.post(decision.command)
                     if (result is DispatchResult.Paused) pauses++
                     if (result is DispatchResult.Rejected) rejections++
@@ -108,12 +112,7 @@ object Replay {
             if (!decision.isAccepted) return@mapNotNull null
             when (val command = decision.command) {
                 is LedgerCommand.AcceptOutsidePlay -> AcceptedPlay(
-                    decision.timestampMs,
-                    PlayZone.entries.first {
-                        it.source == PlaySource.OUTSIDE && it.seat == command.seat
-                    },
-                    command.cards,
-                    command.cardCount
+                    decision.timestampMs, outsideZoneOf(decision.zone, command), command.cards, command.cardCount
                 )
                 is LedgerCommand.AcceptSelfPlay -> AcceptedPlay(
                     decision.timestampMs, PlayZone.SELF, command.cards, command.cardCount
@@ -131,6 +130,31 @@ object Replay {
             lockHandCompleteness = completeness
         )
     }
+
+    /**
+     * 只回放正式出牌阶段 [prePlayEndMs, endMs]（字段为 0 表示不限）：手机在首出前的发牌、交贡、
+     * 买 3 买 4 阶段不判出牌，真值也只记首出之后，观察文件可以覆盖整局。
+     */
+    internal fun framesInPlay(game: GameMeta, frames: List<FrameObservation>): List<FrameObservation> =
+        frames
+            .filter { frame ->
+                (game.prePlayEndMs <= 0 || frame.timestampMs >= game.prePlayEndMs) &&
+                    (game.endMs <= 0 || frame.timestampMs <= game.endMs)
+            }
+            .sortedBy { it.timestampMs }
+
+    /** 优先用决策自带的出牌区；没有时按座位找，两者都没有就无法对齐真值。 */
+    internal fun outsideZoneOf(zone: PlayZone?, command: LedgerCommand.AcceptOutsidePlay): PlayZone {
+        if (zone != null) {
+            require(zone.source == PlaySource.OUTSIDE) { "外面出牌决策的出牌区不是外面区: $zone" }
+            return zone
+        }
+        val seat = requireNotNull(command.seat) { "外面出牌决策既没有出牌区也没有座位，无法对齐真值" }
+        return PlayZone.entries.first { it.source == PlaySource.OUTSIDE && it.seat == seat }
+    }
+
+    private fun LedgerCommand.isPlay(): Boolean =
+        this is LedgerCommand.AcceptOutsidePlay || this is LedgerCommand.AcceptSelfPlay
 
     private fun DispatchResult.isAcceptedLedgerResult(): Boolean =
         this is DispatchResult.Accepted || this is DispatchResult.AcceptedQuantityOnly

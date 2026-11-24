@@ -75,7 +75,7 @@ object OfflineEvalCli {
             throw DataFormatException("games.json 里找不到 gameId=${options.gameId}（或 split 不匹配）")
         }
         if (selected.isEmpty()) throw DataFormatException("没有可评测的牌局，检查 --split/--game")
-        val blind = selected.filter { it.split == "blind" }
+        val blind = selected.filter { it.isBlind }
         if (blind.isNotEmpty() && !options.allowBlind) {
             throw DataFormatException(
                 "$BLIND_REFUSAL；涉及 ${blind.joinToString(",") { it.gameId }}"

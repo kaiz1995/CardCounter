@@ -144,6 +144,8 @@ fun buildGameReport(
     decisions = replay.decisions.map(::decisionRecord)
 )
 
+const val TRUTH_RANKS_INCOMPLETE = "truth_ranks_incomplete"
+
 private fun remainingOf(
     meta: GameMeta,
     truth: List<TruthPlay>,
@@ -153,6 +155,8 @@ private fun remainingOf(
     val unavailable = when {
         completeness != com.example.cardcounter.domain.RankCompleteness.COMPLETE -> "self_hand_partial"
         !meta.selfHandComplete -> "self_hand_partial"
+        // 真值里有看不清点数的外面出牌（cards 留空）：真值剩余本身就不知道，不能拿 0 张去比。
+        truth.any { it.zone != PlayZone.SELF && !it.hasRanks } -> TRUTH_RANKS_INCOMPLETE
         !finalState.rankLedgerComplete -> "rank_ledger_incomplete"
         finalState.outsideRemaining == null -> "rank_ledger_incomplete"
         else -> null
@@ -165,7 +169,8 @@ private fun remainingOf(
     }
     val evalRemaining = finalState.outsideRemaining
     if (unavailable != null || evalRemaining == null) {
-        return RemainingReport(emptyMap(), truthRemaining, emptyMap(), unavailable ?: "rank_ledger_incomplete")
+        val knownTruth = if (unavailable == TRUTH_RANKS_INCOMPLETE) emptyMap() else truthRemaining
+        return RemainingReport(emptyMap(), knownTruth, emptyMap(), unavailable ?: "rank_ledger_incomplete")
     }
     val evalMap = Rank.entries.associateWith { evalRemaining[it] }
     return RemainingReport(
