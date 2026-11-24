@@ -16,51 +16,21 @@ class HandCandidateDiagnosticsTest {
     }
 
     @Test
-    fun doesNotStabilizeAnEmptyRankCandidate() {
-        val hand = RankCounts.of(mapOf(Rank.ACE to 2))
-        assertEquals(1, stableRankCandidateCount(null, 0, hand))
-        assertEquals(2, stableRankCandidateCount(hand, 1, hand))
-        assertEquals(0, stableRankCandidateCount(hand, 2, RankCounts.zero()))
+    fun showsTheRecognitionWhoseTotalMatchesTheEdgeCount() {
+        val model = RankCounts.of(mapOf(Rank.TEN to 16, Rank.NINE to 15))
+        val template = RankCounts.of(mapOf(Rank.TEN to 16, Rank.NINE to 14))
+        assertEquals(model, chooseHandCards(31, model, template))
+        assertEquals(template, chooseHandCards(30, model, template))
     }
 
     @Test
-    fun acceptsStableBaselineAtItsActualHandCount() {
-        assertEquals(
-            true,
-            isValidBaseline(31, RankCounts.of(mapOf(Rank.TEN to 16, Rank.NINE to 15)))
-        )
-        assertEquals(
-            true,
-            isValidBaseline(30, RankCounts.of(mapOf(Rank.TEN to 16, Rank.NINE to 13)))
-        )
-        assertEquals(
-            true,
-            isValidBaseline(35, RankCounts.of(mapOf(Rank.TEN to 16, Rank.NINE to 16, Rank.THREE to 3)))
-        )
-        assertEquals(
-            false,
-            isValidBaseline(33, RankCounts.of(mapOf(Rank.TEN to 16, Rank.NINE to 16, Rank.THREE to 3)))
-        )
-    }
-
-    @Test
-    fun keepsValidBaselineThroughAnyPrePlayTransition() {
-        assertEquals(
-            false,
-            shouldInvalidatePrePlayHand(
-                firstPlayArmed = false,
-                hasStableHand = true,
-                handChanged = true
-            )
-        )
-        assertEquals(
-            true,
-            shouldInvalidatePrePlayHand(
-                firstPlayArmed = false,
-                hasStableHand = false,
-                handChanged = true
-            )
-        )
+    fun showsTheModelWhenNeitherMatchesAndTheTemplateWhenThereIsNoModel() {
+        val model = RankCounts.of(mapOf(Rank.TEN to 16, Rank.NINE to 15))
+        val template = RankCounts.of(mapOf(Rank.TEN to 16, Rank.NINE to 14))
+        assertEquals(model, chooseHandCards(40, model, template))
+        assertEquals(model, chooseHandCards(null, model, template))
+        assertEquals(template, chooseHandCards(40, null, template))
+        assertEquals(template, chooseHandCards(40, RankCounts.zero(), template))
     }
 
     @Test
@@ -71,34 +41,6 @@ class HandCandidateDiagnosticsTest {
         assertEquals(false, gate.tryAcquire())
         gate.release()
         assertEquals(true, gate.tryAcquire())
-    }
-
-    @Test
-    fun locksAfterTwoStableHandSamples() {
-        val gate = FirstPlayBoundaryGate()
-
-        assertEquals(FirstPlayBoundary.NONE, gate.update(hasStableHand = false))
-        assertEquals(FirstPlayBoundary.NONE, gate.update(hasStableHand = true))
-        assertEquals(FirstPlayBoundary.LOCK, gate.update(hasStableHand = true))
-        assertEquals(FirstPlayBoundary.NONE, gate.update(hasStableHand = true))
-    }
-
-    @Test
-    fun keepsWaitingWhenFirstPlayArrivesWithoutBaseline() {
-        val gate = FirstPlayBoundaryGate()
-
-        assertEquals(FirstPlayBoundary.NONE, gate.update(hasStableHand = false))
-        assertEquals(FirstPlayBoundary.NONE, gate.update(hasStableHand = false))
-    }
-
-    @Test
-    fun newSessionRearmsFirstPlayBoundary() {
-        val gate = FirstPlayBoundaryGate()
-        gate.update(hasStableHand = true)
-        assertEquals(FirstPlayBoundary.LOCK, gate.update(hasStableHand = true))
-        gate.reset()
-        gate.update(hasStableHand = true)
-        assertEquals(FirstPlayBoundary.LOCK, gate.update(hasStableHand = true))
     }
 
     @Test
