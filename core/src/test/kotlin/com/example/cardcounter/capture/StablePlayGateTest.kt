@@ -3,6 +3,7 @@ package com.example.cardcounter.capture
 import com.example.cardcounter.domain.Rank
 import com.example.cardcounter.domain.RankCounts
 import com.example.cardcounter.domain.GameEvent
+import com.example.cardcounter.domain.OutsideSeat
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -48,15 +49,17 @@ class StablePlayGateTest {
     }
 
     @Test
-    fun stableSelfZonePlayCreatesSelfEventWithDetectedCardCount() {
+    fun selfZonePlayProducesNoEventAndOutsidePlayCarriesSeat() {
         val cards = RankCounts.of(mapOf(Rank.THREE to 1, Rank.FIVE to 2))
 
-        val event = StablePlay(PlayZone.SELF, cards).toGameEvent()
+        // 自己出的牌完全不管：不生成任何账本事件。
+        assertNull(StablePlay(PlayZone.SELF, cards).toGameEvent())
 
-        assertTrue(event is GameEvent.SelfCardsPlayed)
-        event as GameEvent.SelfCardsPlayed
+        val event = StablePlay(PlayZone.LEFT_TOP, cards).toGameEvent()
+        assertTrue(event is GameEvent.OutsideCardsPlayed)
+        event as GameEvent.OutsideCardsPlayed
         assertEquals(cards, event.cards)
-        assertEquals(3, event.cardCount)
+        assertEquals(OutsideSeat.LEFT_TOP, event.seat)
     }
 
     @Test

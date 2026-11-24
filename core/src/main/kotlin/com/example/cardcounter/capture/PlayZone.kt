@@ -48,9 +48,9 @@ enum class PlaySource { SELF, OUTSIDE }
 
 data class StablePlay(val zone: PlayZone, val cards: RankCounts)
 
-/** Stable SELF and outside plays share one dispatch path; card count stays independent from rank identity. */
-fun StablePlay.toGameEvent(): GameEvent = when (zone.source) {
-    PlaySource.SELF -> GameEvent.SelfCardsPlayed(cards, cardCount = cards.total())
+/** 只有外面五家的出牌进账；自己那一区的出牌完全不管，返回 null。 */
+fun StablePlay.toGameEvent(): GameEvent? = when (zone.source) {
+    PlaySource.SELF -> null
     PlaySource.OUTSIDE -> GameEvent.OutsideCardsPlayed(cards, seat = requireNotNull(zone.seat))
 }
 
