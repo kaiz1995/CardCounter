@@ -6,6 +6,7 @@ import com.example.cardcounter.domain.DispatchResult
 import com.example.cardcounter.domain.GameEvent
 import com.example.cardcounter.domain.GameReducer
 import com.example.cardcounter.domain.GameState
+import com.example.cardcounter.domain.Rank
 import com.example.cardcounter.domain.RankCompleteness
 import com.example.cardcounter.domain.RankCounts
 import com.example.cardcounter.domain.SessionPhase
@@ -77,6 +78,9 @@ data class ReplayResult(
 }
 
 object Replay {
+    /** 手牌未知时锁定的标称张数：4 副牌 198 张平分 6 家。 */
+    val NOMINAL_HAND_COUNT: Int = Rank.initialInventory.total() / 6
+
     /**
      * 开新局 → 锁手牌 → 按时间顺序喂帧 → 把每个决策交给同一个 SessionActor。
      * 与手机一样，状态机只读账本，写入全部经单写者串行执行。
@@ -89,9 +93,17 @@ object Replay {
         audits: () -> List<LegacyAudit> = { emptyList() }
     ): ReplayResult {
         // 不拿 selfHand 合计顶替：手牌点数残缺时会被误当成完整，伪造出终局剩余牌。
-        require(game.selfHandCount > 0) { "游戏 ${game.gameId} 的 selfHandCount 必须为正，无法锁定手牌" }
-        val handCount = game.selfHandCount
-        val completeness = if (game.selfHandComplete) RankCompleteness.COMPLETE else RankCompleteness.PARTIAL
+        val known = game.selfHandCount
+        require(known == null || known > 0) { "游戏 ${game.gameId} 的 selfHandCount 必须为正，无法锁定手牌" }
+        // 手牌未知：按 UNKNOWN 锁标称张数，只进数量账。交贡、买 3 买 4 会让真实张数偏离标称值，
+        // 这类局的守恒暂停可能是标称张数造成的，汇总里会单独提示。
+        val handCount = known ?: NOMINAL_HAND_COUNT
+        val completeness = when {
+            known == null -> RankCompleteness.UNKNOWN
+            game.selfHandComplete -> RankCompleteness.COMPLETE
+            else -> RankCompleteness.PARTIAL
+        }
+        val lockCards = if (known == null) RankCounts.zero() else game.selfHand
 
         val ledger = InMemoryLedger()
         val actor = SessionActor(ledger)
@@ -102,7 +114,7 @@ object Replay {
             actor.post(LedgerCommand.NewSession("eval-session-${game.gameId}"))
             val lockResult = actor.post(
                 LedgerCommand.LockHand(
-                    game.selfHand, handCount, completeness, "eval-lock-${game.gameId}"
+                    lockCards, handCount, completeness, "eval-lock-${game.gameId}"
                 )
             )
             check(lockResult.isAcceptedLedgerResult()) {

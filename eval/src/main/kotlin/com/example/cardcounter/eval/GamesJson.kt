@@ -15,13 +15,14 @@ data class GameMeta(
     val endMs: Long,
     val complete: Boolean,
     val selfHand: RankCounts,
-    val selfHandCount: Int,
+    /** null = 手牌张数未知（没做手牌识别）；回放按 UNKNOWN 锁标称张数，剩余牌不可算。 */
+    val selfHandCount: Int?,
     val review: String,
     val notes: String
 ) {
     /** 手牌点数是否完整：只有完整时才允许声称外面剩余牌精确。 */
     val selfHandComplete: Boolean
-        get() = selfHandCount > 0 && selfHand.total() == selfHandCount
+        get() = selfHandCount.let { it != null && it > 0 && selfHand.total() == it }
 
     val isBlind: Boolean get() = split == GamesJson.BLIND
 }
@@ -95,7 +96,12 @@ object GamesJson {
             errors += handErrors
             parsed
         }
-        val handCount = field { JsonFields.int(item, "selfHandCount") }
+        // 显式写 null 表示手牌未知；字段缺失仍报错，防止漏填被当成未知。
+        val handUnknown = item.has("selfHandCount") && item.isNull("selfHandCount")
+        val handCount = if (handUnknown) null else field { JsonFields.int(item, "selfHandCount") }
+        if (handUnknown && hand != null && hand.total() > 0) {
+            errors += "$where: selfHandCount 为 null（手牌未知）时 selfHand 必须为空，实际合计 ${hand.total()}"
+        }
         if (handCount != null && handCount <= 0) errors += "$where: selfHandCount 必须为正: $handCount"
         if (handCount != null && hand != null && handCount > 0 && hand.total() > handCount) {
             errors += "$where: selfHand 合计 ${hand.total()} 超过 selfHandCount $handCount"
@@ -103,7 +109,7 @@ object GamesJson {
         val review = field { JsonFields.string(item, "review", default = "") }
         val notes = field { JsonFields.string(item, "notes", default = "") }
         if (gameId.isNullOrEmpty() || split == null || video == null || startMs == null || prePlayEndMs == null ||
-            firstPlayMs == null || endMs == null || complete == null || hand == null || handCount == null ||
+            firstPlayMs == null || endMs == null || complete == null || hand == null || (handCount == null && !handUnknown) ||
             review == null || notes == null
         ) {
             return null

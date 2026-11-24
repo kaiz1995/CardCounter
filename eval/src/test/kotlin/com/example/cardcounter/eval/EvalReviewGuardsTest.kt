@@ -33,7 +33,7 @@ class EvalReviewGuardsTest {
         prePlayEndMs: Long = 0,
         endMs: Long = 0,
         selfHand: RankCounts = RankCounts.of(mapOf(Rank.TWO to 2, Rank.KING to 1)),
-        selfHandCount: Int = 3
+        selfHandCount: Int? = 3
     ) = GameMeta(
         gameId = gameId, video = "source/x.mp4", split = split, startMs = 0,
         prePlayEndMs = prePlayEndMs, firstPlayMs = 0, endMs = endMs, complete = true,
@@ -208,7 +208,8 @@ class EvalReviewGuardsTest {
             "split 非法" to gamesFile(gameJson(split = "\" blind \"")),
             "split" to gamesFile(gameJson(split = null)),
             "selfHandCount" to gamesFile(gameJson(handCount = "\"33张\"")),
-            "selfHandCount" to gamesFile(gameJson(handCount = "null")),
+            "必须为空" to gamesFile(gameJson(handCount = "null")),
+            "缺少字段 selfHandCount" to gamesFile(gameJson().replace(""""selfHandCount":3,""", "")),
             "必须为正" to gamesFile(gameJson(handCount = "0")),
             "startMs" to gamesFile(gameJson(startMs = "1.5")),
             "重复" to gamesFile(gameJson(), gameJson())
@@ -407,5 +408,48 @@ class EvalReviewGuardsTest {
             assertEquals("self_hand_partial", report.remaining.unavailableReason)
             assertTrue(report.remaining.truthRemaining.isEmpty())
         }
+    }
+
+    // ---- 手牌未知（selfHandCount=null） ----
+
+    @Test
+    fun gamesJsonAcceptsUnknownSelfHand() {
+        val text = gamesFile(
+            gameJson().replace(""""selfHand":"TWO:2;KING:1","selfHandCount":3""", """"selfHand":"","selfHandCount":null""")
+        )
+        val meta = GamesJson.parse(text).single()
+        assertNull(meta.selfHandCount)
+        assertEquals(0, meta.selfHand.total())
+        assertTrue(!meta.selfHandComplete)
+    }
+
+    @Test
+    fun unknownSelfHandLocksNominalCountAndReportsNoRemaining() {
+        val unknown = game(selfHand = RankCounts.zero(), selfHandCount = null)
+        val replay = Replay.run(unknown, emptyList(), LegacyPipeline())
+        assertEquals(RankCompleteness.UNKNOWN, replay.lockHandCompleteness)
+        assertEquals(33, Replay.NOMINAL_HAND_COUNT)
+        assertEquals(Replay.NOMINAL_HAND_COUNT, replay.finalState.selfLockedHandCount)
+        assertNull(replay.finalState.selfLockedHand)
+
+        val plays = listOf(truth(1, 1_000, 2_000))
+        val report = buildGameReport(unknown, plays, replay, EventMatcher.match(plays, replay.accepted))
+        assertEquals(SELF_HAND_UNKNOWN, report.remaining.unavailableReason)
+        assertTrue(report.remaining.truthRemaining.isEmpty())
+        assertTrue(SummaryWriter.markdown(listOf(report)).contains("手牌未知"))
+    }
+
+    @Test
+    fun unknownSelfHandStillCountsOutsidePlays() {
+        val unknown = game(selfHand = RankCounts.zero(), selfHandCount = null)
+        fun frameOf(ts: Long, top: Int) = FrameObservation(ts, true, mapOf(PlayZone.TOP to kings(PlayZone.TOP, top)))
+        val pipeline = LegacyPipeline(stableSamples = 100, clearSamples = 1)
+        val replay = Replay.run(unknown, listOf(frameOf(0, 2), frameOf(100, 2), frameOf(200, 0)), pipeline) {
+            pipeline.audits
+        }
+        assertEquals(0, replay.pauseCount)
+        assertEquals(0, replay.rejectionCount)
+        assertEquals(1, replay.accepted.size)
+        assertEquals(2, replay.finalState.outsidePlayedCount)
     }
 }
