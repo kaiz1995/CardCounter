@@ -11,7 +11,7 @@ data class ObservationRecord(
     val zone: String,
     /** SELF / OUTSIDE。 */
     val source: String,
-    /** 独立数量账；未知为 null。 */
+    /** 这一手的张数（仅诊断观察用，不是账本数据）；未知为 null。 */
     val quantity: Int?,
     /** Rank 向量总数；未知为 null。 */
     val rankTotal: Int?,
