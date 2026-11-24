@@ -70,11 +70,12 @@ data class MatchResult(
 
 object EventMatcher {
     /**
-     * 逐区对齐，每条入账只认离它最近的真值手。距离 = 入账时间到真值核心区间
-     * [stable_ms, clear_ms] 的距离（落在区间内为 0），且入账时间须落在放宽时间窗内。
-     * 最近的手里有未配对的 → 命中；最近的手都已配对 → 重复扣；时间窗内没有真值 → 多记。
-     * 只认最近的手：落在上一手核心区间里的第二次入账是重复扣，不能被下一手的放宽窗吸收成命中；
-     * 相邻两手放宽窗重叠时，正确入账也不会抢走下一手。
+     * 逐区对齐，分两轮。距离 = 入账时间到真值核心区间 [stable_ms, clear_ms] 的距离（区间内为 0）。
+     * 第一轮：落在某手核心区间内的入账只认这些手，有未配对的 → 命中，都已配对 → 重复扣；
+     * 落在上一手核心区间里的第二次入账因此不会被下一手的放宽窗吸收成命中。
+     * 第二轮：落在两手之间空隙或放宽窗里的入账，只在窗内还没配对的手里按距离从近到远配对，
+     * 空隙里的入账不会抢走核心区间内已有入账的手；窗内的手都已配对 → 重复扣（记到最近的手）；
+     * 时间窗内没有真值 → 多记。
      */
     fun match(
         truth: List<TruthPlay>,
@@ -91,6 +92,8 @@ object EventMatcher {
         }
         return MatchResult(perZone, windows)
     }
+
+    private data class GapEdge(val distance: Long, val record: Int, val truth: TruthPlay)
 
     /** 入账时间到真值核心区间 [stable_ms, clear_ms] 的距离，区间内为 0。 */
     fun coreDistance(truth: TruthPlay, timestampMs: Long): Long = when {
@@ -109,29 +112,56 @@ object EventMatcher {
         val hits = mutableListOf<MatchedPair>()
         val duplicates = mutableListOf<DuplicateRecord>()
         val extras = mutableListOf<AcceptedPlay>()
-        for (record in accepted) {
-            val inWindow = truth.filter { windows.contains(it, record.timestampMs) }
-            if (inWindow.isEmpty()) {
-                extras += record
+        // 下标而不是对象本身：两条入账可能完全相同（同时间同牌），按值比较会混在一起。
+        val gap = mutableListOf<Int>()
+        for ((index, record) in accepted.withIndex()) {
+            val core = truth.filter { coreDistance(it, record.timestampMs) == 0L }
+            if (core.isEmpty()) {
+                gap += index
                 continue
             }
-            val nearestDistance = inWindow.minOf { coreDistance(it, record.timestampMs) }
-            val nearest = inWindow.filter { coreDistance(it, record.timestampMs) == nearestDistance }
-            val open = nearest.firstOrNull { it !in matched }
+            val open = core.firstOrNull { it !in matched }
             if (open != null) {
                 matched += open
                 hits += MatchedPair(open, record)
             } else {
-                duplicates += DuplicateRecord(record, nearest.first())
+                duplicates += DuplicateRecord(record, core.first())
+            }
+        }
+        val edges = gap.flatMap { index ->
+            val timestampMs = accepted[index].timestampMs
+            truth.filter { it !in matched && windows.contains(it, timestampMs) }
+                .map { GapEdge(coreDistance(it, timestampMs), index, it) }
+        }.sortedWith(
+            compareBy<GapEdge>({ it.distance }, { accepted[it.record].timestampMs }, { it.truth.stableMs }, { it.truth.eventSeq })
+        )
+        val pairedGap = mutableSetOf<Int>()
+        for (edge in edges) {
+            if (edge.record in pairedGap || edge.truth in matched) continue
+            matched += edge.truth
+            pairedGap += edge.record
+            hits += MatchedPair(edge.truth, accepted[edge.record])
+        }
+        for (index in gap) {
+            if (index in pairedGap) continue
+            val record = accepted[index]
+            val inWindow = truth.filter { windows.contains(it, record.timestampMs) }
+            if (inWindow.isEmpty()) {
+                extras += record
+            } else {
+                val nearest = inWindow.sortedWith(
+                    compareBy<TruthPlay>({ coreDistance(it, record.timestampMs) }, { it.stableMs }, { it.eventSeq })
+                ).first()
+                duplicates += DuplicateRecord(record, nearest)
             }
         }
         return ZoneMatchResult(
             zone = zone,
             truthHands = truth.size,
-            hits = hits,
+            hits = hits.sortedBy { it.record.timestampMs },
             missed = truth.filter { it !in matched },
             extras = extras,
-            duplicates = duplicates,
+            duplicates = duplicates.sortedBy { it.record.timestampMs },
             rankKnownTruth = truth.count { it.hasRanks },
             confusion = buildConfusion(hits.filter { it.truth.hasRanks })
         )

@@ -10,6 +10,7 @@ import com.example.cardcounter.domain.RankCompleteness
 import com.example.cardcounter.domain.RankCounts
 import com.example.cardcounter.domain.SessionPhase
 import com.example.cardcounter.recognition.FrameObservation
+import com.example.cardcounter.recognition.PipelineDecision
 import com.example.cardcounter.recognition.PlayPipeline
 import com.example.cardcounter.storage.LedgerCommand
 import com.example.cardcounter.storage.LedgerGateway
@@ -26,6 +27,19 @@ class InMemoryLedger : LedgerGateway {
 
     override fun dispatchDetailed(event: GameEvent): DispatchResult =
         GameReducer.apply(current, event).also { current = it.state }
+}
+
+/**
+ * 逐区提交的管线：每个区判定前读最新账本、判定后立即提交，与手机 finalizeRoiEvent 逐区串行一致。
+ * PlayPipeline 只拿帧开始时的账本快照，同帧前一区让账本暂停后，后一区仍会按 ACTIVE 判定并动去重门控；
+ * 接口重做（W5）前在评测侧补这条路径，不改 core 的公共签名。
+ */
+interface StepwisePlayPipeline : PlayPipeline {
+    fun onObservationStepwise(
+        observation: FrameObservation,
+        ledger: () -> GameState,
+        commit: (PipelineDecision) -> Unit
+    )
 }
 
 /** 一条已提交给账本的决策及其结果。 */
@@ -94,15 +108,24 @@ object Replay {
             check(lockResult.isAcceptedLedgerResult()) {
                 "锁定手牌失败: ${(lockResult as? DispatchResult.Rejected)?.reason ?: lockResult}"
             }
+            fun commit(decision: PipelineDecision) {
+                val result = actor.post(decision.command)
+                if (result is DispatchResult.Paused) pauses++
+                if (result is DispatchResult.Rejected) rejections++
+                decisions += RecordedDecision(decision.timestampMs, decision.zone, decision.command, result)
+            }
             for (frame in framesInPlay(game, frames)) {
-                for (decision in pipeline.onObservation(frame, ledger.state)) {
-                    // 同一帧里前一个区已让账本暂停：手机逐区读最新账本，后面的区直接跳过，
-                    // 不进账本也不记拒绝。这里的管线拿的是帧开始时的账本，所以在提交前补上这一步。
-                    if (ledger.state.phase != SessionPhase.ACTIVE && decision.command.isPlay()) continue
-                    val result = actor.post(decision.command)
-                    if (result is DispatchResult.Paused) pauses++
-                    if (result is DispatchResult.Rejected) rejections++
-                    decisions += RecordedDecision(decision.timestampMs, decision.zone, decision.command, result)
+                if (pipeline is StepwisePlayPipeline) {
+                    // 逐区读最新账本、逐区提交：同帧前一区暂停后，后一区按手机逻辑走“非 ACTIVE”分支，
+                    // 不动去重门控，审计记 NOT_ACTIVE。
+                    pipeline.onObservationStepwise(frame, { ledger.state }, ::commit)
+                } else {
+                    for (decision in pipeline.onObservation(frame, ledger.state)) {
+                        // 只拿帧开始快照的管线：前一个区已让账本暂停，后面的出牌决策直接跳过，
+                        // 不进账本也不记拒绝。
+                        if (ledger.state.phase != SessionPhase.ACTIVE && decision.command.isPlay()) continue
+                        commit(decision)
+                    }
                 }
             }
         } finally {

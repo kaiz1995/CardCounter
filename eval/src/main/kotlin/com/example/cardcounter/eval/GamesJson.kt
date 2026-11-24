@@ -96,8 +96,8 @@ object GamesJson {
             parsed
         }
         val handCount = field { JsonFields.int(item, "selfHandCount") }
-        if (handCount != null && handCount < 0) errors += "$where: selfHandCount 不能为负: $handCount"
-        if (handCount != null && hand != null && hand.total() > handCount && handCount > 0) {
+        if (handCount != null && handCount <= 0) errors += "$where: selfHandCount 必须为正: $handCount"
+        if (handCount != null && hand != null && handCount > 0 && hand.total() > handCount) {
             errors += "$where: selfHand 合计 ${hand.total()} 超过 selfHandCount $handCount"
         }
         val review = field { JsonFields.string(item, "review", default = "") }

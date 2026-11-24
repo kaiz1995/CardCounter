@@ -37,6 +37,8 @@ data class LegacyAudit(
  * 与 CaptureProbeService.finalizeRoiEvent 的已知差异：没有手牌模板融合
  * （fuseSinglePublicPlay 需要位图），帧按时间取最近 N 帧而不是按 quality 排序。
  * 决策时间取这一手最后一帧证据的时间，不是交出时刻（清桌交出要多等 clearSamples 次采样）。
+ * 回放走逐区路径：每个区判定前读最新账本、判定后立即提交；同帧前一区让账本暂停后，
+ * 后一区走“非 ACTIVE”分支，不动去重门控，与手机 finalizeRoiEvent 逐区串行一致。
  */
 class LegacyPipeline(
     stableSamples: Int = 15,
@@ -44,7 +46,7 @@ class LegacyPipeline(
     maxFrames: Int = 8,
     private val finalizeFrameCount: Int = 3,
     private val onAudit: (LegacyAudit) -> Unit = {}
-) : PlayPipeline {
+) : StepwisePlayPipeline {
     private data class ZoneSample(val timestampMs: Long, val still: Boolean, val detections: List<Detection>?)
     private data class Candidate(val cards: RankCounts, val minimumConfidence: Float)
 
@@ -70,8 +72,18 @@ class LegacyPipeline(
         onAudit(entry)
     }
 
+    /** 只拿帧开始时账本快照的调用方式；Replay 用的是下面的逐区版本。 */
     override fun onObservation(observation: FrameObservation, ledger: GameState): List<PipelineDecision> {
         val decisions = mutableListOf<PipelineDecision>()
+        onObservationStepwise(observation, { ledger }) { decisions += it }
+        return decisions
+    }
+
+    override fun onObservationStepwise(
+        observation: FrameObservation,
+        ledger: () -> GameState,
+        commit: (PipelineDecision) -> Unit
+    ) {
         val tableVisible = observation.tableVisible
         for (zone in PlayZone.entries) {
             // 缺省的区表示这一帧没有该区观察（DATA-FORMATS 第 5 节）：不推进清桌计数，也不动门控。
@@ -86,9 +98,8 @@ class LegacyPipeline(
             // 用这一手最后一帧还在桌上的时间：清桌交出要再等 clearSamples 次采样，
             // 若用交出时刻，延迟随采样间隔变化，会掉出真值对齐时间窗。
             val evidenceMs = finalized.frames.lastOrNull()?.timestampMs ?: observation.timestampMs
-            decisions += finalize(finalized, evidenceMs, ledger)
+            finalize(finalized, evidenceMs, ledger())?.let(commit)
         }
-        return decisions
     }
 
     override fun reset() {
@@ -102,7 +113,7 @@ class LegacyPipeline(
         finalized: RoiPlayEventCache.Finalized<ZoneSample>,
         timestampMs: Long,
         ledger: GameState
-    ): List<PipelineDecision> {
+    ): PipelineDecision? {
         val candidates = finalized.frames
             .takeLast(finalizeFrameCount)
             .mapNotNull { sample -> sample.detections?.let(::candidateOf) }
@@ -120,17 +131,17 @@ class LegacyPipeline(
         }
         if (cards == null) {
             audit(LegacyAudit(finalized.zone, timestampMs, LegacyOutcome.NO_CONSENSUS, null, finalized.frames.size))
-            return emptyList()
+            return null
         }
         if (ledger.phase != SessionPhase.ACTIVE) {
             audit(LegacyAudit(finalized.zone, timestampMs, LegacyOutcome.NOT_ACTIVE, cards, finalized.frames.size))
-            return emptyList()
+            return null
         }
         val stable = gate.acceptStable(finalized.zone, cards) ?: run {
             audit(
                 LegacyAudit(finalized.zone, timestampMs, LegacyOutcome.DUPLICATE_SUPPRESSED, cards, finalized.frames.size)
             )
-            return emptyList()
+            return null
         }
         audit(LegacyAudit(finalized.zone, timestampMs, LegacyOutcome.ACCEPTED, stable.cards, finalized.frames.size))
         val evidenceId = UUID.randomUUID().toString()
@@ -143,7 +154,7 @@ class LegacyPipeline(
                 RankCompleteness.COMPLETE, evidenceId
             )
         }
-        return listOf(PipelineDecision(command, finalized.zone, timestampMs))
+        return PipelineDecision(command, finalized.zone, timestampMs)
     }
 
     /** 与 detectYoloCards(publicPlay = true) 等价：只保留点数带内的框，按点数计数。 */

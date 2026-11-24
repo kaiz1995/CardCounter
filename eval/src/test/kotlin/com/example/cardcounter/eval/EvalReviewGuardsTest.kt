@@ -125,10 +125,10 @@ class EvalReviewGuardsTest {
     @Test
     fun onlyFramesInsideFormalPlayAreReplayed() {
         val meta = game(prePlayEndMs = 1_000, endMs = 2_000)
-        val frames = listOf(frame(2_500, null), frame(500, null), frame(1_500, null), frame(1_000, null))
+        val frames = listOf(frame(2_500, null), frame(500, null), frame(1_500, null), frame(1_000, null), frame(2_000, null))
 
-        assertEquals(listOf(1_000L, 1_500L), Replay.framesInPlay(meta, frames).map { it.timestampMs })
-        assertEquals(4, Replay.framesInPlay(game(), frames).size)
+        assertEquals(listOf(1_000L, 1_500L, 2_000L), Replay.framesInPlay(meta, frames).map { it.timestampMs })
+        assertEquals(5, Replay.framesInPlay(game(), frames).size)
     }
 
     @Test
@@ -209,6 +209,7 @@ class EvalReviewGuardsTest {
             "split" to gamesFile(gameJson(split = null)),
             "selfHandCount" to gamesFile(gameJson(handCount = "\"33张\"")),
             "selfHandCount" to gamesFile(gameJson(handCount = "null")),
+            "必须为正" to gamesFile(gameJson(handCount = "0")),
             "startMs" to gamesFile(gameJson(startMs = "1.5")),
             "重复" to gamesFile(gameJson(), gameJson())
         )
@@ -325,6 +326,86 @@ class EvalReviewGuardsTest {
         for ((expected, rows) in cases) {
             val message = formatError { TruthCsv.parse(TruthCsv.HEADER + "\n" + rows) }
             assertTrue("应提到 '$expected'，实际: $message", message.contains(expected))
+        }
+    }
+
+    // ---- 第二轮复审：空隙入账、同帧暂停、残缺真值剩余 ----
+
+    @Test
+    fun gapRecordDoesNotStealNextHandThatHasCoreRecord() {
+        // T1 晚 60ms 入账，离 T2 更近（40ms），但 T2 核心区间里已有自己的入账。
+        val result = EventMatcher.match(
+            listOf(truth(1, 1_000, 2_000), truth(2, 2_100, 3_100)),
+            listOf(accepted(2_060), accepted(2_500))
+        )
+
+        assertEquals(0, result.duplicates.size)
+        assertEquals(0, result.missed.size)
+        assertEquals(mapOf(1 to 2_060L, 2 to 2_500L), result.hits.associate { it.truth.eventSeq to it.record.timestampMs })
+    }
+
+    @Test
+    fun earlyGapRecordHitsUnmatchedNextHand() {
+        // T1 清桌后、T2 停稳前提前入账，离已配对的 T1 更近，也应配给还没配对的 T2。
+        val result = EventMatcher.match(
+            listOf(truth(1, 1_000, 2_000), truth(2, 2_400, 3_400)),
+            listOf(accepted(1_500), accepted(2_150))
+        )
+
+        assertEquals(2, result.hits.size)
+        assertEquals(0, result.duplicates.size)
+        assertEquals(0, result.missed.size)
+    }
+
+    @Test
+    fun gapRecordIsDuplicateWhenBothHandsAlreadyHit() {
+        val result = EventMatcher.match(
+            listOf(truth(1, 1_000, 2_000), truth(2, 2_100, 3_100)),
+            listOf(accepted(1_500), accepted(2_060), accepted(2_500))
+        )
+
+        assertEquals(2, result.hits.size)
+        assertEquals(1, result.duplicates.size)
+        assertEquals(0, result.extras.size)
+    }
+
+    private fun kings(zone: PlayZone, count: Int) = ZoneObservation(
+        zone, count > 0, true,
+        List(count) { Detection(Rank.KING, 0.9f, 0.3f + 0.2f * it, 0.42f, 0.12f, 0.22f) }
+    )
+
+    @Test
+    fun realPipelineSkipsLaterZoneAfterSameFramePause() {
+        // 锁 197 张，外面再出 2 张就超总量 → 守恒暂停。TOP 排在 LEFT_TOP 前面，两区同一帧清桌交出。
+        val meta = game(selfHand = king, selfHandCount = 197)
+        fun frameOf(ts: Long, top: Int, left: Int) = FrameObservation(
+            ts, true, mapOf(PlayZone.TOP to kings(PlayZone.TOP, top), PlayZone.LEFT_TOP to kings(PlayZone.LEFT_TOP, left))
+        )
+        val pipeline = LegacyPipeline(stableSamples = 100, clearSamples = 1)
+        val replay = Replay.run(
+            meta, listOf(frameOf(0, 2, 1), frameOf(100, 2, 1), frameOf(200, 0, 0)), pipeline
+        ) { pipeline.audits }
+
+        assertEquals(1, replay.pauseCount)
+        assertEquals(0, replay.rejectionCount)
+        assertEquals(listOf<PlayZone?>(PlayZone.TOP), replay.decisions.map { it.zone })
+        assertTrue(replay.accepted.isEmpty())
+        // 手机读到非 ACTIVE 直接返回，不调 acceptStable：后一区审计应是 NOT_ACTIVE，不是 ACCEPTED。
+        assertEquals(
+            listOf(PlayZone.TOP to LegacyOutcome.ACCEPTED, PlayZone.LEFT_TOP to LegacyOutcome.NOT_ACTIVE),
+            replay.audits.map { it.zone to it.outcome }
+        )
+        assertEquals(1, replay.notActiveCount)
+    }
+
+    @Test
+    fun partialSelfHandReportsNoTruthRemaining() {
+        val partial = game(selfHand = RankCounts.of(mapOf(Rank.TWO to 2)), selfHandCount = 3)
+        val replay = Replay.run(partial, emptyList(), LegacyPipeline())
+        for (plays in listOf(listOf(truth(1, 1_000, 2_000)), listOf(truth(1, 1_000, 2_000, cards = null)))) {
+            val report = buildGameReport(partial, plays, replay, EventMatcher.match(plays, replay.accepted))
+            assertEquals("self_hand_partial", report.remaining.unavailableReason)
+            assertTrue(report.remaining.truthRemaining.isEmpty())
         }
     }
 }

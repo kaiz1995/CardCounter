@@ -169,7 +169,9 @@ private fun remainingOf(
     }
     val evalRemaining = finalState.outsideRemaining
     if (unavailable != null || evalRemaining == null) {
-        val knownTruth = if (unavailable == TRUTH_RANKS_INCOMPLETE) emptyMap() else truthRemaining
+        // 手牌点数不全或真值外面区点数不全时，真值剩余本身算不出来，不给残缺值。
+        val truthUnknown = unavailable == "self_hand_partial" || unavailable == TRUTH_RANKS_INCOMPLETE
+        val knownTruth = if (truthUnknown) emptyMap() else truthRemaining
         return RemainingReport(emptyMap(), knownTruth, emptyMap(), unavailable ?: "rank_ledger_incomplete")
     }
     val evalMap = Rank.entries.associateWith { evalRemaining[it] }
