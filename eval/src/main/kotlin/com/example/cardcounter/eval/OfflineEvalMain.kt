@@ -89,7 +89,7 @@ object OfflineEvalCli {
             val truth = TruthCsv.parse(readText(truthPath), truthPath.toString(), meta.gameId)
             val frames = ObservationJsonl.parse(readText(obsPath), obsPath.toString())
             val pipeline = pipelineFactory.create(meta)
-            val replay = Replay.run(meta, frames, pipeline, (pipeline as? LegacyPipeline)?.audits.orEmpty())
+            val replay = Replay.run(meta, frames, pipeline) { (pipeline as? LegacyPipeline)?.audits.orEmpty() }
             val match = EventMatcher.match(truth, replay.accepted)
             val report = buildGameReport(meta, truth, replay, match)
             reports += report

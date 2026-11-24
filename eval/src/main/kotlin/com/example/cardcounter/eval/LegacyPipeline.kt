@@ -36,6 +36,7 @@ data class LegacyAudit(
  *
  * 与 CaptureProbeService.finalizeRoiEvent 的已知差异：没有手牌模板融合
  * （fuseSinglePublicPlay 需要位图），帧按时间取最近 N 帧而不是按 quality 排序。
+ * 决策时间取这一手最后一帧证据的时间，不是交出时刻（清桌交出要多等 clearSamples 次采样）。
  */
 class LegacyPipeline(
     stableSamples: Int = 15,
@@ -44,7 +45,7 @@ class LegacyPipeline(
     private val finalizeFrameCount: Int = 3,
     private val onAudit: (LegacyAudit) -> Unit = {}
 ) : PlayPipeline {
-    private data class ZoneSample(val still: Boolean, val detections: List<Detection>?)
+    private data class ZoneSample(val timestampMs: Long, val still: Boolean, val detections: List<Detection>?)
     private data class Candidate(val cards: RankCounts, val minimumConfidence: Float)
 
     private val cache = RoiPlayEventCache<ZoneSample>(
@@ -79,9 +80,12 @@ class LegacyPipeline(
             if (tableVisible && !visible) {
                 gate.update(zone, RankCounts.zero())
             }
-            val sample = if (visible) ZoneSample(observed!!.still, observed.detections) else null
+            val sample = if (visible) ZoneSample(observation.timestampMs, observed!!.still, observed.detections) else null
             val finalized = cache.observe(zone, tableVisible, visible, sample, generation) ?: continue
-            decisions += finalize(finalized, observation.timestampMs, ledger)
+            // 用这一手最后一帧还在桌上的时间：清桌交出要再等 clearSamples 次采样，
+            // 若用交出时刻，延迟随采样间隔变化，会掉出真值对齐时间窗。
+            val evidenceMs = finalized.frames.lastOrNull()?.timestampMs ?: observation.timestampMs
+            decisions += finalize(finalized, evidenceMs, ledger)
         }
         return decisions
     }

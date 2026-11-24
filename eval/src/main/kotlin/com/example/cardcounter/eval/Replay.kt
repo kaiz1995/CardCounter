@@ -70,7 +70,8 @@ object Replay {
         game: GameMeta,
         frames: List<FrameObservation>,
         pipeline: PlayPipeline,
-        audits: List<LegacyAudit> = emptyList()
+        /** 回放结束后才取：审计记录是回放过程中产生的。 */
+        audits: () -> List<LegacyAudit> = { emptyList() }
     ): ReplayResult {
         val handCount = game.selfHandCount.takeIf { it > 0 } ?: game.selfHand.total()
         require(handCount > 0) { "游戏 ${game.gameId} 的 selfHandCount 无效，无法锁定手牌" }
@@ -123,7 +124,7 @@ object Replay {
         return ReplayResult(
             decisions = decisions,
             accepted = accepted,
-            audits = audits,
+            audits = audits(),
             finalState = ledger.state,
             pauseCount = pauses,
             rejectionCount = rejections,
