@@ -221,6 +221,23 @@ class PipSpriteTest(unittest.TestCase):
             self.assertEqual(int((plain[gy + 2 * gh:].min(axis=2) < 200).sum()), 0, scale)
             self.assertGreater(int((top[gy + 2 * gh:].min(axis=2) < 200).sum()), 20, scale)
 
+    def test_cut_tile_keeps_no_pixels_of_its_own_half_pip(self):
+        # A row-2 hand tile is cut inside its own suit pip; only the grafted pip may show.
+        clean = pip_hand_tile(False)
+        cut = clean.copy()
+        cut[39:44, 5:17] = (30, 0, 200)  # top rows of the card's real (red) pip
+        graft = np.full((18, 12, 3), 30, np.uint8)
+        self.assertIsNone(E.find_pip(cut, HAND_OFF, HAND_GLYPH))
+        for scale in ("outside", "self"):
+            for big in (False, True):
+                spec = E.PLAY_CARD[scale]
+                with_cut = E.compose_play_card(cut, HAND_OFF, HAND_GLYPH, spec, graft, big)[0]
+                without = E.compose_play_card(clean, HAND_OFF, HAND_GLYPH, spec, graft, big)[0]
+                self.assertTrue(
+                    np.array_equal(with_cut.min(axis=2) < 200, without.min(axis=2) < 200),
+                    f"{scale} big={big}: half pip of the cut tile leaked into the card",
+                )
+
 
 class PipSceneTest(unittest.TestCase):
     def setUp(self):

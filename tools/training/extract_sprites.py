@@ -479,6 +479,14 @@ def compose_play_card(tile, off, glyph, spec, pip=None, big=False, joker=False):
 
     s = spec["scale"]
     card = play_card(spec["w"], spec["h"])
+    own = None if joker else find_pip(tile, off, glyph)
+    if own is None and not joker:
+        # A cut tile keeps the top rows of its real pip (its own suit). Wipe them so
+        # only the grafted pip remains and the small and big pip always agree.
+        tile = tile.copy()
+        below = off[1] + glyph[1] + 1
+        if below < tile.shape[0]:
+            tile[below:, max(0, off[0] - 2):off[0] + glyph[0] + 3] = FACE
     resized = cv2.resize(
         tile, (max(1, round(tile.shape[1] * s)), max(1, round(tile.shape[0] * s))),
         interpolation=cv2.INTER_AREA,
@@ -487,7 +495,6 @@ def compose_play_card(tile, off, glyph, spec, pip=None, big=False, joker=False):
     height = min(resized.shape[0], card.shape[0] - y0)
     width = min(resized.shape[1], card.shape[1] - x0)
     card[y0:y0 + height, x0:x0 + width] = resized[:height, :width]
-    own = None if joker else find_pip(tile, off, glyph)
     # The hand tile also contains the *next* card's glyph (hand pitch 42 < tile
     # width). Wipe everything right of this card's own glyph/pip so a stacked play
     # does not show a ghost glyph on the last card.
