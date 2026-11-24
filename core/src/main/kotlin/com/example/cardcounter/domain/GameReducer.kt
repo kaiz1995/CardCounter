@@ -68,6 +68,7 @@ object GameReducer {
         if (total <= 0) {
             return DispatchResult.Rejected(state, "手牌不能为空")
         }
+        // 手牌单个点数本身就超库存：错的一定是手牌，不是外面的账。拒绝，让用户改到一致，不停记。
         val overInventory = Rank.entries.firstOrNull { event.cards[it] > Rank.initialInventory[it] }
         if (overInventory != null) {
             return DispatchResult.Rejected(

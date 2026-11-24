@@ -141,4 +141,89 @@ class VersionedEventLogTest {
         // 缺 schema 字段
         assertNull(VersionedEventLog.decode(JSONObject().put("seq", 1).put("events", JSONArray()).toString()))
     }
+
+    /** 合法会话的 JSON，供各损坏用例在此基础上改坏一处。 */
+    private fun validJson(): JSONObject = JSONObject(VersionedEventLog.encode(stateWithAllEventKinds()))
+
+    private fun assertDiscarded(label: String, stored: String) {
+        assertNull("应判为损坏: $label", VersionedEventLog.decode(stored))
+        val (state, seq) = VersionedEventLog.restoreOrNew(stored)
+        assertEquals(label, 0, seq)
+        assertEquals(label, SessionPhase.ACTIVE, state.phase)
+        assertFalse(label, state.handConfirmed)
+        assertEquals(label, 1, state.events.size)
+        assertNull(label, state.pauseReason)
+    }
+
+    @Test
+    fun structurallyBrokenCurrentSchemaIsDiscarded() {
+        // 空日志：以前会回放成损坏暂停，恢复又被拒，重启后卡死。
+        assertDiscarded(
+            "空日志",
+            JSONObject().put("schema", 3).put("seq", 0).put("events", JSONArray()).toString()
+        )
+        // 首条不是开局。
+        val noNewSession = validJson()
+        val events = noNewSession.getJSONArray("events")
+        events.remove(0)
+        noNewSession.put("seq", events.length())
+        assertDiscarded("首条不是开局", noNewSession.toString())
+        // seq 与事件数对不上。
+        assertDiscarded("seq 偏大", validJson().put("seq", 99).toString())
+        assertDiscarded("seq 为负", validJson().put("seq", -1).toString())
+        assertDiscarded("seq 是字符串", validJson().put("seq", "7").toString())
+    }
+
+    @Test
+    fun brokenRankFieldIsDiscardedInsteadOfReadAsZero() {
+        // 第 2 条是外面出牌（KING 2 张），第 3 条是手牌确认（ACE 3 张）。
+        fun brokenAt(index: Int, mutate: (JSONObject) -> Unit): String {
+            val json = validJson()
+            mutate(json.getJSONArray("events").getJSONObject(index).getJSONObject("cards"))
+            return json.toString()
+        }
+        assertDiscarded("出牌缺点数键", brokenAt(1) { it.remove(Rank.KING.name) })
+        assertDiscarded("出牌点数为 null", brokenAt(1) { it.put(Rank.KING.name, JSONObject.NULL) })
+        assertDiscarded("出牌点数是字符串", brokenAt(1) { it.put(Rank.KING.name, "2") })
+        assertDiscarded("出牌点数是小数", brokenAt(1) { it.put(Rank.KING.name, 1.5) })
+        assertDiscarded("出牌点数为负", brokenAt(1) { it.put(Rank.KING.name, -1) })
+        assertDiscarded("出牌多出未知点数", brokenAt(1) { it.put("JOKER", 1) })
+        assertDiscarded("手牌缺点数键", brokenAt(2) { it.remove(Rank.ACE.name) })
+        assertDiscarded("手牌点数为 null", brokenAt(2) { it.put(Rank.ACE.name, JSONObject.NULL) })
+        // 手牌张数字段坏掉同样整份丢弃。
+        val badHandCount = validJson()
+        badHandCount.getJSONArray("events").getJSONObject(2).put("handCount", "3")
+        assertDiscarded("手牌张数是字符串", badHandCount.toString())
+        // 外面出牌缺座位或座位非法。
+        val noSeat = validJson()
+        noSeat.getJSONArray("events").getJSONObject(1).remove("seat")
+        assertDiscarded("出牌缺座位", noSeat.toString())
+        val badSeat = validJson()
+        badSeat.getJSONArray("events").getJSONObject(1).put("seat", "SELF")
+        assertDiscarded("出牌座位非法", badSeat.toString())
+    }
+
+    @Test
+    fun realConservationPauseSurvivesRestart() {
+        // 走真实的守恒失败：外面已出 16 张 ACE，再确认手里 1 张 ACE 就超库存。
+        val inventory = Rank.initialInventory[Rank.ACE]
+        var state = GameReducer.newSession(GameEvent.NewSession("s"))
+        state = GameReducer.apply(
+            state,
+            GameEvent.OutsideCardsPlayed(RankCounts.of(mapOf(Rank.ACE to inventory)), OutsideSeat.TOP, "p")
+        ).state
+        val paused = GameReducer.apply(
+            state, GameEvent.HandConfirmed(RankCounts.of(mapOf(Rank.ACE to 1)), 1, "hand")
+        )
+        assertEquals(SessionPhase.PAUSED, paused.state.phase)
+        assertEquals(PauseReason.CONSERVATION_FAILURE, paused.state.pauseReason)
+        assertFalse(paused.state.handConfirmed)
+
+        val (restored, seq) = VersionedEventLog.restoreOrNew(VersionedEventLog.encode(paused.state))
+
+        assertEquals(paused.state, restored)
+        assertEquals(paused.state.events.size, seq)
+        assertEquals(SessionPhase.PAUSED, restored.phase)
+        assertFalse(restored.handConfirmed)
+    }
 }

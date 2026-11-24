@@ -53,7 +53,13 @@ object VersionedEventLog {
                 add(decodeEvent(array.getJSONObject(index)))
             }
         }
-        obj.getInt("seq") to events
+        val seq = strictInt(obj, "seq")
+        // 结构不完整也当损坏：空日志、首条不是开局、seq 与事件数对不上。
+        // 否则回放出来是损坏暂停、恢复又被拒，重启后会卡死，而不是丢弃开新局。
+        if (events.isEmpty() || events.first() !is GameEvent.NewSession || seq != events.size) {
+            return@runCatching null
+        }
+        seq to events
     }.getOrNull()
 
     /**
@@ -102,7 +108,7 @@ object VersionedEventLog {
         return when (json.getString("type")) {
             "NewSession" -> GameEvent.NewSession(id)
             "HandConfirmed" -> GameEvent.HandConfirmed(
-                decodeCounts(json.getJSONObject("cards")), json.getInt("handCount"), id
+                decodeCounts(json.getJSONObject("cards")), strictInt(json, "handCount"), id
             )
             "OutsideCardsPlayed" -> GameEvent.OutsideCardsPlayed(
                 decodeCounts(json.getJSONObject("cards")),
@@ -123,7 +129,19 @@ object VersionedEventLog {
         Rank.entries.forEach { rank -> json.put(rank.name, counts[rank]) }
     }
 
-    private fun decodeCounts(json: JSONObject): RankCounts = RankCounts.of(
-        Rank.entries.associateWith { rank -> json.optInt(rank.name, 0) }
-    )
+    /**
+     * 点数向量必须 15 个点数一个不少、一个不多，每个都是非负整数（负数由 [RankCounts.of] 拒绝）。
+     * 缺键、null、字符串、小数都抛异常，由 [decode] 整份判为损坏，不能悄悄当成 0 张。
+     */
+    private fun decodeCounts(json: JSONObject): RankCounts {
+        require(json.length() == Rank.entries.size) { "点数向量字段数不对: ${json.length()}" }
+        return RankCounts.of(Rank.entries.associateWith { rank -> strictInt(json, rank.name) })
+    }
+
+    /** 只认 JSON 整数；缺键、null、字符串、小数、布尔都抛异常。 */
+    private fun strictInt(json: JSONObject, key: String): Int {
+        val value = json.get(key)
+        require(value is Int) { "字段 $key 不是整数: $value" }
+        return value
+    }
 }

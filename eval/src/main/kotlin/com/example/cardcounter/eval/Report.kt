@@ -154,7 +154,8 @@ private fun remainingOf(
 ): RemainingReport {
     val unavailable = when {
         // 手牌为空或不完整就不确认：横条没扣自己的牌，终局剩余牌不可算。
-        !finalState.handConfirmed -> SELF_HAND_UNKNOWN
+        // 真值手牌不完整时，就算管线自己确认了手牌，也不能拿残缺的 selfHand 去算真值剩余。
+        !meta.selfHandComplete || !finalState.handConfirmed -> SELF_HAND_UNKNOWN
         // 真值里有看不清点数的外面出牌（cards 留空）：真值剩余本身就不知道，不能拿 0 张去比。
         truth.any { it.zone != PlayZone.SELF && !it.hasRanks } -> TRUTH_RANKS_INCOMPLETE
         else -> null

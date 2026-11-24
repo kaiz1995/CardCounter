@@ -79,7 +79,7 @@ class CaptureProbeService : Service() {
     @Volatile private var handRevision = 0L
     @Volatile private var firstPlayArmed = false
     @Volatile private var manualNewGameRequested = false
-    @Volatile private var lastStablePrePlayHand: RankCounts? = null
+    @Volatile private var lastStablePrePlayHand: Pair<RankCounts, Int>? = null
     private val firstPlayGate = FirstPlayBoundaryGate()
     private lateinit var sessionLedger: SessionRepository
     private lateinit var sessionActor: SessionActor
@@ -299,8 +299,8 @@ class CaptureProbeService : Service() {
                                 return@post
                             }
                             val baselineValid = isValidBaseline(positionCount, cards)
-                            if (stableRankCandidates >= 2 && baselineValid) {
-                                lastStablePrePlayHand = cards
+                            if (stableRankCandidates >= 2 && baselineValid && positionCount != null) {
+                                lastStablePrePlayHand = cards to positionCount
                             }
                             Log.i(
                                 TAG,
@@ -386,20 +386,27 @@ class CaptureProbeService : Service() {
     }
 
     private fun lockPrePlayHand() {
-        val cards = lastStablePrePlayHand ?: return
+        val (cards, handCount) = lastStablePrePlayHand ?: return
         if (sessionLedger.state.handConfirmed) return
-        val result = sessionActor.post(LedgerCommand.ConfirmHand(cards, cards.total()))
+        // 张数用按牌边缘数出来的，不拿点数合计顶替：两者对不上账本就拒绝，本局手牌保持未确认，不会锁错。
+        val result = sessionActor.post(LedgerCommand.ConfirmHand(cards, handCount))
         OverlayService.refresh(this)
-        Log.i(TAG, "SELF_HAND_CONFIRM total=${cards.total()} cards=$cards result=${result.javaClass.simpleName}")
+        Log.i(
+            TAG,
+            "SELF_HAND_CONFIRM total=${cards.total()} positionCount=$handCount cards=$cards " +
+                "result=${result.javaClass.simpleName}"
+        )
     }
 
-    /** 手动新局先拿稳定几何数量，再把牌面候选作为显示猜测锁入新会话。 */
+    /** 手动新局先拿稳定几何数量，再拿牌面候选确认手牌；点数合计和张数对不上会被拒，手牌保持未确认。 */
     private fun completeManualNewGame(cards: RankCounts, handCount: Int) {
         if (!manualNewGameRequested || handCount <= 0) return
         manualNewGameRequested = false
         sessionActor.post(LedgerCommand.NewSession())
         val result = sessionActor.post(LedgerCommand.ConfirmHand(cards, handCount))
-        callbackHandler.post { resetSessionTracking(firstPlayIsArmed = true) }
+        // 手牌真的确认了才进入出牌记录；被拒就留在识别阶段继续认手牌，不能把手牌识别关掉。
+        val confirmed = result is DispatchResult.Accepted
+        callbackHandler.post { resetSessionTracking(firstPlayIsArmed = confirmed) }
         OverlayService.refresh(this)
         Log.i(
             TAG,
