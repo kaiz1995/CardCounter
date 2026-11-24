@@ -42,8 +42,9 @@
 - `complete=false` 表示录屏只覆盖半局（开头或结尾被截）。
 - `gameId` = `g<视频时间戳后 6 位>-<序号从 1 起>`，整个文件内不能重复。
 - `split` 必填，只能是 `dev | tuning | blind | clip`（小写、无空格）；写错直接报错，防止盲测局绕过拦截。
-- 除 `videoSha256`、`review`、`notes` 外的字段都必填，类型严格：时间是非负整数，`complete` 是布尔，`selfHand` 是字符串，不接受 `"true"`、`1.5`、`null` 这类近似值。
-- `selfHandCount` 必须为正；`selfHand` 合计小于它时视为点数不完整，按 `PARTIAL` 锁手牌，终局剩余牌标为不可算。
+- 除 `videoSha256`、`review`、`notes` 外的字段都必填，类型严格：时间是非负整数，`complete` 是布尔，`selfHand` 是字符串，不接受 `"true"`、`1.5`、`null` 这类近似值（`selfHandCount` 允许的 `null` 见下条）。
+- `selfHandCount` 为正整数，或显式写 `null` 表示手牌张数未知（字段不能省略）。`selfHand` 合计小于它时视为点数不完整，按 `PARTIAL` 锁手牌，终局剩余牌标为不可算（`self_hand_partial`）。
+- `selfHandCount` 为 `null` 时 `selfHand` 必须写 `""`。离线评测按 `UNKNOWN` 锁标称 33 张（198/6），只进数量账，终局剩余牌标为不可算（`self_hand_unknown`）；交贡、买 3 买 4 会让真实张数偏离 33，这类局的守恒暂停次数仅供参考。
 - 离线评测只回放 `[prePlayEndMs, endMs]` 内的观察帧；字段为 0 表示这一端不限。
 
 ## 3. 整局真值 `datasets/truth/<gameId>.csv`
