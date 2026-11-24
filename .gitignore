@@ -24,3 +24,13 @@ docs/*
 
 # 工具目录：WorkBuddy 记忆与工作区状态，不入库
 .workbuddy-ai/
+
+# 数据集与训练产物：只入库 games.json、truth/*.csv、脚本和最终选定模型
+datasets/frames/
+datasets/crops/
+datasets/review/
+datasets/synth/
+datasets/detections/
+datasets/sprites/
+tools/**/runs/
+tools/**/__pycache__/
