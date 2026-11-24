@@ -10,7 +10,6 @@ import com.example.cardcounter.capture.isPublicRankBand
 import com.example.cardcounter.domain.GameState
 import com.example.cardcounter.domain.Rank
 import com.example.cardcounter.domain.RankCounts
-import com.example.cardcounter.domain.RankCompleteness
 import com.example.cardcounter.domain.SessionPhase
 import com.example.cardcounter.recognition.Detection
 import com.example.cardcounter.recognition.FrameObservation
@@ -86,6 +85,8 @@ class LegacyPipeline(
     ) {
         val tableVisible = observation.tableVisible
         for (zone in PlayZone.entries) {
+            // 自己那一区的出牌完全不管：不判定、不发命令。
+            if (zone.source == PlaySource.SELF) continue
             // 缺省的区表示这一帧没有该区观察（DATA-FORMATS 第 5 节）：不推进清桌计数，也不动门控。
             val observed = observation.zones[zone] ?: continue
             val visible = tableVisible && isPlayVisible(observed.cardVisible)
@@ -145,15 +146,9 @@ class LegacyPipeline(
         }
         audit(LegacyAudit(finalized.zone, timestampMs, LegacyOutcome.ACCEPTED, stable.cards, finalized.frames.size))
         val evidenceId = UUID.randomUUID().toString()
-        val command = when (finalized.zone.source) {
-            PlaySource.SELF -> LedgerCommand.AcceptSelfPlay(
-                stable.cards, stable.cards.total(), RankCompleteness.COMPLETE, evidenceId
-            )
-            PlaySource.OUTSIDE -> LedgerCommand.AcceptOutsidePlay(
-                stable.cards, stable.cards.total(), requireNotNull(finalized.zone.seat),
-                RankCompleteness.COMPLETE, evidenceId
-            )
-        }
+        val command = LedgerCommand.AcceptOutsidePlay(
+            stable.cards, requireNotNull(finalized.zone.seat), evidenceId
+        )
         return PipelineDecision(command, finalized.zone, timestampMs)
     }
 

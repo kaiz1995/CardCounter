@@ -115,7 +115,7 @@ class OfflineEvalSmokeTest {
             assertEquals(0, json.getInt("pauseCount"))
             assertEquals(0, json.getInt("rejectionCount"))
             val remaining = json.getJSONObject("remaining")
-            assertEquals("COMPLETE", json.getString("lockHandCompleteness"))
+            assertTrue(json.getBoolean("selfHandConfirmed"))
             assertEquals(0, remaining.getJSONObject("diff").getInt("TWO"))
             assertEquals(0, remaining.getJSONObject("diff").getInt("KING"))
             val summary = Files.readString(out.resolve("summary.md"), StandardCharsets.UTF_8)
