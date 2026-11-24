@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 from pathlib import Path
 
@@ -108,15 +109,19 @@ CLIP_VIDEOS = ["SVID_20260727_201930_1.mp4", "SVID_20260728_135222_1.mp4", "SVID
 # Hand-zone validation split: three clips never used as sprite/training source.
 EVAL_CLIPS = ["SVID_20260728_145608_1.mp4", "SVID_20260728_145637_1.mp4", "SVID_20260728_145704_1.mp4"]
 
-# 145608 is excluded from the *scored* hand set: its truth vector claims two big
-# jokers plus one small joker, but from ~11s on the hand on screen holds a
-# single big joker and the extra card is gone, so every sampled frame would be
-# scored against a hand that is no longer displayed. Evidence: the 10s frame
-# shows JOKER/JOKER/joker (34 cards), the 13s frame only JOKER/joker (33).
-EVAL_HAND_CLIPS = ["SVID_20260728_145637_1.mp4", "SVID_20260728_145704_1.mp4"]
+# All three hold-out clips are scored. 145608's truth vector (2 big jokers + 1
+# small joker = 34 cards) matches the screen from 8.5 s to 12.0 s, which covers
+# the whole eval window [anchor-0.8, anchor+0.5]; the hand only drops to 33
+# cards at ~13 s. Earlier versions skipped it because eval_crops' own connected-
+# component locator rejected the window (two touching glyphs merged into one
+# cluster), which is a locator problem, not a truth/screen mismatch.
+EVAL_HAND_CLIPS = list(EVAL_CLIPS)
 
 # The only source/ recordings allowed to give negative (no-card) patches to training.
 NEGATIVE_SOURCE_VIDEOS = ["SVID_20260810_102658_1.mp4"]
+# source/ recordings used to measure play-zone card geometry (numbers only, no
+# pixels enter training). Must stay disjoint from the evaluation recordings.
+PLAY_GEOMETRY_VIDEOS = ["SVID_20260810_102658_1.mp4", "SVID_20260727_201930_1.mp4"]
 # Empty play-zone false-positive check: recordings that never fed a negative.
 # Must stay disjoint from NEGATIVE_SOURCE_VIDEOS (guarded by test_whitelist.py).
 EMPTY_ZONE_EVAL_VIDEOS = ["SVID_20260810_143651_1.mp4", "SVID_20260811_075639_1.mp4"]
@@ -126,18 +131,28 @@ class NotWhitelisted(RuntimeError):
     """Raised when a script touches a video outside the allowed sets."""
 
 
+# Case/separator-normalised absolute locations. The gate compares the *whole*
+# parent directory, never just its last path component, so a same-named folder
+# anywhere else (D:/x/source/..., C:/tmp/9局/...) is rejected.
+_NINE_DIR = os.path.normcase(str(NINE_GAMES.resolve()))
+_SOURCE_DIR = os.path.normcase(str(SOURCE.resolve()))
+_NINE_NAMES = {os.path.normcase(n) for n in ALLOWED_NINE_GAMES}
+_SOURCE_NAMES = {os.path.normcase(n) for n in ALLOWED_SOURCE}
+
+
 def ensure_allowed(path: str | Path) -> Path:
     """Return the resolved path, or raise if it is blind/tuning/unknown."""
 
     resolved = Path(path).resolve()
-    name = resolved.name
+    name = os.path.normcase(resolved.name)
+    parent = os.path.normcase(str(resolved.parent))
     text = str(resolved).replace("\\", "/")
     for token in DENIED_TOKENS:
         if token in text:
             raise NotWhitelisted(f"refusing to read non-whitelisted video (denied token {token}): {resolved}")
-    if name in ALLOWED_NINE_GAMES and resolved.parent.name == "9局":
+    if name in _NINE_NAMES and parent == _NINE_DIR:
         return resolved
-    if name in ALLOWED_SOURCE and resolved.parent.name == "source":
+    if name in _SOURCE_NAMES and parent == _SOURCE_DIR:
         return resolved
     raise NotWhitelisted(f"refusing to read video outside whitelist: {resolved}")
 
@@ -175,6 +190,31 @@ def grab_frames(path: str | Path, seconds) -> dict[float, np.ndarray]:
             ok, frame = capture.read()
             if ok and frame is not None:
                 frames[float(second)] = frame
+    finally:
+        capture.release()
+    return frames
+
+
+def read_window(path: str | Path, start_s: float, end_s: float) -> list[tuple[int, float, np.ndarray]]:
+    """Every physical frame of the video inside [start_s, end_s].
+
+    Returns [(frame_index, second, bgr frame)]. The clip's real frame rate sets
+    the sampling, so a 60 fps clip yields ~60 frames per second (not a fixed
+    count that would score the same frame several times).
+    """
+
+    capture = open_video(path)
+    frames: list[tuple[int, float, np.ndarray]] = []
+    try:
+        fps = capture.get(cv2.CAP_PROP_FPS) or 30.0
+        first = max(0, int(round(start_s * fps)))
+        last = int(round(end_s * fps))
+        capture.set(cv2.CAP_PROP_POS_FRAMES, first)
+        for index in range(first, last + 1):
+            ok, frame = capture.read()
+            if not ok or frame is None:
+                break
+            frames.append((index, index / fps, frame))
     finally:
         capture.release()
     return frames
@@ -248,6 +288,22 @@ def letterbox(img: np.ndarray, size: int = MODEL_INPUT, pad: int = LETTERBOX_PAD
     dx, dy = (size - new_w) // 2, (size - new_h) // 2
     out[dy:dy + new_h, dx:dx + new_w] = resized
     return out, scale, dx, dy
+
+
+def unletterbox_boxes(boxes, scale, dx, dy) -> np.ndarray:
+    """Inverse of boxes_to_letterbox: model pixels -> source-crop pixels."""
+
+    boxes = np.asarray(boxes, np.float32).reshape(-1, 4).copy()
+    boxes[:, [0, 2]] -= dx
+    boxes[:, [1, 3]] -= dy
+    return boxes / scale
+
+
+def stable_hash(*parts) -> int:
+    """Process-independent hash (the builtin hash() of str is randomised per run)."""
+
+    digest = hashlib.sha1("|".join(str(p) for p in parts).encode("utf-8")).digest()
+    return int.from_bytes(digest[:8], "big")
 
 
 def boxes_to_letterbox(boxes, scale, dx, dy) -> np.ndarray:

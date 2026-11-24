@@ -39,6 +39,35 @@ class WhitelistGateTest(unittest.TestCase):
         # A copy of an allowed clip name outside 9局/ must not slip through.
         self.assertDenied(common.DATA_ROOT / "_scratch" / "SVID_20260728_145252_1.mp4")
 
+    def test_any_dir_named_source_denied(self):
+        # Folder name alone is not enough: the full parent directory must match.
+        self.assertDenied(Path(r"D:\CardCounterData\source\SVID_20260810_102658_1.mp4"))
+        self.assertDenied(Path(r"C:\tmp\source\SVID_20260727_201930_1.mp4"))
+        self.assertDenied(common.DATA_ROOT / "source" / "SVID_20260811_075639_1.mp4")
+
+    def test_any_dir_named_nine_games_denied(self):
+        self.assertDenied(Path(r"C:\tmp\9局\SVID_20260728_145252_1.mp4"))
+        self.assertDenied(Path(r"D:\CardCounterData\9局\SVID_20260728_145637_1.mp4"))
+        self.assertDenied(common.DATA_ROOT / "9局" / "SVID_20260728_145704_1.mp4")
+
+    def test_nested_or_sibling_dir_denied(self):
+        self.assertDenied(common.SOURCE / "copy" / "SVID_20260810_102658_1.mp4")
+        self.assertDenied(common.NINE_GAMES / "source" / "SVID_20260728_145252_1.mp4")
+        self.assertDenied(common.SOURCE / "9局" / "SVID_20260728_145252_1.mp4")
+        # whitelisted 9局 name inside source/ and vice versa
+        self.assertDenied(common.SOURCE / "SVID_20260728_145252_1.mp4")
+        self.assertDenied(common.NINE_GAMES / "SVID_20260810_102658_1.mp4")
+
+    def test_real_dir_matches_case_insensitively(self):
+        # normcase: a differently cased spelling of the real directory still resolves to it.
+        lowered = Path(str(common.SOURCE).lower()) / "svid_20260810_102658_1.mp4"
+        self.assertEqual(common.ensure_allowed(lowered).name.lower(), "svid_20260810_102658_1.mp4")
+
+    def test_play_geometry_videos_are_allowed_and_disjoint_from_eval(self):
+        for name in common.PLAY_GEOMETRY_VIDEOS:
+            common.ensure_allowed(common.SOURCE / name)
+        self.assertFalse(set(common.PLAY_GEOMETRY_VIDEOS) & set(common.EMPTY_ZONE_EVAL_VIDEOS))
+
     def test_open_video_denied_before_capture(self):
         with self.assertRaises(common.NotWhitelisted):
             common.open_video(common.SOURCE / "SVID_20260815_202234_1.mp4")
