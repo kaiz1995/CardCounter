@@ -36,6 +36,7 @@ HAND_STRIP_H = C.HAND_BOTTOM - C.HAND_TOP      # 140
 HAND_ROW_TOPS = (42, 104)                       # measured inside the strip
 OUTSIDE_PITCH = 15.0
 SELF_PITCH = 22.0
+FADE_PROB = 0.15  # share of play scenes drawn as a semi-transparent fade-in frame
 
 
 class Assets:
@@ -103,10 +104,16 @@ def paste_cards(
     card_scale: float,
     alpha: float = 1.0,
     body_h: int = 0,
-) -> list[list[float]]:
-    """Paste cards left to right, later cards on top; return glyph boxes."""
+) -> list[tuple[list[float], int]]:
+    """Paste cards left to right, later cards on top.
 
-    boxes: list[list[float]] = []
+    Returns ``(glyph_box, card_index)`` for every card that really landed on the
+    canvas with its rank glyph visible. ``card_index`` is the position in
+    ``tiles``: a card that is skipped (off-canvas) must also drop its class, so
+    callers pair labels by index, never by list prefix.
+    """
+
+    placed: list[tuple[list[float], int]] = []
     x0, y0 = start
     for index, tile in enumerate(tiles):
         image = tile["image"]
@@ -136,13 +143,16 @@ def paste_cards(
                 canvas[y + height:body_bottom, x:x + width] = (250, 250, 248)
         gx0 = x + tile["off_x"] * card_scale
         gy0 = y + tile["off_y"] * card_scale
-        gx1 = gx0 + tile["glyph_w"] * card_scale
-        gy1 = gy0 + tile["glyph_h"] * card_scale
-        gx1 = min(gx1, canvas.shape[1])
-        gy1 = min(gy1, canvas.shape[0])
-        if gx1 - gx0 >= 2 and gy1 - gy0 >= 3:
-            boxes.append([gx0, gy0, gx1, gy1])
-    return boxes
+        full_w = tile["glyph_w"] * card_scale
+        full_h = tile["glyph_h"] * card_scale
+        gx1 = min(gx0 + full_w, canvas.shape[1])
+        gy1 = min(gy0 + full_h, canvas.shape[0])
+        visible = max(0.0, gx1 - gx0) * max(0.0, gy1 - gy0)
+        # A glyph clipped by the canvas edge (hand row 2 is cut by the 140px
+        # strip) is still a valid sample when most of it is visible.
+        if gx1 - gx0 >= 2 and gy1 - gy0 >= 3 and visible >= 0.85 * full_w * full_h:
+            placed.append(([gx0, gy0, gx1, gy1], index))
+    return placed
 
 
 def make_play_scene(assets: Assets, rng: random.Random, self_zone: bool):
@@ -172,16 +182,29 @@ def make_play_scene(assets: Assets, rng: random.Random, self_zone: bool):
 
     background = zone_background(zone, w, h, assets, rng)
     card_scale = rng.uniform(0.94, 1.06)
-    stacked_width = (count - 1) * pitch * card_scale + card_w * card_scale
+    step = pitch * card_scale
+
+    def last_glyph_right(n: int) -> float:
+        tile_n = tiles[n - 1]
+        return (n - 1) * step + (tile_n["off_x"] + tile_n["glyph_w"]) * card_scale
+
+    # A stack wider than the crop (TOP is only 82px wide) keeps the cards whose
+    # glyph fits and drops the rest, so no half-visible unlabeled glyph remains.
+    while count > 1 and last_glyph_right(count) > w - 2:
+        count -= 1
+    ranks, tiles = ranks[:count], tiles[:count]
+    stacked_width = (count - 1) * step + card_w * card_scale
     x0 = (w - stacked_width) / 2 + rng.uniform(-3, 3)
+    x0 = min(max(x0, 0.0), max(0.0, w - last_glyph_right(count) - 1))
     glyph_mid = h * (0.45 if self_zone else 0.57)
     tile = tiles[0]
     y0 = glyph_mid - (tile["off_y"] + tile["glyph_h"] / 2) * card_scale + rng.uniform(-2, 2)
     alpha = 1.0
-    if rng.random() < 0.15:
+    if rng.random() < FADE_PROB:
         alpha = rng.uniform(0.55, 0.9)  # fade-in frame
-    boxes = paste_cards(background, tiles, (x0, y0), pitch * card_scale, card_scale, alpha)
-    classes = [C.RANK_TO_ID[rank] for rank in ranks[: len(boxes)]]
+    placed = paste_cards(background, tiles, (x0, y0), step, card_scale, alpha)
+    boxes = [box for box, _ in placed]
+    classes = [C.RANK_TO_ID[ranks[index]] for _, index in placed]
     return background, boxes, classes
 
 
@@ -203,20 +226,23 @@ def make_hand_scene(assets: Assets, rng: random.Random):
         ranks = [rng.choice(C.RANKS) for _ in range(count)]
         pitch = (HAND_STRIP_W - 52) / max(1, count - 1)
         pitch = max(40.0, min(pitch, 52.0))
-        start_x = (HAND_STRIP_W - ((count - 1) * pitch + 52)) / 2 + rng.uniform(-3, 3)
+        row_width = (count - 1) * pitch + 52
+        start_x = (HAND_STRIP_W - row_width) / 2 + rng.uniform(-3, 3)
+        # 17-18 cards fill the strip edge to edge: keep the whole row inside it.
+        start_x = min(max(start_x, 0.0), max(0.0, HAND_STRIP_W - row_width))
         tiles = []
         for rank in ranks:
             pool = assets.tiles[("hand", rank)]
             tiles.append(rng.choice(pool))
-        row_boxes = paste_cards(
+        placed = paste_cards(
             strip, tiles, (start_x, row_top - 2), pitch, 1.0, 1.0, body_h=70
         )
-        boxes.extend(row_boxes)
-        classes.extend([C.RANK_TO_ID[r] for r in ranks[: len(row_boxes)]])
+        boxes.extend(box for box, _ in placed)
+        classes.extend(C.RANK_TO_ID[ranks[index]] for _, index in placed)
 
-    canvas = np.zeros((HAND_STRIP_W, HAND_STRIP_W, 3), np.uint8)  # app fills 0
-    canvas[C.HAND_PAD_TOP:C.HAND_PAD_TOP + HAND_STRIP_H] = strip
-    return canvas, boxes, classes, "hand"
+    # Boxes are in strip pixels; the caller augments the strip and then parks it
+    # on the 870x870 zero canvas (C.hand_canvas), so the black padding stays 0.
+    return strip, boxes, classes
 
 
 def make_negative_scene(assets: Assets, rng: random.Random):
@@ -230,6 +256,9 @@ def make_negative_scene(assets: Assets, rng: random.Random):
 
 
 def augment(image: np.ndarray, rng: random.Random) -> np.ndarray:
+    """Photometric augmentation of real content only (never of padding)."""
+
+    noise_rng = np.random.default_rng(rng.getrandbits(32))  # seeded: reproducible sets
     if rng.random() < 0.7:
         gain = rng.uniform(0.86, 1.14)
         bias = rng.uniform(-14, 14)
@@ -244,30 +273,43 @@ def augment(image: np.ndarray, rng: random.Random) -> np.ndarray:
     if rng.random() < 0.3:
         noise = rng.uniform(0.5, 3.0)
         image = np.clip(
-            image.astype(np.float32) + np.random.normal(0, noise, image.shape), 0, 255
+            image.astype(np.float32) + noise_rng.normal(0, noise, image.shape), 0, 255
         ).astype(np.uint8)
     return image
 
 
-def render(assets: Assets, rng: random.Random):
-    roll = rng.random()
-    if roll < 0.45:
-        raw, boxes, classes = make_play_scene(assets, rng, self_zone=False)
-    elif roll < 0.62:
-        raw, boxes, classes = make_play_scene(assets, rng, self_zone=True)
-    elif roll < 0.92:
-        raw, boxes, classes, _ = make_hand_scene(assets, rng)
-        image = cv2.resize(raw, (C.MODEL_INPUT, C.MODEL_INPUT), interpolation=cv2.INTER_LINEAR)
+def render(assets: Assets, rng: random.Random, kind: str | None = None):
+    """One 320x320 tile + boxes + classes.
+
+    ``kind`` (outside | self | hand | neg) forces the scene type; None draws it
+    at random. Augmentation runs on the content (play crop / hand strip) before
+    letterbox or canvas padding, so padding stays exactly 114 (play zones) and 0
+    (hand canvas), like the phone's.
+    """
+
+    if kind is None:
+        roll = rng.random()
+        kind = "outside" if roll < 0.45 else "self" if roll < 0.62 else "hand" if roll < 0.92 else "neg"
+    if kind == "hand":
+        strip, boxes, classes = make_hand_scene(assets, rng)
+        strip = augment(strip, rng)
+        canvas = C.hand_canvas(strip)  # 870x870, zeros around the strip
+        image = cv2.resize(canvas, (C.MODEL_INPUT, C.MODEL_INPUT), interpolation=cv2.INTER_LINEAR)
         scale = C.MODEL_INPUT / HAND_STRIP_W
         boxes = [[x * scale, (y + C.HAND_PAD_TOP) * scale, x2 * scale, (y2 + C.HAND_PAD_TOP) * scale]
                  for x, y, x2, y2 in boxes]
-        return augment(image, rng), boxes, classes
+        return image, boxes, classes
+    if kind == "outside":
+        raw, boxes, classes = make_play_scene(assets, rng, self_zone=False)
+    elif kind == "self":
+        raw, boxes, classes = make_play_scene(assets, rng, self_zone=True)
     else:
         raw, boxes, classes = make_negative_scene(assets, rng)
 
+    raw = augment(raw, rng)
     image, scale, dx, dy = C.letterbox(raw)
     boxes = C.boxes_to_letterbox(boxes, scale, dx, dy).tolist() if boxes else []
-    return augment(image, rng), boxes, classes
+    return image, boxes, classes
 
 
 def build_dataset(n_train: int, n_val: int, seed: int = 20261124, clean: bool = True) -> Path:
