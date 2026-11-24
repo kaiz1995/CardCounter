@@ -1,7 +1,7 @@
 package com.example.cardcounter.capture
 
 /** 仅在牌面连续停稳后交出 ROI；交出后锁区，清桌才允许下一手。 */
-internal class RoiPlayEventCache<T>(
+class RoiPlayEventCache<T>(
     private val maxFrames: Int = 8,
     private val clearSamples: Int = 6,
     private val stableSamples: Int = 15,

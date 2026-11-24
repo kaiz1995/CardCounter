@@ -13,4 +13,4 @@ dependencyResolutionManagement {
     }
 }
 rootProject.name = "CardCounter"
-include(":app")
+include(":app", ":core", ":eval")

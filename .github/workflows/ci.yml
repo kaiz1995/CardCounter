@@ -1,0 +1,26 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main, rebuild/v2-base]
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: 单测与打包
+        run: ./gradlew --no-daemon :core:test :eval:build :app:testDebugUnitTest :app:assembleDebug
+      - name: 核心模块不得引用安卓
+        run: |
+          if grep -rn "^import android" core/src; then
+            echo "core/ 是纯 Kotlin 模块，手机和电脑离线评测共用；安卓相关代码请放 app/。"
+            exit 1
+          fi

@@ -125,25 +125,6 @@ class StablePlayGateTest {
     }
 
     @Test
-    fun restartPrimeSkipsCardsAlreadyOnTable() {
-        val gate = StablePlayGate()
-        gate.prime(PlayZone.LEFT_TOP, fives)
-        repeat(2) { assertNull(gate.update(PlayZone.LEFT_TOP, fives)) }
-        repeat(6) { gate.update(PlayZone.LEFT_TOP, RankCounts.zero()) }
-        assertNull(gate.update(PlayZone.LEFT_TOP, fives))
-        assertEquals(StablePlay(PlayZone.LEFT_TOP, fives), gate.update(PlayZone.LEFT_TOP, fives))
-    }
-
-    @Test
-    fun resetsUnknownCounterWhenZoneClearsOrRankMatches() {
-        assertEquals(1, stableUnknownCount(0, cardsVisible = true, cards = RankCounts.zero()))
-        assertFalse(isStableUnknownPlay(2))
-        assertTrue(isStableUnknownPlay(3))
-        assertEquals(0, stableUnknownCount(1, cardsVisible = false, cards = RankCounts.zero()))
-        assertEquals(0, stableUnknownCount(1, cardsVisible = true, cards = fives))
-    }
-
-    @Test
     fun rejectsYoloFalsePositiveWithoutWhiteCardArea() {
         assertFalse(isPlayVisible(whiteAreaVisible = false))
         assertTrue(isPlayVisible(whiteAreaVisible = true))
@@ -204,29 +185,5 @@ class StablePlayGateTest {
         assertTrue(shouldAuditAce(PlayZone.LEFT_BOTTOM, ace))
         assertFalse(shouldAuditAce(PlayZone.TOP, ace))
         assertFalse(shouldAuditAce(PlayZone.LEFT_BOTTOM, RankCounts.of(mapOf(Rank.KING to 1))))
-    }
-
-    @Test
-    fun aceAuditMetadataContainsFusionFields() {
-        val ace = RankCounts.of(mapOf(Rank.ACE to 1))
-        val metadata = aceAuditMetadata(PlayZone.LEFT_BOTTOM, 3, 42, ace,
-            listOf(RankCountsCandidate(ace, .8f, ace, ace, 1)))
-        val candidate = metadata.candidates.single()
-        assertEquals("LEFT_BOTTOM", metadata.zone); assertEquals(3, metadata.generation); assertEquals(42, metadata.timeMs)
-        assertEquals(ace, candidate.fusedCards); assertEquals(ace, candidate.yoloCards)
-        assertEquals(ace, candidate.templateCards); assertEquals(.8f, candidate.minimumConfidence)
-        assertEquals(1, candidate.cardCount)
-        assertEquals(1, rankCountsMap(metadata.winner)["ACE"])
-        assertEquals(1, rankCountsMap(candidate.fusedCards)["ACE"])
-    }
-
-    @Test
-    fun keepsOverlappingPublicCardsSeparate() {
-        val matches = listOf(
-            HandRankMatcher.Match(100, Rank.SEVEN, 1.0),
-            HandRankMatcher.Match(114, Rank.SEVEN, 0.9)
-        )
-
-        assertEquals(2, selectDistinctMatches(matches, maxCount = 12, minGap = 10).size)
     }
 }

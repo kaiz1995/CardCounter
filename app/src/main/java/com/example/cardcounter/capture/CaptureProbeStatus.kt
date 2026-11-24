@@ -106,11 +106,6 @@ internal class SingleFlightGate {
     }
 }
 
-internal data class OpeningSignals(
-    val controlsVisible: Boolean,
-    val centerCardsVisible: Boolean
-)
-
 internal enum class FirstPlayBoundary {
     NONE,
     LOCK
@@ -120,7 +115,7 @@ internal class FirstPlayBoundaryGate {
     private var readySamples = 0
     private var fired = false
 
-    fun update(signals: OpeningSignals, hasStableHand: Boolean): FirstPlayBoundary {
+    fun update(hasStableHand: Boolean): FirstPlayBoundary {
         if (fired) return FirstPlayBoundary.NONE
         readySamples = if (hasStableHand) readySamples + 1 else 0
         if (readySamples < 2) return FirstPlayBoundary.NONE

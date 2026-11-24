@@ -41,7 +41,7 @@ import com.example.cardcounter.vision.MnnYoloDetector
 import java.util.UUID
 import kotlin.math.roundToInt
 
-/** 仅验证 MediaProjection 与帧流，不在此处实现视觉识别。 */
+/** MediaProjection 采集服务：取帧、手牌锁定、六区出牌识别并经 SessionActor 入账。W5 会把识别与状态机拆进 :core。 */
 class CaptureProbeService : Service() {
     private var projection: MediaProjection? = null
     private var display: VirtualDisplay? = null
@@ -67,15 +67,9 @@ class CaptureProbeService : Service() {
     private var stableRankCandidates = 0
     private var selfHandCountCandidate: Int? = null
     private var stableSelfHandCounts = 0
-    private val selfHandCountTracker = SelfHandCountTracker(
-        stableSamplesRequired = STABLE_HAND_COUNT_SAMPLES,
-        suspectedNewGameIncrease = SUSPECTED_NEW_GAME_INCREASE
-    )
     private var rankRevision = -1L
     private val rankProbeGate = SingleFlightGate()
     private val stablePlayGate = StablePlayGate()
-    private val unknownPlaySamples = PlayZone.entries.associateWith { 0 }.toMutableMap()
-    private val lastPlayCandidates = PlayZone.entries.associateWith<PlayZone, RankCounts?> { null }.toMutableMap()
     private val roiEventCache = RoiPlayEventCache<RoiFrame>(
         isStill = { previous, current -> roiFramesAreStill(previous.bitmap, current.bitmap) },
         discard = { it.bitmap.recycle() }
@@ -87,7 +81,6 @@ class CaptureProbeService : Service() {
     @Volatile private var firstPlayArmed = false
     @Volatile private var manualNewGameRequested = false
     @Volatile private var lastStablePrePlayHand: RankCounts? = null
-    @Volatile private var primeSamplesRemaining = 0
     private val firstPlayGate = FirstPlayBoundaryGate()
     private lateinit var sessionLedger: SessionRepository
     private lateinit var sessionActor: SessionActor
@@ -100,7 +93,7 @@ class CaptureProbeService : Service() {
         handCardPositionDetector = HandCardPositionDetector()
         issueSampleStore = IssueSampleStore(this)
         // 单写者：本服务生命周期内所有账本写入都经过它串行执行。
-        sessionLedger = SessionRepository(this)
+        sessionLedger = SessionRepository.get(this)
         // 单写者：读 phase 也走同一个 Repository 实例，杜绝临时实例 init 触发的旁路写盘。
         sessionActor = SessionActor(sessionLedger)
         diagnosticsLog = DiagnosticsLog()
@@ -194,7 +187,6 @@ class CaptureProbeService : Service() {
             lastReportFrames = 0L
             val activeSession = sessionLedger.state.phase == SessionPhase.ACTIVE
             resetSessionTracking(firstPlayIsArmed = activeSession)
-            primeSamplesRemaining = if (activeSession) RESTART_PRIME_SAMPLES else 0
             reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 3).also {
                 it.setOnImageAvailableListener(::onImageAvailable, callbackHandler)
             }
@@ -236,7 +228,6 @@ class CaptureProbeService : Service() {
                 val signature = handSignature(image)
                 val change = handChangePercent(lastHandSignature, signature)
                 stableHandSamples = if (change != null && change <= STABLE_CHANGE_PERCENT) stableHandSamples + 1 else 0
-                val signals = openingSignals(image)
                 val handChanged = change == null || change > STABLE_CHANGE_PERCENT
                 if (shouldInvalidatePrePlayHand(
                         firstPlayArmed,
@@ -252,12 +243,7 @@ class CaptureProbeService : Service() {
                 lastHandSignature = signature
                 lastHandSampleAt = now
 
-                if (firstPlayArmed) {
-                    val luma = handCardPositionDetector.snapshot(image)
-                    rankHandler.post { observeSelfHandCount(luma) }
-                }
-
-                when (firstPlayGate.update(signals, lastStablePrePlayHand != null)) {
+                when (firstPlayGate.update(lastStablePrePlayHand != null)) {
                     FirstPlayBoundary.LOCK -> {
                         firstPlayArmed = true
                         lockPrePlayHand()
@@ -391,33 +377,6 @@ class CaptureProbeService : Service() {
             .notify(NOTIFICATION_ID, notification(text))
     }
 
-    private fun openingSignals(image: Image): OpeningSignals {
-        val green = averageRgb(image, 510, 325, 600, 365)
-        val controlsVisible = green[1] > 180 && green[1] > green[0] + 40 && green[1] > green[2] + 70
-        var cardEdgeColumns = 0
-        for (x in 480..800 step 4) {
-            val belowWhite = (206..213).any { y -> isWhite(image, x, y) }
-            val aboveWhite = (194..202).any { y -> isWhite(image, x, y) }
-            if (belowWhite && !aboveWhite) cardEdgeColumns++
-        }
-        return OpeningSignals(controlsVisible, cardEdgeColumns >= 15)
-    }
-
-    private fun averageRgb(image: Image, left: Int, top: Int, right: Int, bottom: Int): IntArray {
-        val result = IntArray(3)
-        var samples = 0
-        for (y in top until bottom step 8) for (x in left until right step 10) {
-            val color = rgb(image, x, y)
-            result.indices.forEach { result[it] += color[it] }
-            samples++
-        }
-        result.indices.forEach { result[it] /= samples }
-        return result
-    }
-
-    private fun isWhite(image: Image, canonicalX: Int, canonicalY: Int): Boolean =
-        rgb(image, canonicalX, canonicalY).all { it >= 160 }
-
     private fun rgb(image: Image, canonicalX: Int, canonicalY: Int): IntArray {
         val plane = image.planes[0]
         val x = canonicalX * image.width / 1_280
@@ -440,118 +399,9 @@ class CaptureProbeService : Service() {
         manualNewGameRequested = false
         sessionActor.post(LedgerCommand.NewSession())
         sessionActor.post(LedgerCommand.LockHand(cards, handCount, RankCompleteness.COMPLETE))
-        selfHandCountTracker.reset(handCount)
-        callbackHandler.post {
-            resetSessionTracking(firstPlayIsArmed = true)
-            selfHandCountTracker.reset(handCount)
-        }
+        callbackHandler.post { resetSessionTracking(firstPlayIsArmed = true) }
         OverlayService.refresh(this)
         Log.i(TAG, "MANUAL_NEW_GAME_LOCKED count=$handCount rankTotal=${cards.total()}")
-    }
-
-    /** 手牌几何只作诊断；自己出牌只由 SELF 出牌区入账。 */
-    private fun observeSelfHandCount(luma: IntArray) {
-        when (val change = selfHandCountTracker.observe(handCardPositionDetector.detect(luma))) {
-            null -> return
-            is SelfHandCountChange.DecreaseObserved -> {
-                Log.i(TAG, "SELF_HAND_COUNT_DECREASE_REFERENCE cardCount=${change.cardCount}")
-            }
-            is SelfHandCountChange.ReboundIgnored -> {
-                Log.w(TAG, "SELF_HAND_COUNT_INCREASE previous=${change.previous} current=${change.current}")
-                if (change.suspectedNewGame) {
-                    Log.i(TAG, "SELF_HAND_SUSPECTED_NEW_GAME previous=${change.previous} current=${change.current}")
-                }
-            }
-        }
-    }
-
-    /** 可用初版1：牌仍可见时连续两次相同候选即记账。 */
-    private fun detectFormalPlays(
-        ink: HandRankMatcher.InkFrame,
-        visiblePlayZones: Map<PlayZone, Boolean>,
-        yoloFrames: Map<PlayZone, Bitmap>,
-        tableVisible: Boolean
-    ) {
-        if (!tableVisible) return
-        if (sessionLedger.state.phase != SessionPhase.ACTIVE) return
-        val priming = primeSamplesRemaining > 0
-        PlayZone.entries.forEach { zone ->
-            val templateCards = handRankMatcher.detectPlay(ink, zone)
-            val yoloCards = yoloFrames[zone]?.let { detectYoloCards(it, publicPlay = true) }
-            val cards = yoloCards?.cards?.takeIf { it.total() > 0 } ?: templateCards
-            val visible = isPlayVisible(visiblePlayZones[zone] == true)
-            if (cards != lastPlayCandidates[zone]) {
-                Log.i(
-                    TAG,
-                    "PLAY_CANDIDATE zone=$zone visible=$visible yolo=$yoloCards template=$templateCards cards=$cards"
-                )
-                // 每条最终候选记 OBSERVED；候选为空不计数量。
-                recordDiagnostics(
-                    null, zone,
-                    quantity = cards.total().takeIf { it > 0 },
-                    rankTotal = cards.total().takeIf { it > 0 },
-                    decision = DiagnosticsLog.Decision.OBSERVED
-                )
-                lastPlayCandidates[zone] = cards
-            }
-            if (!visible) {
-                stablePlayGate.update(zone, RankCounts.zero())
-                unknownPlaySamples[zone] = 0
-                return@forEach
-            }
-            if (priming) {
-                stablePlayGate.prime(zone, cards)
-                return@forEach
-            }
-            val unknownSamples = stableUnknownCount(unknownPlaySamples.getValue(zone), visible, cards)
-            unknownPlaySamples[zone] = unknownSamples
-            if (isStableUnknownPlay(unknownSamples)) {
-                stablePlayGate.update(zone, RankCounts.zero())
-                if (unknownSamples == UNKNOWN_SKIP_SAMPLES) {
-                    Log.w(TAG, "PLAY_SKIPPED_UNKNOWN zone=$zone")
-                }
-                return@forEach
-            }
-            val play = stablePlayGate.update(zone, cards) ?: return@forEach
-            recordDiagnostics(
-                null, zone,
-                quantity = play.cards.total(),
-                rankTotal = play.cards.total(),
-                decision = DiagnosticsLog.Decision.STABLE
-            )
-            // 单写者派发：evidenceId 兼作账本事件 id，重试不会重复扣牌。
-            val command = play.toLedgerCommand()
-            val result = sessionActor.post(command)
-            recordDiagnostics(
-                command.evidenceId, zone,
-                quantity = play.cards.total(),
-                rankTotal = play.cards.total(),
-                decision = DiagnosticsLog.Decision.forResult(result),
-                reason = reasonOf(result)
-            )
-            when (result) {
-                is DispatchResult.Rejected -> {
-                    OverlayService.refresh(this)
-                    Log.w(TAG, "PLAY_REJECTED zone=${play.zone} reason=${result.reason}")
-                }
-                is DispatchResult.Paused -> {
-                    OverlayService.refresh(this)
-                    Log.w(TAG, "PLAY_PAUSED zone=${play.zone} reason=${result.reason}")
-                }
-                else -> {
-                    OverlayService.refresh(this)
-                    Log.i(
-                        TAG,
-                        "FORMAL_PLAY source=${play.zone.source} zone=${play.zone} " +
-                            "cards=${play.cards} decision=${DiagnosticsLog.Decision.forResult(result)}"
-                    )
-                }
-            }
-        }
-        if (priming) {
-            primeSamplesRemaining -= 1
-            if (primeSamplesRemaining == 0) Log.i(TAG, "PLAY_GATE_PRIMED_AFTER_RESTART")
-        }
     }
 
     /** 截屏回调仅缓存小 ROI；牌面连续停稳后才推理，清桌是未停稳的兜底。 */
@@ -839,7 +689,6 @@ class CaptureProbeService : Service() {
         }
 
     private fun resetSessionTracking(firstPlayIsArmed: Boolean) {
-        if (!firstPlayIsArmed) primeSamplesRemaining = 0
         val generation = ++captureGeneration
         roiEventCache.reset(generation, primeExistingTable = firstPlayIsArmed)
         restartPrimeDeadlineAt = if (firstPlayIsArmed) {
@@ -858,21 +707,12 @@ class CaptureProbeService : Service() {
         lastStablePrePlayHand = null
         selfHandCountCandidate = null
         stableSelfHandCounts = 0
-        selfHandCountTracker.reset(if (firstPlayIsArmed) {
-            sessionLedger.state.selfLockedHandCount
-        } else {
-            null
-        })
         firstPlayGate.reset()
         rankHandler.post {
             lastRankCandidate = null
             stableRankCandidates = 0
             rankRevision = -1L
             stablePlayGate.reset()
-            PlayZone.entries.forEach {
-                unknownPlaySamples[it] = 0
-                lastPlayCandidates[it] = null
-            }
         }
     }
 
@@ -907,12 +747,9 @@ class CaptureProbeService : Service() {
         private const val HAND_SIGNATURE_ROWS = 8
         private const val RANK_PROBE_INTERVAL_MS = 250L
         private const val STABLE_HAND_COUNT_SAMPLES = 2
-        private const val SUSPECTED_NEW_GAME_INCREASE = 10
         private const val MANUAL_NEW_GAME_TIMEOUT_MS = 3_000L
         private const val PLAY_VISIBILITY_STEP = 8
         private const val PLAY_WHITE_LIMIT = 190
-        private const val UNKNOWN_SKIP_SAMPLES = 3
-        private const val RESTART_PRIME_SAMPLES = 3
         private const val ROI_SAMPLE_INTERVAL_MS = 50L
         private const val ROI_MOTION_SAMPLE_STEP = 3
         private const val ROI_MOTION_CHANNEL_DELTA = 12
