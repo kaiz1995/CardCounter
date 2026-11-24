@@ -8,9 +8,11 @@ import com.example.cardcounter.domain.GameReducer
 import com.example.cardcounter.domain.GameState
 import com.example.cardcounter.storage.LedgerGateway
 
-class SessionRepository(context: Context) : LedgerGateway {
+/** 进程内唯一实例，经 [get] 取得；写入只允许通过 SessionActor。 */
+class SessionRepository private constructor(context: Context) : LedgerGateway {
     private val store = SessionStore(context.applicationContext)
 
+    @Volatile
     override var state: GameState
         private set
 
@@ -49,7 +51,15 @@ class SessionRepository(context: Context) : LedgerGateway {
         }
     }
 
-    private companion object {
-        const val TAG = "SessionRepository"
+    companion object {
+        private const val TAG = "SessionRepository"
+
+        @Volatile
+        private var instance: SessionRepository? = null
+
+        fun get(context: Context): SessionRepository =
+            instance ?: synchronized(this) {
+                instance ?: SessionRepository(context.applicationContext).also { instance = it }
+            }
     }
 }

@@ -76,32 +76,29 @@ class HandCandidateDiagnosticsTest {
     @Test
     fun locksAfterTwoStableHandSamples() {
         val gate = FirstPlayBoundaryGate()
-        val frame = OpeningSignals(controlsVisible = false, centerCardsVisible = false)
 
-        assertEquals(FirstPlayBoundary.NONE, gate.update(frame, hasStableHand = false))
-        assertEquals(FirstPlayBoundary.NONE, gate.update(frame, hasStableHand = true))
-        assertEquals(FirstPlayBoundary.LOCK, gate.update(frame, hasStableHand = true))
-        assertEquals(FirstPlayBoundary.NONE, gate.update(frame, hasStableHand = true))
+        assertEquals(FirstPlayBoundary.NONE, gate.update(hasStableHand = false))
+        assertEquals(FirstPlayBoundary.NONE, gate.update(hasStableHand = true))
+        assertEquals(FirstPlayBoundary.LOCK, gate.update(hasStableHand = true))
+        assertEquals(FirstPlayBoundary.NONE, gate.update(hasStableHand = true))
     }
 
     @Test
     fun keepsWaitingWhenFirstPlayArrivesWithoutBaseline() {
         val gate = FirstPlayBoundaryGate()
-        val frame = OpeningSignals(controlsVisible = false, centerCardsVisible = false)
 
-        assertEquals(FirstPlayBoundary.NONE, gate.update(frame, hasStableHand = false))
-        assertEquals(FirstPlayBoundary.NONE, gate.update(frame, hasStableHand = false))
+        assertEquals(FirstPlayBoundary.NONE, gate.update(hasStableHand = false))
+        assertEquals(FirstPlayBoundary.NONE, gate.update(hasStableHand = false))
     }
 
     @Test
     fun newSessionRearmsFirstPlayBoundary() {
         val gate = FirstPlayBoundaryGate()
-        val frame = OpeningSignals(controlsVisible = false, centerCardsVisible = false)
-        gate.update(frame, hasStableHand = true)
-        assertEquals(FirstPlayBoundary.LOCK, gate.update(frame, hasStableHand = true))
+        gate.update(hasStableHand = true)
+        assertEquals(FirstPlayBoundary.LOCK, gate.update(hasStableHand = true))
         gate.reset()
-        gate.update(frame, hasStableHand = true)
-        assertEquals(FirstPlayBoundary.LOCK, gate.update(frame, hasStableHand = true))
+        gate.update(hasStableHand = true)
+        assertEquals(FirstPlayBoundary.LOCK, gate.update(hasStableHand = true))
     }
 
     @Test
