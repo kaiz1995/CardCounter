@@ -120,9 +120,17 @@ fun isTableGreen(red: Int, green: Int, blue: Int): Boolean =
 /** 公开出牌的点数位固定在裁剪中部；底部边缘框来自界面文字或面板。 */
 fun isPublicRankBand(centerY: Float): Boolean = centerY < 0.85f
 
-/** 开局前必须先稳定手牌；正式对局时公共出牌不应被自己手牌动画阻塞。 */
-fun shouldProbeRanks(firstPlayArmed: Boolean, stableHandSamples: Int): Boolean =
-    firstPlayArmed || stableHandSamples >= 3
+/** 手牌识别在后台一直跑，只在手牌画面停稳后探测；手牌一旦确认，本局不再识别。 */
+fun shouldProbeHand(handConfirmed: Boolean, stableHandSamples: Int): Boolean =
+    !handConfirmed && stableHandSamples >= 3
+
+/**
+ * 中途打开不记本局：账本里还没有手牌和外面出牌（全新的一局），
+ * 但牌桌上已经能看到公共出牌，说明这一局早就开始了，本局不记，等下一局。
+ * 账本里已有记录的局是接着记，不在此列。
+ */
+fun shouldSkipOpenedGame(handConfirmed: Boolean, outsidePlayedCount: Int, visiblePlayZones: Int): Boolean =
+    !handConfirmed && outsidePlayedCount == 0 && visiblePlayZones > 0
 
 /** 多张且每张都很确定时不等待下一帧，避免开点动画清桌前丢失整手。 */
 fun canFastConfirmPlay(cards: RankCounts, minimumConfidence: Float): Boolean =

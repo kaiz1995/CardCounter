@@ -148,10 +148,10 @@ class StablePlayGateTest {
     }
 
     @Test
-    fun keepsPublicPlayProbingDuringSelfHandAnimation() {
-        assertTrue(shouldProbeRanks(firstPlayArmed = true, stableHandSamples = 0))
-        assertFalse(shouldProbeRanks(firstPlayArmed = false, stableHandSamples = 2))
-        assertTrue(shouldProbeRanks(firstPlayArmed = false, stableHandSamples = 3))
+    fun probesHandOnlyWhenUnconfirmedAndPictureIsStable() {
+        assertFalse(shouldProbeHand(handConfirmed = false, stableHandSamples = 2))
+        assertTrue(shouldProbeHand(handConfirmed = false, stableHandSamples = 3))
+        assertFalse(shouldProbeHand(handConfirmed = true, stableHandSamples = 3))
     }
 
     @Test
