@@ -38,6 +38,7 @@ class OverlayService : Service() {
     override fun onCreate() {
         super.onCreate()
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+        hidden = getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).getBoolean(KEY_HIDDEN, false)
         createChannel()
         startForeground(NOTIFICATION_ID, notification())
     }
@@ -48,7 +49,7 @@ class OverlayService : Service() {
             ACTION_SHOW -> setHidden(false)
             ACTION_HIDE -> setHidden(true)
         }
-        counter?.render(SessionRepository(this).state)
+        counter?.render(SessionRepository.get(this).state)
         return START_STICKY
     }
 
@@ -69,7 +70,7 @@ class OverlayService : Service() {
         counter = CounterOverlayView(this).also { view ->
             windowManager.addView(view, fullScreenParams())
         }
-        hideControl = control("隐藏").also { view ->
+        hideControl = control(if (hidden) "显示" else "隐藏").also { view ->
             view.setOnClickListener { setHidden(!hidden) }
             windowManager.addView(view, controlParams(OverlayLayout.hideButton))
         }
@@ -77,10 +78,13 @@ class OverlayService : Service() {
             installResetLongPress(view)
             windowManager.addView(view, controlParams(OverlayLayout.resetButton))
         }
+        counter?.visibility = if (hidden) View.GONE else View.VISIBLE
+        resetControl?.visibility = if (hidden) View.GONE else View.VISIBLE
     }
 
     private fun setHidden(value: Boolean) {
         hidden = value
+        getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).edit().putBoolean(KEY_HIDDEN, value).apply()
         counter?.visibility = if (value) View.GONE else View.VISIBLE
         resetControl?.visibility = if (value) View.GONE else View.VISIBLE
         hideControl?.text = if (value) "显示" else "隐藏"
@@ -178,6 +182,8 @@ class OverlayService : Service() {
         private const val CHANNEL_ID = "card_counter_overlay"
         private const val NOTIFICATION_ID = 1001
         private const val RESET_HOLD_MS = 800L
+        private const val PREFERENCES = "card_counter_overlay"
+        private const val KEY_HIDDEN = "overlay_hidden"
         const val ACTION_SHOW = "com.example.cardcounter.SHOW"
         const val ACTION_REFRESH = "com.example.cardcounter.REFRESH"
         const val ACTION_HIDE = "com.example.cardcounter.HIDE"

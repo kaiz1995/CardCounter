@@ -27,7 +27,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        repository = SessionRepository(this)
+        repository = SessionRepository.get(this)
         requestNotificationPermissionIfNeeded()
         setContentView(content())
         renderStatus()
@@ -36,7 +36,7 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         if (::status.isInitialized) {
-            repository = SessionRepository(this)
+            repository = SessionRepository.get(this)
             renderStatus()
         }
     }
