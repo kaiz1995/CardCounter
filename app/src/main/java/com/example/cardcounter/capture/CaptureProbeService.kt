@@ -402,10 +402,10 @@ class CaptureProbeService : Service() {
         }
         PlayZone.entries.forEach { zone ->
             val visible = tableVisible && isPlayVisible(visibleZones[zone] == true)
-            // “出牌”圆标：同一家连续两次采样都亮才算轮到他；之后再出一样的牌才算新的一手。
+            // “出牌”圆标：这一区牌已收走、圆标连续两次采样都亮才算轮到他；之后再出一样的牌才算新的一手。
             if (takeSample && tableVisible && zone.source == PlaySource.OUTSIDE) {
                 val shown = TurnBadge.isShown(zone) { x, y -> pixelRgb(image, x, y) }
-                if (turnTracker.update(zone, shown)) {
+                if (turnTracker.update(zone, shown, zoneEmpty = !visible)) {
                     Log.i(TAG, "TURN_BADGE zone=$zone")
                     rankHandler.post { stablePlayGate.noteTurn(zone) }
                 }

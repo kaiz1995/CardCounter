@@ -66,6 +66,21 @@ class TurnGateReplayTest {
     }
 
     @Test
+    fun aBadgeOverHangingCardsDoesNotLetTheSameHandCountAgain() {
+        // 挂王：上一手还摆着，圆标就亮在旁边；这时画面闪一下再交出同一手，不能记两次。
+        val result = replayAudits(
+            frames(3, obs(true, 1)) +
+                frames(2, obs(true, 1, badge = true)) +
+                frames(1, obs(false, 0, badge = true)) +
+                frames(3, obs(true, 1, badge = true))
+        )
+        assertEquals(
+            listOf(LegacyOutcome.ACCEPTED, LegacyOutcome.DUPLICATE_SUPPRESSED),
+            result.map { it.outcome }
+        )
+    }
+
+    @Test
     fun aSingleBadgeSampleDoesNotCountAsTheirTurn() {
         val result = replayAudits(
             frames(3, obs(true, 1)) +

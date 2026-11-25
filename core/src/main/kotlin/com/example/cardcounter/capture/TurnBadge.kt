@@ -39,16 +39,19 @@ object TurnBadge {
     }
 }
 
-/** 同一家连续 [CONSECUTIVE] 次采样都看到圆标才算“轮到他”，圆标每出现一次只触发一次。 */
+/**
+ * 同一家连续 [CONSECUTIVE] 次采样都看到圆标、而且这一区桌面已空，才算“轮到他”；每次只触发一次。
+ * 挂王时上一手还摆在桌上圆标就亮了，这时不算：否则画面闪一下再交出同一手，会被当成新的一手重记。
+ */
 class TurnTracker {
     private val consecutive = IntArray(PlayZone.entries.size)
     private val fired = BooleanArray(PlayZone.entries.size)
 
     /** 返回 true 表示这一次采样刚确认“轮到这一家”。 */
     @Synchronized
-    fun update(zone: PlayZone, shown: Boolean): Boolean {
+    fun update(zone: PlayZone, shown: Boolean, zoneEmpty: Boolean): Boolean {
         val index = zone.ordinal
-        if (!shown) {
+        if (!shown || !zoneEmpty) {
             consecutive[index] = 0
             fired[index] = false
             return false

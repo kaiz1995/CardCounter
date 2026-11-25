@@ -53,45 +53,55 @@ class TurnTrackerTest {
     @Test
     fun needsTwoConsecutiveSamples() {
         val tracker = TurnTracker()
-        assertFalse(tracker.update(PlayZone.TOP, true))
-        assertTrue(tracker.update(PlayZone.TOP, true))
+        assertFalse(tracker.update(PlayZone.TOP, true, zoneEmpty = true))
+        assertTrue(tracker.update(PlayZone.TOP, true, zoneEmpty = true))
     }
 
     @Test
     fun firesOncePerAppearance() {
         val tracker = TurnTracker()
-        tracker.update(PlayZone.TOP, true)
-        assertTrue(tracker.update(PlayZone.TOP, true))
-        assertFalse(tracker.update(PlayZone.TOP, true))
-        assertFalse(tracker.update(PlayZone.TOP, false))
-        assertFalse(tracker.update(PlayZone.TOP, true))
-        assertTrue(tracker.update(PlayZone.TOP, true))
+        tracker.update(PlayZone.TOP, true, zoneEmpty = true)
+        assertTrue(tracker.update(PlayZone.TOP, true, zoneEmpty = true))
+        assertFalse(tracker.update(PlayZone.TOP, true, zoneEmpty = true))
+        assertFalse(tracker.update(PlayZone.TOP, false, zoneEmpty = true))
+        assertFalse(tracker.update(PlayZone.TOP, true, zoneEmpty = true))
+        assertTrue(tracker.update(PlayZone.TOP, true, zoneEmpty = true))
     }
 
     @Test
     fun aGapRestartsTheCount() {
         val tracker = TurnTracker()
-        assertFalse(tracker.update(PlayZone.TOP, true))
-        assertFalse(tracker.update(PlayZone.TOP, false))
-        assertFalse(tracker.update(PlayZone.TOP, true))
-        assertTrue(tracker.update(PlayZone.TOP, true))
+        assertFalse(tracker.update(PlayZone.TOP, true, zoneEmpty = true))
+        assertFalse(tracker.update(PlayZone.TOP, false, zoneEmpty = true))
+        assertFalse(tracker.update(PlayZone.TOP, true, zoneEmpty = true))
+        assertTrue(tracker.update(PlayZone.TOP, true, zoneEmpty = true))
     }
 
     @Test
     fun zonesAreCountedSeparately() {
         val tracker = TurnTracker()
-        assertFalse(tracker.update(PlayZone.TOP, true))
-        assertFalse(tracker.update(PlayZone.LEFT_TOP, true))
-        assertTrue(tracker.update(PlayZone.TOP, true))
-        assertTrue(tracker.update(PlayZone.LEFT_TOP, true))
+        assertFalse(tracker.update(PlayZone.TOP, true, zoneEmpty = true))
+        assertFalse(tracker.update(PlayZone.LEFT_TOP, true, zoneEmpty = true))
+        assertTrue(tracker.update(PlayZone.TOP, true, zoneEmpty = true))
+        assertTrue(tracker.update(PlayZone.LEFT_TOP, true, zoneEmpty = true))
     }
 
     @Test
     fun resetForgetsEverything() {
         val tracker = TurnTracker()
-        tracker.update(PlayZone.TOP, true)
+        tracker.update(PlayZone.TOP, true, zoneEmpty = true)
         tracker.reset()
-        assertFalse(tracker.update(PlayZone.TOP, true))
-        assertTrue(tracker.update(PlayZone.TOP, true))
+        assertFalse(tracker.update(PlayZone.TOP, true, zoneEmpty = true))
+        assertTrue(tracker.update(PlayZone.TOP, true, zoneEmpty = true))
+    }
+
+    @Test
+    fun aBadgeOverCardsStillOnTheTableWaitsUntilTheyAreGone() {
+        // 挂王：上一手还摆着时圆标就亮了，不算轮到他；牌收走后圆标连续亮两次才算。
+        val tracker = TurnTracker()
+        assertFalse(tracker.update(PlayZone.RIGHT_BOTTOM, true, zoneEmpty = false))
+        assertFalse(tracker.update(PlayZone.RIGHT_BOTTOM, true, zoneEmpty = false))
+        assertFalse(tracker.update(PlayZone.RIGHT_BOTTOM, true, zoneEmpty = true))
+        assertTrue(tracker.update(PlayZone.RIGHT_BOTTOM, true, zoneEmpty = true))
     }
 }
