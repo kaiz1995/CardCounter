@@ -73,4 +73,16 @@ class HandCandidateDiagnosticsTest {
         assertEquals(2, selectDistinctMatches(matches, maxCount = 8, minGap = 20).size)
     }
 
+    @Test
+    fun keepsTwoSameRankMatchesFartherApartThanTheDefaultGap() {
+        // 手牌普通点数用默认间距 28：同点数的两张牌间距大于它都保留，间距不大于它的才算同一张。
+        val matches = listOf(
+            HandRankMatcher.Match(100, Rank.SEVEN, 1.0),
+            HandRankMatcher.Match(129, Rank.SEVEN, 0.9),
+            HandRankMatcher.Match(150, Rank.SEVEN, 0.8)
+        )
+
+        assertEquals(listOf(100, 129), selectDistinctMatches(matches, maxCount = 40).map { it.x })
+    }
+
 }
