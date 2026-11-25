@@ -470,7 +470,10 @@ class CaptureProbeService : Service() {
         return Bitmap.createBitmap(pixels, width, height, Bitmap.Config.ARGB_8888)
     }
 
-    /** 截屏回调仅缓存小 ROI；牌面连续停稳后才推理，清桌是未停稳的兜底。 */
+    /**
+     * 截屏回调仅缓存小 ROI；牌面连续停稳后才推理。没停稳的一手在被新牌直接盖上、牌桌被挡住、
+     * 清桌时也会交出推理（交出规则见 RoiPlayEventCache）。
+     */
     private fun captureRoiEvents(image: Image) {
         if (gameSkipped) return
         val tableVisible = gameTableVisible(image)
@@ -516,7 +519,10 @@ class CaptureProbeService : Service() {
                 null
             }
             roiEventCache.observe(zone, tableVisible, visible, frame, generation)?.let { finalized ->
-                Log.i(TAG, "ROI_FINALIZED zone=${finalized.zone} frames=${finalized.frames.size}")
+                Log.i(
+                    TAG,
+                    "ROI_FINALIZED zone=${finalized.zone} frames=${finalized.frames.size} reason=${finalized.reason}"
+                )
                 rankHandler.post { finalizeRoiEvent(finalized) }
             }
             // “出牌”圆标放在交出之后看：清桌这次采样兜底交出的入账先 post，一定排在 noteTurn 前面，
@@ -580,7 +586,8 @@ class CaptureProbeService : Service() {
                 null, finalized.zone,
                 quantity = stable.cards.total(),
                 rankTotal = stable.cards.total(),
-                decision = DiagnosticsLog.Decision.STABLE
+                decision = DiagnosticsLog.Decision.STABLE,
+                reason = finalized.reason.name
             )
             // 单写者派发：evidenceId 兼作账本事件 id，重试不会重复扣牌。
             val command = stable.toLedgerCommand()
