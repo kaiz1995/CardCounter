@@ -108,7 +108,6 @@ class RoiPlayEventCacheTest {
         assertNull(cache.empty())
         assertNull(cache.empty())
         assertTrue(cache.needsFrame(PlayZone.TOP, 1))
-        assertTrue(cache.needsBitmap(PlayZone.TOP, 1))
     }
 
     @Test
@@ -133,16 +132,30 @@ class RoiPlayEventCacheTest {
     }
 
     @Test
-    fun needsBitmapStopsAfterDeliveryUntilThePictureChanges() {
+    fun repeatOfTheDeliveredPictureNeedsNoBitmapButAChangedPictureDoes() {
         val cache = cache(stableSamples = 2)
-        assertTrue(cache.needsBitmap(PlayZone.TOP, 1))
+        assertFalse(cache.isRepeat(PlayZone.TOP, 1, "a-0"))
+        cache.see("a-0")
+        cache.see("a-1")
+        assertFalse(cache.isRepeat(PlayZone.TOP, 1, "a-2"))
+        assertTrue(cache.see("a-2") != null)
+        assertTrue(cache.needsFrame(PlayZone.TOP, 1))
+        assertTrue(cache.isRepeat(PlayZone.TOP, 1, "a-3"))
+        assertFalse(cache.isRepeat(PlayZone.TOP, 1, "b-0"))
+        assertNull(cache.see("b-0"))
+        assertFalse(cache.isRepeat(PlayZone.TOP, 1, "b-1"))
+    }
+
+    @Test
+    fun repeatIsFalseAfterTheZoneClearsOrForAnotherGeneration() {
+        val cache = cache(stableSamples = 2, clearSamples = 2)
         cache.see("a-0")
         cache.see("a-1")
         assertTrue(cache.see("a-2") != null)
-        assertFalse(cache.needsBitmap(PlayZone.TOP, 1))
-        assertTrue(cache.needsFrame(PlayZone.TOP, 1))
-        assertNull(cache.see("b-0"))
-        assertTrue(cache.needsBitmap(PlayZone.TOP, 1))
+        assertFalse(cache.isRepeat(PlayZone.TOP, 2, "a-3"))
+        cache.empty()
+        cache.empty()
+        assertFalse(cache.isRepeat(PlayZone.TOP, 1, "a-3"))
     }
 
     @Test

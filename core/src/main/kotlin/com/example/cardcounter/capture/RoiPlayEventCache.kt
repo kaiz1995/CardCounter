@@ -59,11 +59,16 @@ class RoiPlayEventCache<T>(
         return state.generation == generation && !state.primed
     }
 
-    /** 已经交出、画面没变的阶段只需要指纹判断变没变，不必再截图送识别。 */
+    /**
+     * 已经交出、且 [frame] 与上一帧相比画面没变：这一帧只需要指纹，不必再截图送识别。
+     * 画面变了（不静止）就必须带上位图，它是下一段静止的起点。
+     */
     @Synchronized
-    fun needsBitmap(zone: PlayZone, generation: Long): Boolean {
+    fun isRepeat(zone: PlayZone, generation: Long, frame: T): Boolean {
         val state = states.getValue(zone)
-        return state.generation == generation && !state.primed && !state.delivered
+        val last = state.last
+        return state.generation == generation && !state.primed && state.delivered &&
+            last != null && isStill(last, frame)
     }
 
     @Synchronized
