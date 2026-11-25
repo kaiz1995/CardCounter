@@ -196,16 +196,11 @@ class OverlayService : Service(), HandPanelView.Actions {
         }
     }
 
-    private fun fullScreenParams(): WindowManager.LayoutParams = WindowManager.LayoutParams(
+    private fun fullScreenParams(): WindowManager.LayoutParams = overlayParams(
         WindowManager.LayoutParams.MATCH_PARENT,
         WindowManager.LayoutParams.MATCH_PARENT,
-        overlayType(),
-        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-            WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
-            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-        PixelFormat.TRANSLUCENT
+        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
     ).apply {
-        gravity = Gravity.TOP or Gravity.START
         alpha = 0.79f // Android 12跨应用触摸穿透要求低于默认0.8遮挡阈值。
     }
 
@@ -215,20 +210,36 @@ class OverlayService : Service(), HandPanelView.Actions {
         windowManager.defaultDisplay.getRealMetrics(metrics)
         val scaleX = metrics.widthPixels.toFloat() / OverlayLayout.DESIGN_WIDTH
         val scaleY = metrics.heightPixels.toFloat() / OverlayLayout.DESIGN_HEIGHT
-        return WindowManager.LayoutParams(
+        return overlayParams(
             (rect.width * scaleX).roundToInt(),
             (rect.height * scaleY).roundToInt(),
-            overlayType(),
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-            PixelFormat.TRANSLUCENT
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
         ).apply {
-            gravity = Gravity.TOP or Gravity.START
             x = (rect.x * scaleX).roundToInt()
             y = (rect.y * scaleY).roundToInt()
         }
     }
+
+    /**
+     * 所有悬浮窗都从这里建：坐标按整块屏幕（和截屏同一套 1280×578 设计坐标）摆放。
+     * 必须铺进刘海区：否则横屏时系统把窗口挤到刘海右边，全屏显示层整体右移并被压窄，
+     * “手牌未确认”标签就落进手牌识别区，被模型认成一张 5。
+     */
+    private fun overlayParams(width: Int, height: Int, flags: Int): WindowManager.LayoutParams =
+        WindowManager.LayoutParams(
+            width,
+            height,
+            overlayType(),
+            flags or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            layoutInDisplayCutoutMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            } else {
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+        }
 
     private fun overlayType(): Int = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
         WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
