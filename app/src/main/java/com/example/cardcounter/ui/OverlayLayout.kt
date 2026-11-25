@@ -31,10 +31,11 @@ object OverlayLayout {
 
     /**
      * 手牌面板：三块可触摸小窗，都落在出牌区、手牌区和现有框之间的空档里。
-     * 点数条分左右两段（顶家出牌区夹在中间）：左段 8 个点数，右段 7 个点数，每格宽不小于 [MIN_TOUCH]。
+     * 点数条分左右两段（顶家出牌区和顶家“出牌”圆标取色窗夹在中间）：左段 8 个点数，右段 7 个点数，每格宽不小于 [MIN_TOUCH]。
+     * 右段必须在顶家圆标取色窗（x 到 796）右边，否则截屏里圆标被盖住；由 OverlayLayoutTest 守着。
      */
     val handRanksLeft = Rect(0, 0, 688, 60)
-    val handRanksRight = Rect(776, 0, 504, 60)
+    val handRanksRight = Rect(800, 0, 480, 60)
 
     /** 左段、右段各放哪些点数（顺序同 [Rank.entries]）。 */
     val handRanksLeftRanks: List<Rank> = Rank.entries.take(8)
