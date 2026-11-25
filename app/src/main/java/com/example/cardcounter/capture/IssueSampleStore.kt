@@ -3,69 +3,46 @@ package com.example.cardcounter.capture
 import android.content.Context
 import android.graphics.Bitmap
 import android.util.Log
+import com.example.cardcounter.domain.RankCounts
+import com.example.cardcounter.vision.YoloDetection
 import java.io.File
 import java.util.concurrent.Executors
-import org.json.JSONObject
 import org.json.JSONArray
+import org.json.JSONObject
 
-/** 只留存无法自动确认的公开牌 ROI，供后续人工标注；绝不保存整屏。 */
+/**
+ * 只留存一手牌没能自动入账的证据（无共识、被拒、暂停），供后续人工核对；绝不保存整屏。
+ * 每组一个目录：这一手交出的帧（最多 3 张 ROI png）+ meta.json。
+ */
 internal class IssueSampleStore(context: Context) : AutoCloseable {
     private val root = File(context.filesDir, "card_counter_issues")
     private val executor = Executors.newSingleThreadExecutor()
 
-    fun save(
-        bitmap: Bitmap,
+    /** [reason]：NO_CONSENSUS、REDUCER_REJECTED 或 PAUSED_<暂停原因>；[result] 是最终认定的牌，无共识时为 null。 */
+    fun saveEvidence(
+        bitmaps: List<Bitmap>,
         zone: PlayZone,
         reason: String,
+        generation: Long,
+        timeMs: Long,
+        result: RankCounts?,
         candidates: List<RankCountsCandidate>
     ) {
-        val copy = bitmap.copy(Bitmap.Config.ARGB_8888, false)
+        val copies = bitmaps.takeLast(MAX_FRAMES).map { it.copy(Bitmap.Config.ARGB_8888, false) }
+        val metadata = evidenceMetadata(zone, reason, generation, timeMs, result, candidates)
         executor.execute {
             runCatching {
                 root.mkdirs()
                 trim()
-                val directory = File(root, "${System.currentTimeMillis()}_${zone.name}_${reason}")
-                check(directory.mkdirs()) { "无法创建问题样本目录" }
-                File(directory, "roi.png").outputStream().use { output ->
-                    check(copy.compress(Bitmap.CompressFormat.PNG, 100, output)) { "无法写入问题 ROI" }
-                }
-                val meta = JSONObject()
-                    .put("zone", zone.name)
-                    .put("reason", reason)
-                    .put("candidates", candidates.joinToString { it.toString() })
-                    .toString()
-                File(directory, "meta.json").writeText(meta)
-            }.onFailure { Log.w(TAG, "ISSUE_SAMPLE_SAVE_FAILED", it) }
-            copy.recycle()
-        }
-    }
-
-    fun saveAceAudit(
-        bitmaps: List<Bitmap>,
-        zone: PlayZone,
-        candidates: List<RankCountsCandidate>,
-        templateCards: com.example.cardcounter.domain.RankCounts,
-        winner: com.example.cardcounter.domain.RankCounts,
-        generation: Long,
-        timeMs: Long
-    ) {
-        val copies = bitmaps.take(3).map { it.copy(Bitmap.Config.ARGB_8888, false) }
-        executor.execute {
-            runCatching {
-                root.mkdirs(); trim()
-                val directory = File(root, "${System.currentTimeMillis()}_${zone.name}_LEFT_BOTTOM_ACE_AUDIT")
-                check(directory.mkdirs()) { "无法创建ACE审计目录" }
+                val directory = File(root, "${System.currentTimeMillis()}_${zone.name}_$reason")
+                check(directory.mkdirs()) { "无法创建证据目录" }
                 copies.forEachIndexed { index, copy ->
                     File(directory, "roi_$index.png").outputStream().use { out ->
-                        check(copy.compress(Bitmap.CompressFormat.PNG, 100, out)) { "无法写入审计ROI" }
+                        check(copy.compress(Bitmap.CompressFormat.PNG, 100, out)) { "无法写入证据 ROI" }
                     }
                 }
-                val model = aceAuditMetadata(zone, generation, timeMs, winner, candidates)
-                JSONObject().put("zone", model.zone).put("reason", "LEFT_BOTTOM_ACE_AUDIT").put("generation", model.generation).put("timeMs", model.timeMs).put("winner", rankCountsJson(model.winner)).put("candidates", JSONArray().apply {
-                    model.candidates.forEach { c -> put(JSONObject().put("fusedCards", rankCountsJson(c.fusedCards)).put("yoloCards", rankCountsJson(c.yoloCards)).put("templateCards", rankCountsJson(c.templateCards)).put("minimumConfidence", c.minimumConfidence).put("cardCount", c.cardCount)) }
-                })
-                    .toString().let { File(directory, "meta.json").writeText(it) }
-            }.onFailure { Log.w(TAG, "ACE_AUDIT_SAVE_FAILED", it) }
+                File(directory, "meta.json").writeText(metadata.toJson().toString())
+            }.onFailure { Log.w(TAG, "ISSUE_EVIDENCE_SAVE_FAILED", it) }
             copies.forEach(Bitmap::recycle)
         }
     }
@@ -83,31 +60,89 @@ internal class IssueSampleStore(context: Context) : AutoCloseable {
 
     private companion object {
         const val MAX_PACKETS = 50
+        const val MAX_FRAMES = 3
         const val TAG = "CaptureProbe"
     }
 }
 
-internal fun aceAuditMetadata(
-    zone: PlayZone, generation: Long, timeMs: Long,
-    winner: com.example.cardcounter.domain.RankCounts,
+/** 投票里一帧的识别结果：点数计数、最低置信度和每个检测框。 */
+internal data class RankCountsCandidate(
+    val cards: RankCounts,
+    val minimumConfidence: Float,
+    val detections: List<YoloDetection>
+)
+
+internal fun evidenceMetadata(
+    zone: PlayZone,
+    reason: String,
+    generation: Long,
+    timeMs: Long,
+    result: RankCounts?,
     candidates: List<RankCountsCandidate>
-): AceAuditMetadata = AceAuditMetadata(zone.name, generation, timeMs, winner, candidates.map {
-    AceAuditCandidateMetadata(it.cards, it.yoloCards, it.templateCards, it.minimumConfidence, it.cardCount)
+): EvidenceMetadata = EvidenceMetadata(zone.name, reason, generation, timeMs, result, candidates.map { candidate ->
+    CandidateMetadata(
+        candidate.cards, candidate.minimumConfidence, candidate.cards.total(),
+        candidate.detections.map {
+            DetectionMetadata(it.rank.name, it.confidence, it.centerX, it.centerY, it.width, it.height)
+        }
+    )
 })
 
-internal data class AceAuditMetadata(val zone: String, val generation: Long, val timeMs: Long, val winner: com.example.cardcounter.domain.RankCounts, val candidates: List<AceAuditCandidateMetadata>)
-internal data class AceAuditCandidateMetadata(val fusedCards: com.example.cardcounter.domain.RankCounts, val yoloCards: com.example.cardcounter.domain.RankCounts, val templateCards: com.example.cardcounter.domain.RankCounts, val minimumConfidence: Float, val cardCount: Int)
-
-internal fun rankCountsJson(cards: com.example.cardcounter.domain.RankCounts): JSONObject =
-    JSONObject(rankCountsMap(cards))
-
-internal fun rankCountsMap(cards: com.example.cardcounter.domain.RankCounts): Map<String, Int> =
-    cards.asMap().mapKeys { it.key.name }
-
-internal data class RankCountsCandidate(
-    val cards: com.example.cardcounter.domain.RankCounts,
-    val minimumConfidence: Float,
-    val yoloCards: com.example.cardcounter.domain.RankCounts,
-    val templateCards: com.example.cardcounter.domain.RankCounts,
-    val cardCount: Int
+internal data class EvidenceMetadata(
+    val zone: String,
+    val reason: String,
+    val generation: Long,
+    val timeMs: Long,
+    val result: RankCounts?,
+    val candidates: List<CandidateMetadata>
 )
+
+internal data class CandidateMetadata(
+    val cards: RankCounts,
+    val minimumConfidence: Float,
+    val cardCount: Int,
+    val detections: List<DetectionMetadata>
+)
+
+internal data class DetectionMetadata(
+    val rank: String,
+    val confidence: Float,
+    val centerX: Float,
+    val centerY: Float,
+    val width: Float,
+    val height: Float
+)
+
+private fun EvidenceMetadata.toJson(): JSONObject = JSONObject()
+    .put("zone", zone)
+    .put("reason", reason)
+    .put("generation", generation)
+    .put("timeMs", timeMs)
+    .put("result", result?.let(::rankCountsJson) ?: JSONObject.NULL)
+    .put("candidates", JSONArray().apply {
+        candidates.forEach { candidate ->
+            put(
+                JSONObject()
+                    .put("cards", rankCountsJson(candidate.cards))
+                    .put("minimumConfidence", candidate.minimumConfidence.toDouble())
+                    .put("cardCount", candidate.cardCount)
+                    .put("detections", JSONArray().apply {
+                        candidate.detections.forEach { detection ->
+                            put(
+                                JSONObject()
+                                    .put("rank", detection.rank)
+                                    .put("conf", detection.confidence.toDouble())
+                                    .put("cx", detection.centerX.toDouble())
+                                    .put("cy", detection.centerY.toDouble())
+                                    .put("w", detection.width.toDouble())
+                                    .put("h", detection.height.toDouble())
+                            )
+                        }
+                    })
+            )
+        }
+    })
+
+internal fun rankCountsJson(cards: RankCounts): JSONObject = JSONObject(rankCountsMap(cards))
+
+internal fun rankCountsMap(cards: RankCounts): Map<String, Int> = cards.asMap().mapKeys { it.key.name }

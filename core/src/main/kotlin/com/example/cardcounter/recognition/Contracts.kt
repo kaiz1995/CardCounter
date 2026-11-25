@@ -48,7 +48,9 @@ data class ZoneObservation(
     /** 与上一次采样相比画面静止（无动画）。 */
     val still: Boolean,
     /** 只在需要识别时填；不需要识别的采样为 null。 */
-    val detections: List<Detection>?
+    val detections: List<Detection>?,
+    /** 这一区的“出牌”倒计时圆标亮着（轮到这一家），见 TurnBadge。 */
+    val turnBadge: Boolean = false
 )
 
 /** 一次采样（手机约 50~100ms 一次）的全部观察。 */

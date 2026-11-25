@@ -53,8 +53,9 @@ object ObservationJsonl {
         val prefix = zone.name
         val cardVisible = JsonFields.boolean(json, "card_visible", "$prefix.card_visible")
         val still = JsonFields.boolean(json, "still", "$prefix.still")
+        val turn = if (JsonFields.has(json, "turn")) JsonFields.boolean(json, "turn", "$prefix.turn") else false
         if (!JsonFields.has(json, "dets")) {
-            return ZoneObservation(zone, cardVisible, still, detections = null)
+            return ZoneObservation(zone, cardVisible, still, detections = null, turnBadge = turn)
         }
         val dets = json.get("dets")
         if (dets !is JSONArray) throw IllegalArgumentException("$prefix.dets 不是数组")
@@ -63,7 +64,7 @@ object ObservationJsonl {
             if (item !is JSONObject) throw IllegalArgumentException("$prefix.dets[$index] 不是对象")
             parseDetection(zone, index, item)
         }
-        return ZoneObservation(zone, cardVisible, still, parsed)
+        return ZoneObservation(zone, cardVisible, still, parsed, turnBadge = turn)
     }
 
     private fun parseDetection(zone: PlayZone, index: Int, json: JSONObject): Detection {

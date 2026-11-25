@@ -37,6 +37,7 @@ import com.example.cardcounter.storage.DiagnosticsLog
 import com.example.cardcounter.storage.LedgerCommand
 import com.example.cardcounter.storage.SessionActor
 import com.example.cardcounter.vision.OnnxRankDetector
+import com.example.cardcounter.vision.YoloDetection
 import java.util.UUID
 import kotlin.math.roundToInt
 
@@ -64,9 +65,10 @@ class CaptureProbeService : Service() {
     private var maxHandChangePercent = 0.0
     private val rankProbeGate = SingleFlightGate()
     private val stablePlayGate = StablePlayGate()
+    private val turnTracker = TurnTracker()
     private val roiEventCache = RoiPlayEventCache<RoiFrame>(
-        isStill = { previous, current -> roiFramesAreStill(previous.bitmap, current.bitmap) },
-        discard = { it.bitmap.recycle() }
+        isStill = { previous, current -> RoiFingerprint.isStill(previous.fingerprint, current.fingerprint) },
+        discard = { it.bitmap?.recycle() }
     )
     private var lastRoiSampleAt = 0L
     private var restartPrimeDeadlineAt = 0L
@@ -320,6 +322,18 @@ class CaptureProbeService : Service() {
             .notify(NOTIFICATION_ID, notification(text))
     }
 
+    /** 与 [rgb] 同一套换算，直接返回 0xRRGGBB，不分配数组（圆标和指纹每 50ms 要取几千个点）。 */
+    private fun pixelRgb(image: Image, canonicalX: Int, canonicalY: Int): Int {
+        val plane = image.planes[0]
+        val x = canonicalX * image.width / 1_280
+        val y = canonicalY * image.height / 578
+        val offset = y * plane.rowStride + x * plane.pixelStride
+        val buffer = plane.buffer
+        return ((buffer.get(offset).toInt() and 0xff) shl 16) or
+            ((buffer.get(offset + 1).toInt() and 0xff) shl 8) or
+            (buffer.get(offset + 2).toInt() and 0xff)
+    }
+
     private fun rgb(image: Image, canonicalX: Int, canonicalY: Int): IntArray {
         val plane = image.planes[0]
         val x = canonicalX * image.width / 1_280
@@ -379,7 +393,6 @@ class CaptureProbeService : Service() {
         val generation = captureGeneration
         val now = SystemClock.elapsedRealtime()
         val takeSample = now - lastRoiSampleAt >= ROI_SAMPLE_INTERVAL_MS
-        var templateInk: BooleanArray? = null
         if (!tableVisible && restartPrimeDeadlineAt > 0L &&
             SystemClock.elapsedRealtime() >= restartPrimeDeadlineAt
         ) {
@@ -387,15 +400,16 @@ class CaptureProbeService : Service() {
             restartPrimeDeadlineAt = 0L
             Log.i(TAG, "PLAY_GATE_PRIME_RELEASED_OUTSIDE_TABLE")
         }
+        // 圆标、指纹、截图、清桌计数全按同一个采样节拍推进（与电脑回放“每条观察就是一次采样”一致）；
+        // 非采样帧不能推进清桌计数，否则一帧闪空就会打断停稳。
+        if (!takeSample) return
+        lastRoiSampleAt = now
         PlayZone.entries.forEach { zone ->
             val visible = tableVisible && isPlayVisible(visibleZones[zone] == true)
-            if (takeSample && tableVisible && !visible) {
-                rankHandler.post { stablePlayGate.update(zone, RankCounts.zero()) }
-            }
-            val frame = if (visible && takeSample && roiEventCache.needsFrame(zone, generation)) {
-                val bitmap = publicPlayBitmap(image, zone)
-                val ink = templateInk ?: handRankMatcher.snapshot(image).also { templateInk = it }
-                RoiFrame(bitmap, roiQuality(bitmap), ink)
+            val frame = if (visible && roiEventCache.needsFrame(zone, generation)) {
+                val probe = RoiFrame(null, RoiFingerprint.of(zone) { x, y -> pixelRgb(image, x, y) })
+                // 已交出且画面没变：只要指纹，不再截 320 图送识别；画面一变，这一帧是下一段静止的起点，要带图。
+                if (roiEventCache.isRepeat(zone, generation, probe)) probe else probe.copy(bitmap = publicPlayBitmap(image, zone))
             } else {
                 null
             }
@@ -403,8 +417,18 @@ class CaptureProbeService : Service() {
                 Log.i(TAG, "ROI_FINALIZED zone=${finalized.zone} frames=${finalized.frames.size}")
                 rankHandler.post { finalizeRoiEvent(finalized) }
             }
+            // “出牌”圆标放在交出之后看：清桌这次采样兜底交出的入账先 post，一定排在 noteTurn 前面，
+            // 这次采样的圆标也能算上。这一区牌已收走（且没有待兜底交出的牌）、圆标连续两次采样都亮才算轮到他；
+            // 之后再出一样的牌才算新的一手。
+            if (tableVisible && zone.source == PlaySource.OUTSIDE) {
+                val shown = TurnBadge.isShown(zone) { x, y -> pixelRgb(image, x, y) }
+                val zoneEmpty = !visible && !roiEventCache.hasUndelivered(zone, generation)
+                if (turnTracker.update(zone, shown, zoneEmpty = zoneEmpty)) {
+                    Log.i(TAG, "TURN_BADGE zone=$zone")
+                    rankHandler.post { stablePlayGate.noteTurn(zone) }
+                }
+            }
         }
-        if (takeSample) lastRoiSampleAt = now
     }
 
     private fun finalizeRoiEvent(finalized: RoiPlayEventCache.Finalized<RoiFrame>) {
@@ -412,20 +436,13 @@ class CaptureProbeService : Service() {
             if (finalized.generation != captureGeneration || gameSkipped) return
             // 自己出的牌完全不管：不识别、不记、不显示。
             if (finalized.zone.source == PlaySource.SELF) return
-            val templateCards = finalized.frames.maxByOrNull(RoiFrame::quality)?.let { frame ->
-                handRankMatcher.detectPlay(handRankMatcher.prepare(frame.templateInk), finalized.zone)
-            } ?: RankCounts.zero()
-            val candidates = finalized.frames
-                .sortedByDescending(RoiFrame::quality)
-                .take(FINALIZE_FRAME_COUNT)
-                .mapNotNull { frame ->
-                    detectYoloCards(frame.bitmap)?.let {
-                        RankCountsCandidate(
-                            cards = fuseSinglePublicPlay(finalized.zone, it.cards, templateCards), minimumConfidence = it.minimumConfidence,
-                            yoloCards = it.cards, templateCards = templateCards, cardCount = it.cards.total()
-                        )
-                    }
+            // 只拿牌停稳之后的最后几帧投票，不带上牌还在滑入时的画面（与 eval 的 takeLast 一致）。
+            val voted = finalized.frames.takeLast(FINALIZE_FRAME_COUNT)
+            val candidates = voted.mapNotNull { frame ->
+                frame.bitmap?.let(::detectYoloCards)?.let {
+                    RankCountsCandidate(it.cards, it.minimumConfidence, it.detections)
                 }
+            }
             val winner = candidates
                 .filter { it.cards.total() > 0 }
                 .groupBy { it.cards }
@@ -433,13 +450,14 @@ class CaptureProbeService : Service() {
                     compareBy<Map.Entry<RankCounts, List<RankCountsCandidate>>> { it.value.size }
                         .thenBy { entry -> entry.value.minOf { it.minimumConfidence } }
                 )
-            val cards = winner?.let { entry -> entry.key.takeIf {
-                entry.value.size >= 2 || canFastConfirmPlay(it, entry.value.first().minimumConfidence)
-            }
+            val cards = winner?.let { entry ->
+                entry.key.takeIf {
+                    entry.value.size >= 2 || canFastConfirmPlay(it, entry.value.first().minimumConfidence)
+                }
             }
             if (cards == null) {
-                saveIssue(finalized, "NO_CONSENSUS", candidates)
-                // 无共识保留证据等待重试，记 RETRY，不静默丢弃。
+                saveEvidence(finalized, voted, "NO_CONSENSUS", null, candidates)
+                // 无共识留证据并记 RETRY，不静默丢弃。
                 recordDiagnostics(
                     null, finalized.zone,
                     quantity = null,
@@ -451,17 +469,17 @@ class CaptureProbeService : Service() {
                 return
             }
             if (sessionLedger.state.phase != SessionPhase.ACTIVE) return
-            val stable = stablePlayGate.acceptStable(finalized.zone, cards) ?: return
+            val stable = stablePlayGate.accept(finalized.zone, cards)
+            if (stable == null) {
+                Log.i(TAG, "PLAY_DUPLICATE_SUPPRESSED zone=${finalized.zone} cards=$cards")
+                return
+            }
             recordDiagnostics(
                 null, finalized.zone,
                 quantity = stable.cards.total(),
                 rankTotal = stable.cards.total(),
                 decision = DiagnosticsLog.Decision.STABLE
             )
-            if (shouldAuditAce(finalized.zone, stable.cards)) {
-                issueSampleStore.saveAceAudit(finalized.frames.map { it.bitmap }, finalized.zone, candidates,
-                    templateCards, stable.cards, finalized.generation, SystemClock.elapsedRealtime())
-            }
             // 单写者派发：evidenceId 兼作账本事件 id，重试不会重复扣牌。
             val command = stable.toLedgerCommand()
             val result = sessionActor.post(command)
@@ -474,11 +492,12 @@ class CaptureProbeService : Service() {
             )
             when (result) {
                 is DispatchResult.Rejected -> {
-                    saveIssue(finalized, "REDUCER_REJECTED", candidates)
+                    saveEvidence(finalized, voted, "REDUCER_REJECTED", cards, candidates)
                     OverlayService.refresh(this)
                     Log.w(TAG, "PLAY_REJECTED zone=${finalized.zone} reason=${result.reason}")
                 }
                 is DispatchResult.Paused -> {
+                    saveEvidence(finalized, voted, "PAUSED_${result.reason.name}", cards, candidates)
                     OverlayService.refresh(this)
                     Log.w(TAG, "PLAY_PAUSED zone=${finalized.zone} reason=${result.reason}")
                 }
@@ -492,18 +511,22 @@ class CaptureProbeService : Service() {
                 }
             }
         } finally {
-            finalized.frames.forEach { it.bitmap.recycle() }
+            finalized.frames.forEach { it.bitmap?.recycle() }
         }
     }
 
-    private fun saveIssue(
+    /** 把这一手交出的帧和每帧的识别结果存成证据；无共识、被拒、暂停都走这里。 */
+    private fun saveEvidence(
         finalized: RoiPlayEventCache.Finalized<RoiFrame>,
+        voted: List<RoiFrame>,
         reason: String,
+        finalCards: RankCounts?,
         candidates: List<RankCountsCandidate>
     ) {
-        finalized.frames.maxByOrNull(RoiFrame::quality)?.let { frame ->
-            issueSampleStore.save(frame.bitmap, finalized.zone, reason, candidates)
-        }
+        issueSampleStore.saveEvidence(
+            voted.mapNotNull { it.bitmap }, finalized.zone, reason, finalized.generation,
+            SystemClock.elapsedRealtime(), finalCards, candidates
+        )
     }
 
     /** 稳定出牌 → 单写者账本命令；evidenceId 兼作账本事件 id，重试不会重复扣牌。 */
@@ -530,38 +553,10 @@ class CaptureProbeService : Service() {
         else -> null
     }
 
-    private fun roiQuality(bitmap: Bitmap): Int {
-        var quality = 0
-        for (y in 1 until bitmap.height step 3) for (x in 1 until bitmap.width step 3) {
-            val color = bitmap.getPixel(x, y)
-            val left = bitmap.getPixel(x - 1, y)
-            quality += kotlin.math.abs(android.graphics.Color.red(color) - android.graphics.Color.red(left))
-        }
-        return quality
-    }
-
-    private fun roiFramesAreStill(previous: Bitmap, current: Bitmap): Boolean {
-        if (previous.width != current.width || previous.height != current.height) return false
-        var samples = 0
-        var changed = 0
-        for (y in 0 until current.height step ROI_MOTION_SAMPLE_STEP) {
-            for (x in 0 until current.width step ROI_MOTION_SAMPLE_STEP) {
-                val before = previous.getPixel(x, y)
-                val after = current.getPixel(x, y)
-                if (kotlin.math.abs(android.graphics.Color.red(before) - android.graphics.Color.red(after)) > ROI_MOTION_CHANNEL_DELTA ||
-                    kotlin.math.abs(android.graphics.Color.green(before) - android.graphics.Color.green(after)) > ROI_MOTION_CHANNEL_DELTA ||
-                    kotlin.math.abs(android.graphics.Color.blue(before) - android.graphics.Color.blue(after)) > ROI_MOTION_CHANNEL_DELTA
-                ) changed += 1
-                samples += 1
-            }
-        }
-        return changed.toFloat() / samples < ROI_STILL_CHANGED_PIXEL_RATIO
-    }
-
+    /** 一次出牌区采样：指纹每次都有；位图只在需要识别时才截（已交出且画面没变的采样为 null）。 */
     private data class RoiFrame(
-        val bitmap: Bitmap,
-        val quality: Int,
-        val templateInk: BooleanArray
+        val bitmap: Bitmap?,
+        val fingerprint: IntArray
     )
 
     private fun detectYoloCards(bitmap: Bitmap): YoloCards? = runCatching {
@@ -570,10 +565,14 @@ class CaptureProbeService : Service() {
         detections.forEach { detection ->
             counts[detection.rank] = counts.getValue(detection.rank) + 1
         }
-        YoloCards(RankCounts.of(counts), detections.minOfOrNull { it.confidence } ?: 0f)
+        YoloCards(RankCounts.of(counts), detections.minOfOrNull { it.confidence } ?: 0f, detections)
     }.onFailure { Log.w(TAG, "YOLO_PLAY_FAILED", it) }.getOrNull()
 
-    private data class YoloCards(val cards: RankCounts, val minimumConfidence: Float)
+    private data class YoloCards(
+        val cards: RankCounts,
+        val minimumConfidence: Float,
+        val detections: List<YoloDetection>
+    )
 
     private fun publicPlayBitmap(image: Image, zone: PlayZone): Bitmap {
         val crop = zone.yoloCrop(1_280, 578)
@@ -656,6 +655,7 @@ class CaptureProbeService : Service() {
     private fun resetSessionTracking(primeExistingTable: Boolean, checkMidOpen: Boolean) {
         val generation = ++captureGeneration
         roiEventCache.reset(generation, primeExistingTable = primeExistingTable)
+        turnTracker.reset()
         restartPrimeDeadlineAt = if (primeExistingTable) {
             SystemClock.elapsedRealtime() + RESTART_TABLE_GRACE_MS
         } else {
@@ -708,9 +708,6 @@ class CaptureProbeService : Service() {
         private const val PLAY_VISIBILITY_STEP = 8
         private const val PLAY_WHITE_LIMIT = 190
         private const val ROI_SAMPLE_INTERVAL_MS = 50L
-        private const val ROI_MOTION_SAMPLE_STEP = 3
-        private const val ROI_MOTION_CHANNEL_DELTA = 12
-        private const val ROI_STILL_CHANGED_PIXEL_RATIO = 0.03f
         private const val FINALIZE_FRAME_COUNT = 3
         private const val RESTART_TABLE_GRACE_MS = 2_000L
         private const val HAND_YOLO_LEFT = HandRegions.YOLO_LEFT

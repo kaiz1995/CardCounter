@@ -3,6 +3,7 @@ package com.example.cardcounter.ui
 import com.example.cardcounter.capture.HandRegions
 import com.example.cardcounter.capture.PlaySource
 import com.example.cardcounter.capture.PlayZone
+import com.example.cardcounter.capture.TurnBadge
 import com.example.cardcounter.domain.Rank
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -128,6 +129,40 @@ class OverlayLayoutTest {
         assertTrue(OverlayLayout.handRanksRight.width / OverlayLayout.handRanksRightRanks.size >= OverlayLayout.MIN_TOUCH)
         assertTrue(OverlayLayout.handRanksLeft.height >= OverlayLayout.MIN_TOUCH)
         assertTrue(OverlayLayout.handRanksRight.height >= OverlayLayout.MIN_TOUCH)
+    }
+
+    /** 外面五家“出牌”圆标的取色窗（含边界像素）；悬浮窗会被截屏录进去，盖住就认不到圆标。 */
+    private fun badgeWindows(): List<Pair<String, OverlayLayout.Rect>> =
+        PlayZone.entries.filter { it.source == PlaySource.OUTSIDE }.map { zone ->
+            val window = TurnBadge.window(zone)
+            "${zone.name} 出牌圆标取色窗" to OverlayLayout.Rect(
+                window.left, window.top, window.right - window.left + 1, window.bottom - window.top + 1
+            )
+        }
+
+    /** 悬浮窗上所有会画出来或会接触摸的框：新增框要加到这里。 */
+    private fun everyBoxOnTheOverlay(): List<Pair<String, OverlayLayout.Rect>> = existingBoxes() + listOf(
+        "手牌点数条左段" to OverlayLayout.handRanksLeft,
+        "手牌点数条右段" to OverlayLayout.handRanksRight,
+        "手牌合计/确认窗" to OverlayLayout.handControl,
+        "手牌状态窗" to OverlayLayout.handStatus,
+        "手牌未确认标签" to OverlayLayout.handUnconfirmedTag,
+        "手牌确认小条" to OverlayLayout.handConfirmedChip
+    )
+
+    @Test
+    fun overlayBoxesDoNotCoverAnyTurnBadgeWindow() {
+        val badges = badgeWindows()
+        assertEquals(5, badges.size)
+        everyBoxOnTheOverlay().forEach { (boxName, box) ->
+            badges.forEach { (badgeName, badge) ->
+                assertFalse(
+                    "悬浮窗的「$boxName」$box 压住了「$badgeName」$badge：截屏里会盖住圆标，" +
+                        "这一家永远认不到轮到他。请把这个框挪到圆标取色窗外面（TurnBadge.window 给出范围）",
+                    box.overlaps(badge)
+                )
+            }
+        }
     }
 
     @Test
