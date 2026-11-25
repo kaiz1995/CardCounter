@@ -1,5 +1,6 @@
 package com.example.cardcounter.eval
 
+import com.example.cardcounter.capture.FinalizeReason
 import com.example.cardcounter.capture.PlaySource
 import com.example.cardcounter.capture.PlayZone
 import com.example.cardcounter.capture.RoiPlayEventCache
@@ -27,7 +28,9 @@ data class LegacyAudit(
     val timestampMs: Long,
     val outcome: LegacyOutcome,
     val cards: RankCounts?,
-    val frameCount: Int
+    val frameCount: Int,
+    /** 这一手是怎么交出来的：停稳 / 被盖 / 清桌 / 牌桌被挡。 */
+    val reason: FinalizeReason
 )
 
 /**
@@ -43,6 +46,8 @@ class LegacyPipeline(
     stableSamples: Int = 15,
     clearSamples: Int = 6,
     maxFrames: Int = 8,
+    /** 回放约 97ms 一次采样，取 2 次（约 194ms）；手机 50ms 一次，取 3 次（约 150ms）。 */
+    coveredStillSamples: Int = 2,
     private val finalizeFrameCount: Int = 3,
     private val onAudit: (LegacyAudit) -> Unit = {}
 ) : StepwisePlayPipeline {
@@ -53,6 +58,7 @@ class LegacyPipeline(
         maxFrames = maxFrames,
         clearSamples = clearSamples,
         stableSamples = stableSamples,
+        coveredStillSamples = coveredStillSamples,
         isStill = { _, current -> current.still }
     )
     private val gate = StablePlayGate()
@@ -89,9 +95,15 @@ class LegacyPipeline(
             // 自己那一区的出牌完全不管：不判定、不发命令。
             if (zone.source == PlaySource.SELF) continue
             // 缺省的区表示这一帧没有该区观察（DATA-FORMATS 第 5 节）：不推进清桌计数，也不动门控。
-            val observed = observation.zones[zone] ?: continue
-            val visible = tableVisible && isPlayVisible(observed.cardVisible)
-            val sample = if (visible) ZoneSample(observation.timestampMs, observed.still, observed.detections) else null
+            // 牌桌不可见时手机照样逐区过一遍（只用来交出没交出的一手），回放同样处理，缺省的区也不例外。
+            val observed = observation.zones[zone]
+            if (observed == null && tableVisible) continue
+            val visible = tableVisible && observed != null && isPlayVisible(observed.cardVisible)
+            val sample = if (visible && observed != null) {
+                ZoneSample(observation.timestampMs, observed.still, observed.detections)
+            } else {
+                null
+            }
             val finalized = cache.observe(zone, tableVisible, visible, sample, generation)
             if (finalized != null) {
                 // 用这一手最后一帧还在桌上的时间：清桌交出要再等 clearSamples 次采样，
@@ -102,7 +114,11 @@ class LegacyPipeline(
             // “出牌”圆标放在交出之后看（与手机一致）：清桌这次采样兜底交出的一手先入账，这次采样的圆标也能算上。
             // 桌面可见、这一区牌已收走（且没有待兜底交出的牌）时才算轮到这一家，之后再出一样的牌才算新的一手。
             val zoneEmpty = !visible && !cache.hasUndelivered(zone, generation)
-            if (tableVisible && turns.update(zone, observed.turnBadge, zoneEmpty = zoneEmpty)) gate.noteTurn(zone)
+            if (tableVisible && observed != null &&
+                turns.update(zone, observed.turnBadge, zoneEmpty = zoneEmpty)
+            ) {
+                gate.noteTurn(zone)
+            }
         }
     }
 
@@ -135,20 +151,38 @@ class LegacyPipeline(
             }
         }
         if (cards == null) {
-            audit(LegacyAudit(finalized.zone, timestampMs, LegacyOutcome.NO_CONSENSUS, null, finalized.frames.size))
+            audit(
+                LegacyAudit(
+                    finalized.zone, timestampMs, LegacyOutcome.NO_CONSENSUS, null, finalized.frames.size,
+                    finalized.reason
+                )
+            )
             return null
         }
         if (ledger.phase != SessionPhase.ACTIVE) {
-            audit(LegacyAudit(finalized.zone, timestampMs, LegacyOutcome.NOT_ACTIVE, cards, finalized.frames.size))
+            audit(
+                LegacyAudit(
+                    finalized.zone, timestampMs, LegacyOutcome.NOT_ACTIVE, cards, finalized.frames.size,
+                    finalized.reason
+                )
+            )
             return null
         }
         val stable = gate.accept(finalized.zone, cards) ?: run {
             audit(
-                LegacyAudit(finalized.zone, timestampMs, LegacyOutcome.DUPLICATE_SUPPRESSED, cards, finalized.frames.size)
+                LegacyAudit(
+                    finalized.zone, timestampMs, LegacyOutcome.DUPLICATE_SUPPRESSED, cards, finalized.frames.size,
+                    finalized.reason
+                )
             )
             return null
         }
-        audit(LegacyAudit(finalized.zone, timestampMs, LegacyOutcome.ACCEPTED, stable.cards, finalized.frames.size))
+        audit(
+            LegacyAudit(
+                finalized.zone, timestampMs, LegacyOutcome.ACCEPTED, stable.cards, finalized.frames.size,
+                finalized.reason
+            )
+        )
         val evidenceId = UUID.randomUUID().toString()
         val command = LedgerCommand.AcceptOutsidePlay(
             stable.cards, requireNotNull(finalized.zone.seat), evidenceId
