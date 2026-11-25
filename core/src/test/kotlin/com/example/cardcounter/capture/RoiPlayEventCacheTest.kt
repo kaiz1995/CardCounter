@@ -161,14 +161,15 @@ class RoiPlayEventCacheTest {
 
     @Test
     fun newCardsThatSettleOverAnUnsettledPictureReplaceItsFallback() {
-        // 没停稳的一手被新牌直接盖上，新画面自己静止过一次：清桌兜底交出的是新的一段，旧的一段放弃。
+        // 旧的一段只静止过 1 次（低于被盖门槛 coveredStillSamples），新牌直接盖上、新画面自己静止过一次：
+        // 旧的一段不算一手，放弃且不按被盖交出；清桌兜底交出的是新的一段。旧的一段静止够门槛时会按被盖交出，见上面的用例。
         val discarded = mutableListOf<String>()
         val cache = cache(stableSamples = 5, clearSamples = 2, discard = discarded::add)
         cache.see("a-0")
         cache.see("a-1")
         cache.see("b-0")
         assertTrue(cache.hasUndelivered(PlayZone.TOP, 1))
-        cache.see("b-1")
+        assertNull("旧的一段低于被盖门槛，不交出", cache.see("b-1"))
         assertEquals(listOf("a-0", "a-1"), discarded)
         assertNull(cache.empty())
         assertEquals(listOf("b-0", "b-1"), requireNotNull(cache.empty()).frames)

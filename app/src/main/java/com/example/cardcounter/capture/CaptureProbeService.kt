@@ -368,7 +368,10 @@ class CaptureProbeService : Service() {
         )
     }
 
-    /** 截屏回调仅缓存小 ROI；牌面连续停稳后才推理，清桌是未停稳的兜底。 */
+    /**
+     * 截屏回调仅缓存小 ROI；牌面连续停稳后才推理。没停稳的一手在被新牌直接盖上、牌桌被挡住、
+     * 清桌时也会交出推理（交出规则见 RoiPlayEventCache）。
+     */
     private fun captureRoiEvents(image: Image) {
         if (gameSkipped) return
         val tableVisible = gameTableVisible(image)

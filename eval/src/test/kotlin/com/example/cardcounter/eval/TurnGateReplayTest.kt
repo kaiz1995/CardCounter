@@ -153,9 +153,10 @@ class TurnGateReplayTest {
 
     @Test
     fun handCoveredDirectlyByTheNextHandAfterAShortStayIsStillCounted() {
-        // 挂王 BIG_JOKER+FIVE×2（这里用 2 张 K）停约 300ms 没到停稳次数，同一家的下一手 1 张 K 直接盖上：两手都要入账。
+        // 挂王 BIG_JOKER+FIVE×2（这里用 2 张 K）只静止 2 次（约 194ms，正好是回放门槛 coveredStillSamples=2）
+        // 没到停稳次数，同一家的下一手 1 张 K 直接盖上：两手都要入账。门槛回退成 3 这条就会失败。
         val result = replayAudits(
-            frames(4, obs(true, 2)) +
+            frames(3, obs(true, 2)) +
                 frames(1, obs(true, 1, still = false)) +
                 frames(2, obs(true, 1)) +
                 frames(3, obs(false, 0)),
@@ -182,8 +183,9 @@ class TurnGateReplayTest {
 
     @Test
     fun lastHandIsCountedWhenTheTableBecomesHiddenAfterAShortStay() {
-        // 最后一手停约 300ms 牌桌就被结算画面挡住，各区都没有观察：这一手要入账。
-        val result = replayAudits(frames(4, obs(true, 2)) + hidden(3), stableSamples = 10)
+        // 最后一手只静止 2 次（正好是回放门槛 coveredStillSamples=2）牌桌就被结算画面挡住，各区都没有观察：
+        // 这一手要入账。门槛回退成 3 这条就会失败。
+        val result = replayAudits(frames(3, obs(true, 2)) + hidden(3), stableSamples = 10)
         assertEquals(listOf(LegacyOutcome.ACCEPTED), result.map { it.outcome })
         assertEquals(listOf(2), result.map { it.cards?.total() })
         assertEquals(listOf(FinalizeReason.TABLE_HIDDEN), result.map { it.reason })
