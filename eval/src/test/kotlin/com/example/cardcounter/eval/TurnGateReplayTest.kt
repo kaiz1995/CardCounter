@@ -117,6 +117,28 @@ class TurnGateReplayTest {
     }
 
     @Test
+    fun theSampleThatClearsTheZoneAlreadyCountsTowardTheirTurn() {
+        // 没停稳就收走：清桌那次采样兜底入账，同一次采样的圆标就算第 1 次，再亮 1 次就轮到他。
+        // 圆标只亮 3 次采样（清桌 2 次 + 1 次），这家下一手出一样的牌也要入账。
+        val result = replayAudits(
+            frames(2, obs(true, 1)) +
+                frames(3, obs(false, 0, badge = true)) +
+                frames(3, obs(true, 1))
+        )
+        assertEquals(listOf(LegacyOutcome.ACCEPTED, LegacyOutcome.ACCEPTED), result.map { it.outcome })
+    }
+
+    @Test
+    fun aCollectFrameBeforeSettlingDoesNotLoseTheHand() {
+        // 一手牌没停稳（只静止过 1 次）就收走，收牌动画先拍到一帧变化画面：清桌时仍要兜底记上这一手。
+        val result = replayAudits(
+            frames(2, obs(true, 1)) + frames(1, obs(true, 2, still = false)) + frames(3, obs(false, 0))
+        )
+        assertEquals(listOf(LegacyOutcome.ACCEPTED), result.map { it.outcome })
+        assertEquals(listOf(1), result.map { it.cards?.total() })
+    }
+
+    @Test
     fun slideInFramesDoNotOutvoteTheSettledPicture() {
         // 牌滑进来的 4 帧（不静止）认成 1 张，停稳段第一帧认成 2 张（还没静止），再 2 帧静止认成 2 张。
         // 投票帧数设得比总帧数大：只交最后一段静止的 3 帧，结果是 2 张，不被 4 帧滑入画面压过。

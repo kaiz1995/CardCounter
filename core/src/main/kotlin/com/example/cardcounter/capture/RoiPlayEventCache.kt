@@ -5,6 +5,7 @@ package com.example.cardcounter.capture
  * 交出后不锁区：画面一旦不静止就算换了画面，再次停稳会再交出一次；同一张画面一直静止只交出一次。
  * 清桌（连续 [clearSamples] 次看不到牌）只清空缓存、解除 primed；清桌时若还没交出，且至少比较到过一次静止（见 [hasUndelivered]），
  * 兜底交出最后一段静止帧。已交出后才来的一帧变化画面（收牌、淡出动画）没有停稳过，清桌时不兜底交出。
+ * 没交出的一手后面先来了变化画面（没停稳就被收走），这一手仍留着待兜底，直到新画面自己静止过一次（新牌盖上来）才放弃。
  * 同一手是不是新的一手由 [StablePlayGate] 判断，这里只负责停稳。
  *
  * [isStill] 只能依赖帧里的轻量指纹：帧交出、位图被回收之后，缓存还要拿上一帧继续比较。
@@ -25,6 +26,8 @@ class RoiPlayEventCache<T>(
     private class State<T> {
         /** 当前这一段连续静止的帧：起点（最后一个不静止的帧）加上之后的静止帧，最多 maxFrames 帧。 */
         val frames = ArrayDeque<T>()
+        /** 静止过一次以上、还没交出就换了画面的上一段：清桌时兜底交出；新画面自己静止过一次就放弃。 */
+        val pending = ArrayDeque<T>()
         var last: T? = null
         var emptySamples = 0
         var stillCount = 0
@@ -79,7 +82,7 @@ class RoiPlayEventCache<T>(
     @Synchronized
     fun hasUndelivered(zone: PlayZone, generation: Long): Boolean {
         val state = states.getValue(zone)
-        return state.generation == generation && hasPendingFallback(state)
+        return state.generation == generation && fallbackSource(state) != null
     }
 
     @Synchronized
@@ -113,6 +116,8 @@ class RoiPlayEventCache<T>(
                     discard(frame)
                     return null
                 }
+                // 新画面自己也静止过一次：是新牌盖了上来，之前没停稳的那一手不再兜底。
+                dropPending(state)
                 while (state.frames.size >= maxFrames) discard(state.frames.removeFirst())
                 state.frames.addLast(frame)
                 state.stillCount++
@@ -124,7 +129,13 @@ class RoiPlayEventCache<T>(
                 return Finalized(zone, frames, generation)
             }
             // 画面变了或刚出现：新的一段静止从这一帧开始。
-            state.frames.forEach(discard)
+            // 上一段静止过还没交出（没停稳就被收走，收牌动画先来一帧）：先留着，清桌时兜底交出。
+            if (!state.delivered && state.stillCount > 0) {
+                dropPending(state)
+                state.pending.addAll(state.frames)
+            } else {
+                state.frames.forEach(discard)
+            }
             state.frames.clear()
             state.frames.addLast(frame)
             state.stillCount = 0
@@ -136,23 +147,34 @@ class RoiPlayEventCache<T>(
         state.last = null
         state.emptySamples = (state.emptySamples + 1).coerceAtMost(clearSamples)
         if (state.emptySamples < clearSamples) return null
-        val fallback = hasPendingFallback(state)
-        val frames = if (fallback) state.frames.toList() else emptyList()
-        if (fallback) state.frames.clear() else clear(state)
-        state.emptySamples = 0
-        state.stillCount = 0
-        state.delivered = false
+        val source = fallbackSource(state)
+        val frames = source?.toList().orEmpty()
+        source?.clear()
+        clear(state)
         state.primed = false
-        return if (fallback) Finalized(zone, frames, generation) else null
+        return if (source != null) Finalized(zone, frames, generation) else null
     }
 
-    /** 至少比较到一次静止：已交出后才来的一帧变化画面（收牌、淡出）不算。 */
-    private fun hasPendingFallback(state: State<T>): Boolean =
-        !state.primed && !state.delivered && state.stillCount > 0
+    /**
+     * 清桌时兜底交出的帧：当前这一段至少比较到一次静止就交它，否则交换画面前留下的那一段。
+     * 已交出后才来的变化画面（收牌、淡出）、旧牌都不交。
+     */
+    private fun fallbackSource(state: State<T>): ArrayDeque<T>? = when {
+        state.primed || state.delivered -> null
+        state.stillCount > 0 -> state.frames
+        state.pending.isNotEmpty() -> state.pending
+        else -> null
+    }
+
+    private fun dropPending(state: State<T>) {
+        state.pending.forEach(discard)
+        state.pending.clear()
+    }
 
     private fun clear(state: State<T>) {
         state.frames.forEach(discard)
         state.frames.clear()
+        dropPending(state)
         state.last = null
         state.emptySamples = 0
         state.stillCount = 0

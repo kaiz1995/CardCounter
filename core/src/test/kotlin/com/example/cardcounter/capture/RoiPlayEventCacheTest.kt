@@ -138,6 +138,37 @@ class RoiPlayEventCacheTest {
     }
 
     @Test
+    fun aChangedFrameBeforeSettlementKeepsTheFallback() {
+        // 没停稳（静止 2 次，停稳要 5 次）就被收走，收牌动画先拍到一帧变化画面：清桌时仍兜底交出原来的静止段。
+        val discarded = mutableListOf<String>()
+        val cache = cache(stableSamples = 5, clearSamples = 2, discard = discarded::add)
+        cache.see("a-0")
+        cache.see("a-1")
+        cache.see("a-2")
+        assertNull(cache.see("fade-0"))
+        assertTrue(cache.hasUndelivered(PlayZone.TOP, 1))
+        assertNull(cache.empty())
+        assertEquals(listOf("a-0", "a-1", "a-2"), requireNotNull(cache.empty()).frames)
+        assertFalse(cache.hasUndelivered(PlayZone.TOP, 1))
+        assertEquals(listOf("fade-0"), discarded)
+    }
+
+    @Test
+    fun newCardsThatSettleOverAnUnsettledPictureReplaceItsFallback() {
+        // 没停稳的一手被新牌直接盖上，新画面自己静止过一次：清桌兜底交出的是新的一段，旧的一段放弃。
+        val discarded = mutableListOf<String>()
+        val cache = cache(stableSamples = 5, clearSamples = 2, discard = discarded::add)
+        cache.see("a-0")
+        cache.see("a-1")
+        cache.see("b-0")
+        assertTrue(cache.hasUndelivered(PlayZone.TOP, 1))
+        cache.see("b-1")
+        assertEquals(listOf("a-0", "a-1"), discarded)
+        assertNull(cache.empty())
+        assertEquals(listOf("b-0", "b-1"), requireNotNull(cache.empty()).frames)
+    }
+
+    @Test
     fun hasUndeliveredIsTrueOnlyForAPictureThatSettledOnceButWasNotDelivered() {
         val cache = cache(stableSamples = 3, clearSamples = 2)
         assertFalse(cache.hasUndelivered(PlayZone.TOP, 1))

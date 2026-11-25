@@ -406,16 +406,6 @@ class CaptureProbeService : Service() {
         lastRoiSampleAt = now
         PlayZone.entries.forEach { zone ->
             val visible = tableVisible && isPlayVisible(visibleZones[zone] == true)
-            // “出牌”圆标：这一区牌已收走（且没有待兜底交出的牌）、圆标连续两次采样都亮才算轮到他；
-            // 之后再出一样的牌才算新的一手。兜底交出的入账先 post，所以一定排在 noteTurn 前面。
-            if (tableVisible && zone.source == PlaySource.OUTSIDE) {
-                val shown = TurnBadge.isShown(zone) { x, y -> pixelRgb(image, x, y) }
-                val zoneEmpty = !visible && !roiEventCache.hasUndelivered(zone, generation)
-                if (turnTracker.update(zone, shown, zoneEmpty = zoneEmpty)) {
-                    Log.i(TAG, "TURN_BADGE zone=$zone")
-                    rankHandler.post { stablePlayGate.noteTurn(zone) }
-                }
-            }
             val frame = if (visible && roiEventCache.needsFrame(zone, generation)) {
                 val probe = RoiFrame(null, RoiFingerprint.of(zone) { x, y -> pixelRgb(image, x, y) })
                 // 已交出且画面没变：只要指纹，不再截 320 图送识别；画面一变，这一帧是下一段静止的起点，要带图。
@@ -426,6 +416,17 @@ class CaptureProbeService : Service() {
             roiEventCache.observe(zone, tableVisible, visible, frame, generation)?.let { finalized ->
                 Log.i(TAG, "ROI_FINALIZED zone=${finalized.zone} frames=${finalized.frames.size}")
                 rankHandler.post { finalizeRoiEvent(finalized) }
+            }
+            // “出牌”圆标放在交出之后看：清桌这次采样兜底交出的入账先 post，一定排在 noteTurn 前面，
+            // 这次采样的圆标也能算上。这一区牌已收走（且没有待兜底交出的牌）、圆标连续两次采样都亮才算轮到他；
+            // 之后再出一样的牌才算新的一手。
+            if (tableVisible && zone.source == PlaySource.OUTSIDE) {
+                val shown = TurnBadge.isShown(zone) { x, y -> pixelRgb(image, x, y) }
+                val zoneEmpty = !visible && !roiEventCache.hasUndelivered(zone, generation)
+                if (turnTracker.update(zone, shown, zoneEmpty = zoneEmpty)) {
+                    Log.i(TAG, "TURN_BADGE zone=$zone")
+                    rankHandler.post { stablePlayGate.noteTurn(zone) }
+                }
             }
         }
     }

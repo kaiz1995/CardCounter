@@ -91,16 +91,18 @@ class LegacyPipeline(
             // 缺省的区表示这一帧没有该区观察（DATA-FORMATS 第 5 节）：不推进清桌计数，也不动门控。
             val observed = observation.zones[zone] ?: continue
             val visible = tableVisible && isPlayVisible(observed.cardVisible)
-            // 桌面可见时才看“出牌”圆标；这一区牌已收走（且没有待兜底交出的牌）时轮到这一家，
-            // 之后再出一样的牌才算新的一手。待兜底交出的牌先交出入账，再算轮到他。
+            val sample = if (visible) ZoneSample(observation.timestampMs, observed.still, observed.detections) else null
+            val finalized = cache.observe(zone, tableVisible, visible, sample, generation)
+            if (finalized != null) {
+                // 用这一手最后一帧还在桌上的时间：清桌交出要再等 clearSamples 次采样，
+                // 若用交出时刻，延迟随采样间隔变化，会掉出真值对齐时间窗。
+                val evidenceMs = finalized.frames.lastOrNull()?.timestampMs ?: observation.timestampMs
+                finalize(finalized, evidenceMs, ledger())?.let(commit)
+            }
+            // “出牌”圆标放在交出之后看（与手机一致）：清桌这次采样兜底交出的一手先入账，这次采样的圆标也能算上。
+            // 桌面可见、这一区牌已收走（且没有待兜底交出的牌）时才算轮到这一家，之后再出一样的牌才算新的一手。
             val zoneEmpty = !visible && !cache.hasUndelivered(zone, generation)
             if (tableVisible && turns.update(zone, observed.turnBadge, zoneEmpty = zoneEmpty)) gate.noteTurn(zone)
-            val sample = if (visible) ZoneSample(observation.timestampMs, observed.still, observed.detections) else null
-            val finalized = cache.observe(zone, tableVisible, visible, sample, generation) ?: continue
-            // 用这一手最后一帧还在桌上的时间：清桌交出要再等 clearSamples 次采样，
-            // 若用交出时刻，延迟随采样间隔变化，会掉出真值对齐时间窗。
-            val evidenceMs = finalized.frames.lastOrNull()?.timestampMs ?: observation.timestampMs
-            finalize(finalized, evidenceMs, ledger())?.let(commit)
         }
     }
 
@@ -154,7 +156,7 @@ class LegacyPipeline(
         return PipelineDecision(command, finalized.zone, timestampMs)
     }
 
-    /** 与 detectYoloCards(publicPlay = true) 等价：只保留点数带内的框，按点数计数。 */
+    /** 只保留点数带内的框（[isPublicRankBand]，为兼容旧模型回放保留；手机上的新模型不再过滤），按点数计数。 */
     private fun candidateOf(detections: List<Detection>): Candidate {
         val counts = mutableMapOf<Rank, Int>()
         var minimum = 0f
