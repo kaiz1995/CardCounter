@@ -4,6 +4,7 @@ import com.example.cardcounter.capture.PlaySource
 import com.example.cardcounter.capture.PlayZone
 import com.example.cardcounter.capture.RoiPlayEventCache
 import com.example.cardcounter.capture.StablePlayGate
+import com.example.cardcounter.capture.TurnTracker
 import com.example.cardcounter.capture.canFastConfirmPlay
 import com.example.cardcounter.capture.isPlayVisible
 import com.example.cardcounter.capture.isPublicRankBand
@@ -31,10 +32,9 @@ data class LegacyAudit(
 
 /**
  * 手机现行出牌判定（W5 新状态机到位前的临时裁判实现）：
- * RoiPlayEventCache 停稳/清桌交出 → 多帧检测投票 → StablePlayGate.acceptStable。
- *
- * 与 CaptureProbeService.finalizeRoiEvent 的已知差异：没有手牌模板融合
- * （fuseSinglePublicPlay 需要位图），帧按时间取最近 N 帧而不是按 quality 排序。
+ * RoiPlayEventCache 停稳交出 → 多帧检测投票 → StablePlayGate.accept；
+ * 出牌圆标（TurnBadge）经 TurnTracker 告诉去重门“轮到过这一家”，与手机同一套状态机。
+ * 帧按时间取最后 N 帧投票，与 CaptureProbeService.finalizeRoiEvent 一致。
  * 决策时间取这一手最后一帧证据的时间，不是交出时刻（清桌交出要多等 clearSamples 次采样）。
  * 回放走逐区路径：每个区判定前读最新账本、判定后立即提交；同帧前一区让账本暂停后，
  * 后一区走“非 ACTIVE”分支，不动去重门控，与手机 finalizeRoiEvent 逐区串行一致。
@@ -56,6 +56,7 @@ class LegacyPipeline(
         isStill = { _, current -> current.still }
     )
     private val gate = StablePlayGate()
+    private val turns = TurnTracker()
     private var generation = 0L
     private val auditLog = mutableListOf<LegacyAudit>()
 
@@ -90,10 +91,8 @@ class LegacyPipeline(
             // 缺省的区表示这一帧没有该区观察（DATA-FORMATS 第 5 节）：不推进清桌计数，也不动门控。
             val observed = observation.zones[zone] ?: continue
             val visible = tableVisible && isPlayVisible(observed.cardVisible)
-            // 手机在“看得见桌面但该区没牌”时用零候选清门控；桌面不可见时不动门控。
-            if (tableVisible && !visible) {
-                gate.update(zone, RankCounts.zero())
-            }
+            // 桌面可见时才看“出牌”圆标；轮到这一家之后，再出一样的牌才算新的一手。
+            if (tableVisible && turns.update(zone, observed.turnBadge)) gate.noteTurn(zone)
             val sample = if (visible) ZoneSample(observation.timestampMs, observed.still, observed.detections) else null
             val finalized = cache.observe(zone, tableVisible, visible, sample, generation) ?: continue
             // 用这一手最后一帧还在桌上的时间：清桌交出要再等 clearSamples 次采样，
@@ -107,6 +106,7 @@ class LegacyPipeline(
         generation++
         cache.reset(generation, primeExistingTable = false)
         gate.reset()
+        turns.reset()
         auditLog.clear()
     }
 
@@ -138,7 +138,7 @@ class LegacyPipeline(
             audit(LegacyAudit(finalized.zone, timestampMs, LegacyOutcome.NOT_ACTIVE, cards, finalized.frames.size))
             return null
         }
-        val stable = gate.acceptStable(finalized.zone, cards) ?: run {
+        val stable = gate.accept(finalized.zone, cards) ?: run {
             audit(
                 LegacyAudit(finalized.zone, timestampMs, LegacyOutcome.DUPLICATE_SUPPRESSED, cards, finalized.frames.size)
             )
