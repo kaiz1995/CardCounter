@@ -59,8 +59,8 @@ class HandCandidateDiagnosticsTest {
 
     @Test
     fun skipsTemplateScoresWhoseInkDensityCannotReachThreshold() {
-        assertEquals(false, canReachIoUThreshold(sceneInk = 2, templateInk = 10, threshold = 0.55))
-        assertEquals(true, canReachIoUThreshold(sceneInk = 8, templateInk = 10, threshold = 0.55))
+        assertEquals(false, canReachIoUThreshold(sceneInk = 2, templatePixels = 10, threshold = 0.55))
+        assertEquals(true, canReachIoUThreshold(sceneInk = 8, templatePixels = 10, threshold = 0.55))
     }
 
     @Test
