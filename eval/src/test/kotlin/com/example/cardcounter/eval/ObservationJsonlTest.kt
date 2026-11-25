@@ -32,6 +32,27 @@ class ObservationJsonlTest {
     }
 
     @Test
+    fun turnBadgeIsOptionalAndDefaultsToFalse() {
+        val frame = ObservationJsonl.parseLine(
+            """{"ts_ms":1,"table_visible":true,"zones":{"TOP":{"card_visible":true,"still":true},"LEFT_TOP":{"card_visible":false,"still":true,"turn":true},"RIGHT_TOP":{"card_visible":true,"still":true,"turn":false,"dets":[]}}}"""
+        )
+
+        assertFalse(frame.zones.getValue(PlayZone.TOP).turnBadge)
+        assertTrue(frame.zones.getValue(PlayZone.LEFT_TOP).turnBadge)
+        assertFalse(frame.zones.getValue(PlayZone.RIGHT_TOP).turnBadge)
+    }
+
+    @Test
+    fun reportsLineAndReasonForNonBooleanTurn() {
+        val text = """{"ts_ms":1,"table_visible":true,"zones":{"TOP":{"card_visible":true,"still":true,"turn":"yes"}}}"""
+
+        val error = runCatching { ObservationJsonl.parse(text) }.exceptionOrNull()
+
+        assertTrue(error is DataFormatException)
+        assertTrue(error!!.message.orEmpty().contains("turn"))
+    }
+
+    @Test
     fun zoneWithoutDetsFieldMeansNoDetection() {
         val frame = ObservationJsonl.parseLine(
             """{"ts_ms":1,"table_visible":true,"zones":{"SELF":{"card_visible":true,"still":false}}}"""

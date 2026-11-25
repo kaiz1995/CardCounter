@@ -398,7 +398,7 @@ class EvalReviewGuardsTest {
         assertEquals(0, replay.rejectionCount)
         assertEquals(listOf<PlayZone?>(PlayZone.TOP), replay.decisions.map { it.zone })
         assertTrue(replay.accepted.isEmpty())
-        // 手机读到非 ACTIVE 直接返回，不调 acceptStable：后一区审计应是 NOT_ACTIVE，不是 ACCEPTED。
+        // 手机读到非 ACTIVE 直接返回，不调 accept：后一区审计应是 NOT_ACTIVE，不是 ACCEPTED。
         assertEquals(
             listOf(PlayZone.TOP to LegacyOutcome.ACCEPTED, PlayZone.LEFT_TOP to LegacyOutcome.NOT_ACTIVE),
             replay.audits.map { it.zone to it.outcome }

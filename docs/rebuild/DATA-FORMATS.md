@@ -86,6 +86,8 @@ game_id,event_seq,zone,appear_ms,stable_ms,clear_ms,quantity,cards,tag,review,no
 - 一行只能有一个 JSON 对象；`ts_ms` 为非负整数，`table_visible` 为布尔，`zones` 必填且是对象（没有任何区时写 `{}`）。
 - `zones`：键与 `PlayZone` 枚举同名；缺省的区表示该帧没有该区观察，评测不把它当成“该区没牌”，不推进清桌计数。
 - `card_visible`、`still` 都必填：`card_visible` 白色牌面面积达到可见阈值（`hasVisibleCardArea`）；`still` 与上一次采样相比画面静止，只用于停稳判定。
+- `turn`：可选布尔，缺省为 `false`；这一区红底黄字“出牌”倒计时圆标是否亮着（手机 `TurnBadge`，只在桌面可见时取）。同一家连续 2 次采样都亮才算“轮到他”，每次出现只触发一次。
+- 停稳与去重（手机与评测同一套状态机）：牌面连续静止满 15 次采样就交出最后一段静止的帧做投票；交出后不锁区，画面一旦不静止，再次停稳会再交出一次。是不是新的一手由去重门判断：认出的牌与这一区上一次入账的不同就入账；相同则只有入账后轮到过这一家才入账，否则算重复（审计记 `DUPLICATE_SUPPRESSED`）。清桌不清“上一次入账的牌”。
 - `dets`：该帧该区的检测框数组；省略或为 `null` 表示这一帧没做识别（对应 `ZoneObservation.detections = null`）。
 - `rank`：`Rank` 枚举名；`conf` 为 0..1；`cx/cy/w/h` 是 320×320 模型输入画布上的 0..1 小数；`NaN` 等非有限数报错。
 - 检测框视为已完成 NMS（IoU 0.45）与 `conf >= 0.25` 过滤，几何来自手机 `publicPlayBitmap` 的裁剪与 letterbox；评测工具不重复做 NMS 或阈值过滤。
