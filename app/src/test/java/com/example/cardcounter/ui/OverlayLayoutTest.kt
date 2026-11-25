@@ -44,7 +44,8 @@ class OverlayLayoutTest {
     /** 自己手牌识别用到的全部区域。 */
     private fun handAreaRects(): List<Pair<String, OverlayLayout.Rect>> = listOf(
         areaRect("手牌 YOLO 取图区", HandRegions.yoloArea()),
-        areaRect("手牌两排边缘取样区", HandRegions.edgeRowsArea),
+        areaRect("手牌上排边缘取样行", HandRegions.topEdgeRow),
+        areaRect("手牌下排边缘取样行", HandRegions.bottomEdgeRow),
         areaRect("手牌牌面墨迹区", HandRegions.inkArea),
         areaRect("手牌亮度指纹区", HandRegions.signatureArea(width, height))
     )
@@ -79,6 +80,24 @@ class OverlayLayoutTest {
         OverlayLayout.handPanelRects.forEach { panel ->
             areas.forEach { (name, rect) ->
                 assertFalse("手牌面板 $panel 压住了 $name $rect", panel.overlaps(rect))
+            }
+        }
+    }
+
+    /** 悬浮窗会被截屏录进去：任何一个框盖住按牌边缘数张数的采样行，张数就会数错。 */
+    @Test
+    fun noBoxOnTheOverlayCoversTheHandCountSamplingRows() {
+        val rows = listOf(
+            areaRect("手牌上排边缘取样行", HandRegions.topEdgeRow),
+            areaRect("手牌下排边缘取样行", HandRegions.bottomEdgeRow)
+        )
+        everyBoxOnTheOverlay().forEach { (boxName, box) ->
+            rows.forEach { (rowName, row) ->
+                assertFalse(
+                    "悬浮窗的「$boxName」$box 盖住了手牌张数计数区「$rowName」$row，" +
+                        "请挪开这个框，或改采样行（HandRegions.topEdgeRow / bottomEdgeRow）",
+                    box.overlaps(row)
+                )
             }
         }
     }

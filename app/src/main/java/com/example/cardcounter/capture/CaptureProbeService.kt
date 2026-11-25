@@ -231,28 +231,35 @@ class CaptureProbeService : Service() {
                 try {
                     val ink = handRankMatcher.snapshot(image)
                     val luma = handCardPositionDetector.snapshot(image)
+                    val handArea = handAreaBitmap(image)
                     val handYoloFrame = if (publicPlayYolo != null) {
                         handYoloBitmap(image)
                     } else null
                     val revision = handRevision
                     rankHandler.post {
+                        var handAreaKept = false
                         try {
                             val frame = handRankMatcher.prepare(ink)
                             if (gameSkipped || revision != handRevision || sessionLedger.state.handConfirmed) return@post
-                            val positionCount = handCardPositionDetector.detect(luma)
+                            val rowCounts = handCardPositionDetector.rowCounts(luma)
+                            val positionCount = handCardPositionDetector.detect(rowCounts)
                             val templateCards = handRankMatcher.detect(frame)
                             val yoloCards = handYoloFrame?.let(::detectYoloCards)
-                            val cards = chooseHandCards(positionCount, yoloCards?.cards, templateCards)
+                            val cards = chooseHandCards(yoloCards?.cards, templateCards)
                             // 识别期间可能开了新局或手牌刚确认：旧结果不能写进新的草稿。
                             if (revision != handRevision || sessionLedger.state.handConfirmed) return@post
                             HandPanelState.draft.refresh(cards, positionCount)
+                            replaceHandProbe(HandProbe(handArea, rowCounts, yoloCards?.cards, templateCards))
+                            handAreaKept = true
                             HandPanelState.changed()
                             Log.i(
                                 TAG,
                                 "HAND_CANDIDATE total=${cards.total()} positionCount=$positionCount " +
+                                    "rows=${rowCounts.first}/${rowCounts.second} " +
                                     "yolo=$yoloCards template=$templateCards cards=$cards"
                             )
                         } finally {
+                            if (!handAreaKept) handArea.recycle()
                             handYoloFrame?.recycle()
                             rankProbeGate.release()
                         }
@@ -354,18 +361,69 @@ class CaptureProbeService : Service() {
         Log.i(TAG, "MANUAL_NEW_GAME")
     }
 
-    /** 用户在悬浮窗上点“确认手牌”：用当时显示的点数和边缘张数发一次确认，结果回显在面板上。 */
+    /**
+     * 用户在悬浮窗上点“确认手牌”：用当时显示的点数和数出来的张数发一次确认，结果回显在面板上。
+     * 点数合计和数出来的张数对不上时仍然确认，同时存一组 HAND_COUNT_MISMATCH 证据供事后核对。
+     */
     private fun confirmHandFromPanel() {
-        val data = HandPanelState.draft.snapshot().confirmData() ?: return
+        val draft = HandPanelState.draft.snapshot()
+        val data = draft.confirmData() ?: return
+        val probe = handProbe
         val result = sessionActor.post(LedgerCommand.ConfirmHand(data.cards, data.handCount))
         HandPanelState.rejectReason = (result as? DispatchResult.Rejected)?.reason
+        val mismatch = data.handCount != null && data.handCount != data.cards.total()
+        val accepted = result is DispatchResult.Accepted
+        if (accepted && mismatch && probe != null) {
+            issueSampleStore.saveHandCountMismatch(
+                probe.area, SystemClock.elapsedRealtime(), data.cards, data.cards.total(), data.handCount,
+                probe.rows.first, probe.rows.second, probe.model, probe.template,
+                draft.edited.map { it.name }.sorted()
+            )
+        }
         HandPanelState.changed()
         OverlayService.refresh(this)
         Log.i(
             TAG,
             "SELF_HAND_CONFIRM total=${data.cards.total()} positionCount=${data.handCount} " +
+                "top=${probe?.rows?.first} bottom=${probe?.rows?.second} " +
+                "edited=${draft.edited.map { it.name }.sorted()} " +
                 "cards=${data.cards} result=${result.javaClass.simpleName}"
         )
+    }
+
+    /** 最近一次手牌识别时的手牌区截图和两排数出来的张数，确认对不上时存证据用；只在 rankHandler 线程写、回调线程读。 */
+    private class HandProbe(
+        val area: Bitmap,
+        val rows: Pair<Int?, Int?>,
+        val model: RankCounts?,
+        val template: RankCounts
+    )
+
+    @Volatile private var handProbe: HandProbe? = null
+
+    @Synchronized
+    private fun replaceHandProbe(next: HandProbe?) {
+        val old = handProbe
+        handProbe = next
+        if (old != null && old !== next) old.area.recycle()
+    }
+
+    /** 1280x578 画布下 y≥380 的手牌区，存证据用。 */
+    private fun handAreaBitmap(image: Image): Bitmap {
+        val width = 1_280
+        val height = 578 - HAND_AREA_TOP
+        val pixels = IntArray(width * height)
+        val plane = image.planes[0]
+        for (y in 0 until height) for (x in 0 until width) {
+            val sourceX = x * image.width / 1_280
+            val sourceY = (HAND_AREA_TOP + y) * image.height / 578
+            val offset = sourceY * plane.rowStride + sourceX * plane.pixelStride
+            val red = plane.buffer.get(offset).toInt() and 0xff
+            val green = plane.buffer.get(offset + 1).toInt() and 0xff
+            val blue = plane.buffer.get(offset + 2).toInt() and 0xff
+            pixels[y * width + x] = 0xff000000.toInt() or (red shl 16) or (green shl 8) or blue
+        }
+        return Bitmap.createBitmap(pixels, width, height, Bitmap.Config.ARGB_8888)
     }
 
     /** 截屏回调仅缓存小 ROI；牌面连续停稳后才推理，清桌是未停稳的兜底。 */
@@ -715,6 +773,8 @@ class CaptureProbeService : Service() {
         private const val HAND_YOLO_TOP = HandRegions.YOLO_TOP
         private const val HAND_YOLO_BOTTOM = HandRegions.YOLO_BOTTOM
         private const val HAND_YOLO_PAD_TOP = 540
+        /** 手牌区证据截图的上沿（1280x578 画布）。 */
+        private const val HAND_AREA_TOP = 380
         private const val TAG = "CaptureProbe"
 
         fun start(context: Context, resultCode: Int, data: Intent) {

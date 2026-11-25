@@ -1,22 +1,64 @@
 package com.example.cardcounter.capture
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class HandCardPositionDetectorTest {
     private val detector = HandCardPositionDetector()
 
-    /** G2 几何诊断回归；该值尚不能作为锁牌依据。 */
+    /**
+     * 目视数出来的两排张数（上排 to 下排），逐张放大核对过。
+     * 133745 是 34 张（上 17、下 17）：队友进贡给了一张 3；
+     * 102658_* 是带悬浮窗的整屏截图，下排上半被“外面剩余”横条盖住，只靠露在横条上方的牌顶部数。
+     */
+    private val truth = linkedMapOf(
+        "133745" to (17 to 17),
+        "145333" to (16 to 17),
+        "145704" to (17 to 17),
+        "102658_545" to (16 to 17),
+        "102658_550" to (18 to 19),
+        "102658_555" to (19 to 19),
+        "102658_560" to (19 to 20),
+        "102658_600" to (17 to 17)
+    )
+
     @Test
-    fun reportsCurrentGeometryDiagnostics() {
-        assertEquals(32, detector.detect(luma("145252")))
-        assertEquals(33, detector.detect(luma("145333")))
-        assertEquals(34, detector.detect(luma("145704")))
+    fun countsEachRowLikeTheNakedEye() {
+        truth.forEach { (name, expected) ->
+            val (top, bottom) = detector.rowCounts(luma(name))
+            assertEquals("$name 上排", expected.first, top)
+            assertEquals("$name 下排", expected.second, bottom)
+            assertEquals("$name 总数", expected.first + expected.second, detector.detect(luma(name)))
+        }
+    }
+
+    /** 回归：这一手 34 张，原来的固定窗口和共用牌距数成 33，悬浮窗显示就被换成了错的模板结果。 */
+    @Test
+    fun countsTheThirtyFourCardHandWithTributeCard() {
+        assertEquals(17 to 17, detector.rowCounts(luma("133745")))
+        assertEquals(34, detector.detect(luma("133745")))
     }
 
     @Test
-    fun keepsTheTwoRowsSeparate() {
-        assertEquals(16 to 17, detector.rowCounts(luma("145333")))
+    fun rowsOfTheWholeHandStayWithinOneOfEachOther() {
+        truth.keys.forEach { name ->
+            val (top, bottom) = detector.rowCounts(luma(name))
+            // 游戏下排先排满，下排比上排多 0 或 1 张。
+            assertEquals("$name", true, bottom!! - top!! in 0..1)
+        }
+    }
+
+    /**
+     * 145252 是进贡牌还在飞的过渡帧：目视上 16、下 15，下排比上排短，
+     * 上排两头的牌从下排两侧伸出来，下排采样行读到的是上排外沿（两端和上排重合），数不出下排，只能是 null。
+     */
+    @Test
+    fun bottomRowShorterThanTopReadsTheTopOutlineAndIsNotCounted() {
+        val (top, bottom) = detector.rowCounts(luma("145252"))
+        assertEquals(16, top)
+        assertNull(bottom)
+        assertNull(detector.detect(luma("145252")))
     }
 
     private fun luma(name: String): IntArray {

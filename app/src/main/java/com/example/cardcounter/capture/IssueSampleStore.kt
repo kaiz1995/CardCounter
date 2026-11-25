@@ -47,6 +47,41 @@ internal class IssueSampleStore(context: Context) : AutoCloseable {
         }
     }
 
+    /**
+     * 用户在点数合计和数出来的张数对不上时确认手牌：存最近一帧的手牌区截图（1280x578 画布 y≥380）和 meta.json，
+     * 事后核对是张数没数对还是点数识别错。reason 固定为 HAND_COUNT_MISMATCH，和其他证据共用 50 组上限。
+     */
+    fun saveHandCountMismatch(
+        handArea: Bitmap,
+        timeMs: Long,
+        shown: RankCounts,
+        total: Int,
+        positionCount: Int?,
+        topRowCount: Int?,
+        bottomRowCount: Int?,
+        model: RankCounts?,
+        template: RankCounts,
+        edited: List<String>
+    ) {
+        val copy = handArea.copy(Bitmap.Config.ARGB_8888, false)
+        val metadata = handCountMismatchJson(
+            timeMs, shown, total, positionCount, topRowCount, bottomRowCount, model, template, edited
+        )
+        executor.execute {
+            runCatching {
+                root.mkdirs()
+                trim()
+                val directory = File(root, "${System.currentTimeMillis()}_SELF_$HAND_COUNT_MISMATCH")
+                check(directory.mkdirs()) { "无法创建证据目录" }
+                File(directory, "hand.png").outputStream().use { out ->
+                    check(copy.compress(Bitmap.CompressFormat.PNG, 100, out)) { "无法写入手牌区截图" }
+                }
+                File(directory, "meta.json").writeText(metadata.toString())
+            }.onFailure { Log.w(TAG, "ISSUE_EVIDENCE_SAVE_FAILED", it) }
+            copy.recycle()
+        }
+    }
+
     private fun trim() {
         val directories = root.listFiles()?.filter(File::isDirectory)
             ?.sortedBy(File::lastModified).orEmpty()
@@ -64,6 +99,32 @@ internal class IssueSampleStore(context: Context) : AutoCloseable {
         const val TAG = "CaptureProbe"
     }
 }
+
+/** 手牌点数合计和数出来的张数对不上时确认的证据原因。 */
+internal const val HAND_COUNT_MISMATCH = "HAND_COUNT_MISMATCH"
+
+/** shown 是确认时显示的各点数张数；model / template 是最近一次两路识别结果；edited 是用户改过的点数。 */
+internal fun handCountMismatchJson(
+    timeMs: Long,
+    shown: RankCounts,
+    total: Int,
+    positionCount: Int?,
+    topRowCount: Int?,
+    bottomRowCount: Int?,
+    model: RankCounts?,
+    template: RankCounts,
+    edited: List<String>
+): JSONObject = JSONObject()
+    .put("reason", HAND_COUNT_MISMATCH)
+    .put("timeMs", timeMs)
+    .put("shown", rankCountsJson(shown))
+    .put("total", total)
+    .put("positionCount", positionCount ?: JSONObject.NULL)
+    .put("topRowCount", topRowCount ?: JSONObject.NULL)
+    .put("bottomRowCount", bottomRowCount ?: JSONObject.NULL)
+    .put("model", model?.let(::rankCountsJson) ?: JSONObject.NULL)
+    .put("template", rankCountsJson(template))
+    .put("edited", JSONArray(edited))
 
 /** 投票里一帧的识别结果：点数计数、最低置信度和每个检测框。 */
 internal data class RankCountsCandidate(
