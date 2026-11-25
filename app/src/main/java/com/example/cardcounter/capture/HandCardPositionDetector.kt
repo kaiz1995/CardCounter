@@ -55,11 +55,27 @@ class HandCardPositionDetector {
         // 下排比上排短时，上排两头的牌会从下排两侧伸出来，下排采样行读到的是上排的外沿：
         // 那里没有下排牌自己的白色顶边，数不出下排。两排正好同宽时两端也有白边，照常数。
         val bottomCount = if (hasOwnTopBorder(luma, bottom)) rowCount(bottom, BOTTOM) else null
-        return rowCount(top, TOP) to bottomCount
+        return countByGaps(top, TOP) to bottomCount
     }
 
     /**
-     * 按整排跨度除平均错开间距数张数。同点数相邻约 42px、不同点数约 50px，跨度天生有将近半张的出入，
+     * 上排逐段数：相邻两条牌边的距离各自按平均错开间距取整，再加起来。
+     * 同点数相邻约 42px、不同点数约 50px；整排跨度一次除间距时，这些出入会一张张累积（16 张算成 16.7 张，数成 17），
+     * 逐段取整每段的出入都不到半张，不会累积。漏掉一条牌边时那一段约 78~92px，取整成 2 张，照样数对。
+     * 最右一条是最后一张牌的右边，先换算成它的左边。
+     * 下排不用这个办法：下排采样行常有离上一条只有 30px 左右的假牌边，逐段数会多数，下排仍按 [rowCount] 数。
+     */
+    private fun countByGaps(selected: List<Int>, geometry: RowGeometry): Int? {
+        if (selected.size < 2) return null
+        val sorted = selected.sorted()
+        if (sorted.last() - sorted.first() < geometry.cardWidth) return null
+        val lefts = (sorted.dropLast(1) + (sorted.last() - geometry.cardWidth)).sorted()
+        val count = 1 + lefts.zipWithNext { left, next -> ((next - left) / geometry.cardPitch).roundToInt() }.sum()
+        return count.takeIf { it > 0 }
+    }
+
+    /**
+     * 下排按整排跨度除平均错开间距数张数。同点数相邻约 42px、不同点数约 50px，跨度天生有将近半张的出入，
      * 算出来离取整分界不到 [AMBIGUOUS_MARGIN] 张时，在两个候选里取和找到的牌边条数更接近的那个。
      */
     private fun rowCount(selected: List<Int>, geometry: RowGeometry): Int? {

@@ -20,7 +20,10 @@ class HandCardPositionDetectorTest {
         "102658_550" to (18 to 19),
         "102658_555" to (19 to 19),
         "102658_560" to (19 to 20),
-        "102658_600" to (17 to 17)
+        "102658_600" to (17 to 17),
+        // 真机（Honor 2664×1236）按手机取样缩到 1280×578；224800 上排原来按整排跨度数成 17（16.73），总数显示 34。
+        "w12_222900" to (16 to 17),
+        "w12_224800" to (16 to 17)
     )
 
     @Test
@@ -38,6 +41,13 @@ class HandCardPositionDetectorTest {
     fun countsTheThirtyFourCardHandWithTributeCard() {
         assertEquals(17 to 17, detector.rowCounts(luma("133745")))
         assertEquals(34, detector.detect(luma("133745")))
+    }
+
+    /** 回归：真机这一手上排 16 张，整排跨度除固定间距算成 16.73 数成 17，“数出来”显示 34、确认按钮按不了。 */
+    @Test
+    fun topRowSpacingErrorsDoNotAddUpToAnExtraCard() {
+        assertEquals(16 to 17, detector.rowCounts(luma("w12_224800")))
+        assertEquals(33, detector.detect(luma("w12_224800")))
     }
 
     /** 两排张数差不在 0..1、某排没数出来或数出 0 张，都当没数出来，不能把错的张数交出去。 */

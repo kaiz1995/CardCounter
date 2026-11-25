@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.util.DisplayMetrics
@@ -79,6 +80,14 @@ class OverlayService : Service(), HandPanelView.Actions {
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    /** 横竖屏切换后全屏显示层会自动跟着变，几块可触摸小窗是按当时屏幕宽高算死的像素，要重算。 */
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        hideControl?.let { windowManager.updateViewLayout(it, controlParams(OverlayLayout.hideButton)) }
+        resetControl?.let { windowManager.updateViewLayout(it, controlParams(OverlayLayout.resetButton)) }
+        handViews.forEach { windowManager.updateViewLayout(it, controlParams(it.rect)) }
+    }
 
     private fun attachIfNeeded() {
         if (counter != null) return
@@ -233,11 +242,14 @@ class OverlayService : Service(), HandPanelView.Actions {
             flags or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            layoutInDisplayCutoutMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            // 截屏坐标原点永远在物理左上角；START 在从右到左的系统语言下会变成右边。
+            gravity = Gravity.TOP or Gravity.LEFT
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                // 默认会给可见的状态栏、导航栏让位，窗口被挤开压窄，和截屏错位。
+                fitInsetsTypes = 0
             } else {
-                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
             }
         }
 
