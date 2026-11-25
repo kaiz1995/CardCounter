@@ -1,9 +1,9 @@
 package com.example.cardcounter.capture
 
-import com.example.cardcounter.domain.Rank
-import com.example.cardcounter.domain.RankCounts
 import com.example.cardcounter.domain.GameEvent
 import com.example.cardcounter.domain.OutsideSeat
+import com.example.cardcounter.domain.Rank
+import com.example.cardcounter.domain.RankCounts
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -12,6 +12,8 @@ import org.junit.Test
 
 class StablePlayGateTest {
     private val fives = RankCounts.of(mapOf(Rank.FIVE to 4))
+    private val three = RankCounts.of(mapOf(Rank.THREE to 1))
+    private val jokerNines = RankCounts.of(mapOf(Rank.BIG_JOKER to 1, Rank.NINE to 2))
 
     @Test
     fun classifiesCentralPlayAsSelfAndOthersAsOutside() {
@@ -38,17 +40,6 @@ class StablePlayGateTest {
     }
 
     @Test
-    fun acceptsStablePlayOnceAndAllowsSameCardsAfterClear() {
-        val gate = StablePlayGate()
-        assertNull(gate.update(PlayZone.SELF, fives))
-        assertEquals(StablePlay(PlayZone.SELF, fives), gate.update(PlayZone.SELF, fives))
-        assertNull(gate.update(PlayZone.SELF, fives))
-        repeat(6) { assertNull(gate.update(PlayZone.SELF, RankCounts.zero())) }
-        assertNull(gate.update(PlayZone.SELF, fives))
-        assertEquals(StablePlay(PlayZone.SELF, fives), gate.update(PlayZone.SELF, fives))
-    }
-
-    @Test
     fun selfZonePlayProducesNoEventAndOutsidePlayCarriesSeat() {
         val cards = RankCounts.of(mapOf(Rank.THREE to 1, Rank.FIVE to 2))
 
@@ -63,30 +54,63 @@ class StablePlayGateTest {
     }
 
     @Test
-    fun acceptsReplacementWithoutEmptyAndRearmsAfterSixEmptySamples() {
+    fun sameCardsWithoutTheirTurnAreDuplicates() {
         val gate = StablePlayGate()
-        val king = RankCounts.of(mapOf(Rank.KING to 1))
-        val pairFives = RankCounts.of(mapOf(Rank.FIVE to 2))
-        assertNull(gate.update(PlayZone.TOP, king))
-        assertEquals(StablePlay(PlayZone.TOP, king), gate.update(PlayZone.TOP, king))
-        assertNull(gate.update(PlayZone.TOP, pairFives))
-        assertEquals(StablePlay(PlayZone.TOP, pairFives), gate.update(PlayZone.TOP, pairFives))
-        repeat(6) { assertNull(gate.update(PlayZone.TOP, RankCounts.zero())) }
-        assertNull(gate.update(PlayZone.TOP, pairFives))
-        assertEquals(StablePlay(PlayZone.TOP, pairFives), gate.update(PlayZone.TOP, pairFives))
+        assertEquals(StablePlay(PlayZone.RIGHT_BOTTOM, three), gate.accept(PlayZone.RIGHT_BOTTOM, three))
+        assertNull(gate.accept(PlayZone.RIGHT_BOTTOM, three))
+        assertNull(gate.accept(PlayZone.RIGHT_BOTTOM, three))
     }
 
     @Test
-    fun acceptsStableBatchOnceAndSuppressesSameBatchUntilCleared() {
+    fun sameCardsAfterTheirTurnAreANewHand() {
         val gate = StablePlayGate()
-        val king = RankCounts.of(mapOf(Rank.KING to 1))
-        val pair = RankCounts.of(mapOf(Rank.FIVE to 2))
-        assertEquals(StablePlay(PlayZone.TOP, king), gate.acceptStable(PlayZone.TOP, king))
-        assertNull(gate.acceptStable(PlayZone.TOP, king))
-        assertEquals(StablePlay(PlayZone.TOP, pair), gate.acceptStable(PlayZone.TOP, pair))
-        assertNull(gate.acceptStable(PlayZone.TOP, pair))
-        repeat(6) { gate.update(PlayZone.TOP, RankCounts.zero()) }
-        assertEquals(StablePlay(PlayZone.TOP, pair), gate.acceptStable(PlayZone.TOP, pair))
+        assertEquals(StablePlay(PlayZone.TOP, fives), gate.accept(PlayZone.TOP, fives))
+        gate.noteTurn(PlayZone.TOP)
+        assertEquals(StablePlay(PlayZone.TOP, fives), gate.accept(PlayZone.TOP, fives))
+        assertNull(gate.accept(PlayZone.TOP, fives))
+    }
+
+    @Test
+    fun differentCardsAreANewHandEvenWithoutAnEmptyTable() {
+        val gate = StablePlayGate()
+        assertEquals(StablePlay(PlayZone.RIGHT_BOTTOM, jokerNines), gate.accept(PlayZone.RIGHT_BOTTOM, jokerNines))
+        assertEquals(StablePlay(PlayZone.RIGHT_BOTTOM, three), gate.accept(PlayZone.RIGHT_BOTTOM, three))
+    }
+
+    @Test
+    fun emptyCardsAreNeverAcceptedAndDoNotForgetTheLastHand() {
+        val gate = StablePlayGate()
+        assertEquals(StablePlay(PlayZone.TOP, three), gate.accept(PlayZone.TOP, three))
+        assertNull(gate.accept(PlayZone.TOP, RankCounts.zero()))
+        assertNull(gate.accept(PlayZone.TOP, three))
+    }
+
+    @Test
+    fun aTurnBeforeTheFirstHandChangesNothing() {
+        val gate = StablePlayGate()
+        gate.noteTurn(PlayZone.TOP)
+        assertEquals(StablePlay(PlayZone.TOP, three), gate.accept(PlayZone.TOP, three))
+        assertNull(gate.accept(PlayZone.TOP, three))
+    }
+
+    @Test
+    fun zonesAreIndependent() {
+        val gate = StablePlayGate()
+        assertEquals(StablePlay(PlayZone.TOP, three), gate.accept(PlayZone.TOP, three))
+        assertEquals(StablePlay(PlayZone.LEFT_TOP, three), gate.accept(PlayZone.LEFT_TOP, three))
+        gate.noteTurn(PlayZone.TOP)
+        assertNull(gate.accept(PlayZone.LEFT_TOP, three))
+        assertEquals(StablePlay(PlayZone.TOP, three), gate.accept(PlayZone.TOP, three))
+    }
+
+    @Test
+    fun newSessionForgetsEverything() {
+        val gate = StablePlayGate()
+        gate.accept(PlayZone.SELF, fives)
+        gate.noteTurn(PlayZone.SELF)
+        gate.reset()
+        assertEquals(StablePlay(PlayZone.SELF, fives), gate.accept(PlayZone.SELF, fives))
+        assertNull(gate.accept(PlayZone.SELF, fives))
     }
 
     @Test
@@ -100,31 +124,9 @@ class StablePlayGateTest {
             RankCounts.of(mapOf(Rank.JACK to 2)),
             RankCounts.of(mapOf(Rank.SIX to 1))
         )
-        val events = sequence.flatMap { cards ->
-            listOf(gate.update(PlayZone.TOP, cards), gate.update(PlayZone.TOP, cards))
-        }.filterNotNull()
+        val events = sequence.map { gate.accept(PlayZone.TOP, it) }
         assertEquals(sequence.map { StablePlay(PlayZone.TOP, it) }, events)
-        assertNull(gate.update(PlayZone.TOP, sequence.last()))
-        assertNull(gate.update(PlayZone.TOP, sequence.last()))
-    }
-
-    @Test
-    fun ignoresBriefEmptyAnimationBeforeSameCardsReturn() {
-        val gate = StablePlayGate()
-        gate.update(PlayZone.RIGHT_TOP, fives)
-        assertEquals(StablePlay(PlayZone.RIGHT_TOP, fives), gate.update(PlayZone.RIGHT_TOP, fives))
-        repeat(2) { assertNull(gate.update(PlayZone.RIGHT_TOP, RankCounts.zero())) }
-        repeat(2) { assertNull(gate.update(PlayZone.RIGHT_TOP, fives)) }
-    }
-
-    @Test
-    fun newSessionClearsAcceptedPlay() {
-        val gate = StablePlayGate()
-        gate.update(PlayZone.SELF, fives)
-        assertEquals(StablePlay(PlayZone.SELF, fives), gate.update(PlayZone.SELF, fives))
-        gate.reset()
-        assertNull(gate.update(PlayZone.SELF, fives))
-        assertEquals(StablePlay(PlayZone.SELF, fives), gate.update(PlayZone.SELF, fives))
+        assertNull(gate.accept(PlayZone.TOP, sequence.last()))
     }
 
     @Test
@@ -159,34 +161,5 @@ class StablePlayGateTest {
         assertTrue(canFastConfirmPlay(fives, minimumConfidence = 0.60f))
         assertFalse(canFastConfirmPlay(fives, minimumConfidence = 0.59f))
         assertFalse(canFastConfirmPlay(RankCounts.of(mapOf(Rank.TWO to 1)), minimumConfidence = 0.99f))
-
-    }
-
-    @Test
-    fun letsTheFullScreenTemplateCorrectOnePublicCard() {
-        val king = RankCounts.of(mapOf(Rank.KING to 1))
-        val ten = RankCounts.of(mapOf(Rank.TEN to 1))
-        assertEquals(king, fuseSinglePublicPlay(PlayZone.TOP, ten, king))
-        assertEquals(fives, fuseSinglePublicPlay(PlayZone.TOP, fives, king))
-    }
-
-    @Test
-    fun preventsTemplateOnlyAcePromotion() {
-        val ace = RankCounts.of(mapOf(Rank.ACE to 1))
-        val ten = RankCounts.of(mapOf(Rank.TEN to 1))
-        val king = RankCounts.of(mapOf(Rank.KING to 1))
-        assertEquals(ten, fuseSinglePublicPlay(PlayZone.LEFT_BOTTOM, ten, ace))
-        assertEquals(ace, fuseSinglePublicPlay(PlayZone.LEFT_BOTTOM, ace, ace))
-        assertEquals(king, fuseSinglePublicPlay(PlayZone.LEFT_BOTTOM, ten, king))
-        assertEquals(fives, fuseSinglePublicPlay(PlayZone.LEFT_BOTTOM, fives, ace))
-        assertEquals(ace, fuseSinglePublicPlay(PlayZone.TOP, ten, ace))
-    }
-
-    @Test
-    fun auditsAceOnlyForLeftBottom() {
-        val ace = RankCounts.of(mapOf(Rank.ACE to 1))
-        assertTrue(shouldAuditAce(PlayZone.LEFT_BOTTOM, ace))
-        assertFalse(shouldAuditAce(PlayZone.TOP, ace))
-        assertFalse(shouldAuditAce(PlayZone.LEFT_BOTTOM, RankCounts.of(mapOf(Rank.KING to 1))))
     }
 }

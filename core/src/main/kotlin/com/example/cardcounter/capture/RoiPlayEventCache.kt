@@ -1,6 +1,13 @@
 package com.example.cardcounter.capture
 
-/** 仅在牌面连续停稳后交出 ROI；交出后锁区，清桌才允许下一手。 */
+/**
+ * 每个出牌区的停稳判定：牌面连续静止满 [stableSamples] 次就交出“最后一段连续静止”的帧。
+ * 交出后不锁区：画面一旦不静止就算换了画面，再次停稳会再交出一次；同一张画面一直静止只交出一次。
+ * 清桌（连续 [clearSamples] 次看不到牌）只清空缓存、解除 primed；清桌时若还没交出，兜底交出最后一段静止帧。
+ * 同一手是不是新的一手由 [StablePlayGate] 判断，这里只负责停稳。
+ *
+ * [isStill] 只能依赖帧里的轻量指纹：帧交出、位图被回收之后，缓存还要拿上一帧继续比较。
+ */
 class RoiPlayEventCache<T>(
     private val maxFrames: Int = 8,
     private val clearSamples: Int = 6,
@@ -14,23 +21,24 @@ class RoiPlayEventCache<T>(
         val generation: Long
     )
 
-    private data class State<T>(
-        val frames: ArrayDeque<T> = ArrayDeque(),
-        var emptySamples: Int = 0,
-        var stableSamples: Int = 0,
-        var primed: Boolean = false,
-        var reported: Boolean = false,
-        var generation: Long = 0L
-    )
+    private class State<T> {
+        /** 当前这一段连续静止的帧：起点（最后一个不静止的帧）加上之后的静止帧，最多 maxFrames 帧。 */
+        val frames = ArrayDeque<T>()
+        var last: T? = null
+        var emptySamples = 0
+        var stillCount = 0
+        var primed = false
+        var delivered = false
+        var generation = 0L
+    }
 
-    private val states = PlayZone.entries.associateWith { State<T>() }.toMutableMap()
+    private val states = PlayZone.entries.associateWith { State<T>() }
 
     @Synchronized
     fun reset(generation: Long, primeExistingTable: Boolean) {
         states.values.forEach { state ->
             clear(state)
             state.primed = primeExistingTable
-            state.reported = false
             state.generation = generation
         }
     }
@@ -44,10 +52,18 @@ class RoiPlayEventCache<T>(
         }
     }
 
+    /** 这一区需要送一帧进来：旧牌（primed）不记，不需要。 */
     @Synchronized
     fun needsFrame(zone: PlayZone, generation: Long): Boolean {
         val state = states.getValue(zone)
-        return state.generation == generation && !state.primed && !state.reported
+        return state.generation == generation && !state.primed
+    }
+
+    /** 已经交出、画面没变的阶段只需要指纹判断变没变，不必再截图送识别。 */
+    @Synchronized
+    fun needsBitmap(zone: PlayZone, generation: Long): Boolean {
+        val state = states.getValue(zone)
+        return state.generation == generation && !state.primed && !state.delivered
     }
 
     @Synchronized
@@ -58,57 +74,68 @@ class RoiPlayEventCache<T>(
         frame: T?,
         generation: Long
     ): Finalized<T>? {
-        if (!tableVisible) return null
+        if (!tableVisible) {
+            frame?.let(discard)
+            return null
+        }
         val state = states.getValue(zone)
         if (state.generation != generation) {
             clear(state)
             state.primed = false
-            state.reported = false
             state.generation = generation
         }
         if (cardVisible) {
             state.emptySamples = 0
-            if (state.primed || state.reported || frame == null) {
+            if (state.primed || frame == null) {
                 frame?.let(discard)
                 return null
             }
-            while (state.frames.size >= maxFrames) discard(state.frames.removeFirst())
-            state.frames.addLast(frame)
-            state.stableSamples = if (state.frames.size > 1 && isStill(state.frames.elementAt(state.frames.size - 2), frame)) {
-                state.stableSamples + 1
-            } else 0
-            if (state.stableSamples < stableSamples) return null
-
-            val frames = state.frames.toList()
+            val previous = state.last
+            state.last = frame
+            if (previous != null && isStill(previous, frame)) {
+                if (state.delivered) {
+                    discard(frame)
+                    return null
+                }
+                while (state.frames.size >= maxFrames) discard(state.frames.removeFirst())
+                state.frames.addLast(frame)
+                state.stillCount++
+                if (state.stillCount < stableSamples) return null
+                val frames = state.frames.toList()
+                state.frames.clear()
+                state.stillCount = 0
+                state.delivered = true
+                return Finalized(zone, frames, generation)
+            }
+            // 画面变了或刚出现：新的一段静止从这一帧开始。
+            state.frames.forEach(discard)
             state.frames.clear()
-            state.stableSamples = 0
-            state.reported = true
-            return Finalized(zone, frames, generation)
+            state.frames.addLast(frame)
+            state.stillCount = 0
+            state.delivered = false
+            return null
         }
 
+        // 看不到牌：连续性断开，之后再出现的画面重新从起点算。
+        state.last = null
         state.emptySamples = (state.emptySamples + 1).coerceAtMost(clearSamples)
         if (state.emptySamples < clearSamples) return null
+        val fallback = !state.primed && !state.delivered && state.frames.isNotEmpty()
+        val frames = if (fallback) state.frames.toList() else emptyList()
+        if (fallback) state.frames.clear() else clear(state)
         state.emptySamples = 0
-        state.stableSamples = 0
-        if (state.primed) {
-            state.primed = false
-            clear(state)
-            return null
-        }
-        if (state.reported) {
-            state.reported = false
-            return null
-        }
-        if (state.frames.isEmpty()) return null
-        val frames = state.frames.toList()
-        state.frames.clear()
-        return Finalized(zone, frames, generation)
+        state.stillCount = 0
+        state.delivered = false
+        state.primed = false
+        return if (fallback) Finalized(zone, frames, generation) else null
     }
 
     private fun clear(state: State<T>) {
         state.frames.forEach(discard)
         state.frames.clear()
+        state.last = null
         state.emptySamples = 0
-        state.stableSamples = 0
+        state.stillCount = 0
+        state.delivered = false
     }
 }

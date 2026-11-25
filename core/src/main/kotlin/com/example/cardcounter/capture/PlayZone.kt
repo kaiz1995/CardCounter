@@ -2,7 +2,6 @@ package com.example.cardcounter.capture
 
 import com.example.cardcounter.domain.GameEvent
 import com.example.cardcounter.domain.RankCounts
-import com.example.cardcounter.domain.Rank
 import com.example.cardcounter.domain.OutsideSeat
 import kotlin.math.roundToInt
 
@@ -13,14 +12,17 @@ enum class PlayZone(
     private val leftRatio: Double,
     private val rightRatio: Double,
     private val rankYRatio: Double,
+    /** “出牌”倒计时圆标的中心（1280x578 画布坐标）；挂王时牌还摆着，圆标会往上偏，见 [TurnBadge]。 */
+    val badgeX: Int,
+    val badgeY: Int,
     val visibilityHeight: Int = 70
 ) {
-    TOP(PlaySource.OUTSIDE, OutsideSeat.TOP, 0.539, 0.602, 0.022),
-    LEFT_TOP(PlaySource.OUTSIDE, OutsideSeat.LEFT_TOP, 0.148, 0.266, 0.156, 56),
-    LEFT_BOTTOM(PlaySource.OUTSIDE, OutsideSeat.LEFT_BOTTOM, 0.141, 0.281, 0.429),
-    RIGHT_TOP(PlaySource.OUTSIDE, OutsideSeat.RIGHT_TOP, 0.750, 0.859, 0.156, 56),
-    RIGHT_BOTTOM(PlaySource.OUTSIDE, OutsideSeat.RIGHT_BOTTOM, 0.750, 0.859, 0.429),
-    SELF(PlaySource.SELF, null, 0.438, 0.563, 0.358, 28);
+    TOP(PlaySource.OUTSIDE, OutsideSeat.TOP, 0.539, 0.602, 0.022, 780, 62),
+    LEFT_TOP(PlaySource.OUTSIDE, OutsideSeat.LEFT_TOP, 0.148, 0.266, 0.156, 298, 130, 56),
+    LEFT_BOTTOM(PlaySource.OUTSIDE, OutsideSeat.LEFT_BOTTOM, 0.141, 0.281, 0.429, 298, 290),
+    RIGHT_TOP(PlaySource.OUTSIDE, OutsideSeat.RIGHT_TOP, 0.750, 0.859, 0.156, 978, 130, 56),
+    RIGHT_BOTTOM(PlaySource.OUTSIDE, OutsideSeat.RIGHT_BOTTOM, 0.750, 0.859, 0.429, 978, 290),
+    SELF(PlaySource.SELF, null, 0.438, 0.563, 0.358, 638, 264, 28);
 
     fun left(width: Int): Int = (width * leftRatio).roundToInt()
 
@@ -54,56 +56,39 @@ fun StablePlay.toGameEvent(): GameEvent? = when (zone.source) {
     PlaySource.OUTSIDE -> GameEvent.OutsideCardsPlayed(cards, seat = requireNotNull(zone.seat))
 }
 
-/** 同一区连续两次相同候选才接收；清空两次后允许下一组相同牌再次出现。 */
+/**
+ * 去重门：每区记“上一次入账的牌”和“入账后有没有轮到过这一家”。
+ * 认出的牌与上一手不同就是新的一手；相同时，只有入账后轮到过这一家才算新的一手，否则当作重复。
+ * 清桌不清“上一次入账的牌”；只有 [reset]（新局）全清。
+ */
 class StablePlayGate {
-    private data class ZoneState(
-        val candidate: RankCounts? = null,
-        val stableSamples: Int = 0,
-        val emptySamples: Int = 0,
-        val accepted: RankCounts? = null
-    )
-
-    private val states = PlayZone.entries.associateWith { ZoneState() }.toMutableMap()
-
-    fun update(zone: PlayZone, cards: RankCounts): StablePlay? {
-        val before = states.getValue(zone)
-        val next = when {
-            cards.total() == 0 -> before.copy(
-                candidate = null,
-                stableSamples = 0,
-                emptySamples = before.emptySamples + 1,
-                accepted = if (before.emptySamples + 1 >= CLEAR_SAMPLES) null else before.accepted
-            )
-            cards == before.candidate -> before.copy(
-                stableSamples = before.stableSamples + 1,
-                emptySamples = 0
-            )
-            else -> before.copy(candidate = cards, stableSamples = 1, emptySamples = 0)
-        }
-        states[zone] = next
-        return if (next.stableSamples >= 2 && next.accepted != cards) {
-            states[zone] = next.copy(accepted = cards)
-            StablePlay(zone, cards)
-        } else {
-            null
-        }
+    private class ZoneState {
+        var accepted: RankCounts? = null
+        var turnedSinceAccept = false
     }
 
-    /** Caller already established a stable batch; apply only accepted-value deduplication. */
-    fun acceptStable(zone: PlayZone, cards: RankCounts): StablePlay? {
+    private val states = PlayZone.entries.associateWith { ZoneState() }
+
+    /** 返回 null 表示空牌或重复，不入账。 */
+    fun accept(zone: PlayZone, cards: RankCounts): StablePlay? {
         if (cards.total() == 0) return null
-        val before = states.getValue(zone)
-        if (before.accepted == cards) return null
-        states[zone] = before.copy(candidate = cards, stableSamples = 0, emptySamples = 0, accepted = cards)
+        val state = states.getValue(zone)
+        if (state.accepted == cards && !state.turnedSinceAccept) return null
+        state.accepted = cards
+        state.turnedSinceAccept = false
         return StablePlay(zone, cards)
     }
 
-    fun reset() {
-        PlayZone.entries.forEach { states[it] = ZoneState() }
+    /** 这一区的玩家轮到过了（见 [TurnTracker]）：之后再出一样的牌也算新的一手。 */
+    fun noteTurn(zone: PlayZone) {
+        states.getValue(zone).turnedSinceAccept = true
     }
 
-    private companion object {
-        const val CLEAR_SAMPLES = 6
+    fun reset() {
+        states.values.forEach {
+            it.accepted = null
+            it.turnedSinceAccept = false
+        }
     }
 }
 
@@ -135,12 +120,3 @@ fun shouldSkipOpenedGame(handConfirmed: Boolean, outsidePlayedCount: Int, visibl
 /** 多张且每张都很确定时不等待下一帧，避免开点动画清桌前丢失整手。 */
 fun canFastConfirmPlay(cards: RankCounts, minimumConfidence: Float): Boolean =
     cards.total() >= 3 && minimumConfidence >= 0.60f
-
-/** 单张以全屏固定牌角模板为准；ROI 模板未校准，不能参与此处融合。 */
-fun fuseSinglePublicPlay(zone: PlayZone, model: RankCounts, template: RankCounts): RankCounts =
-    if (model.total() == 1 && template.total() == 1 &&
-        !(zone == PlayZone.LEFT_BOTTOM && template[Rank.ACE] > 0 && model[Rank.ACE] == 0)
-    ) template else model
-
-fun shouldAuditAce(zone: PlayZone, cards: RankCounts): Boolean =
-    zone == PlayZone.LEFT_BOTTOM && cards[com.example.cardcounter.domain.Rank.ACE] > 0
