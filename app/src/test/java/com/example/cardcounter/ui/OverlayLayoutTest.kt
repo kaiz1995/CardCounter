@@ -46,6 +46,7 @@ class OverlayLayoutTest {
         areaRect("手牌 YOLO 取图区", HandRegions.yoloArea()),
         areaRect("手牌上排边缘取样行", HandRegions.topEdgeRow),
         areaRect("手牌下排边缘取样行", HandRegions.bottomEdgeRow),
+        areaRect("手牌下排白色顶边取样行", HandRegions.bottomBorderRows),
         areaRect("手牌牌面墨迹区", HandRegions.inkArea),
         areaRect("手牌亮度指纹区", HandRegions.signatureArea(width, height))
     )
@@ -89,13 +90,14 @@ class OverlayLayoutTest {
     fun noBoxOnTheOverlayCoversTheHandCountSamplingRows() {
         val rows = listOf(
             areaRect("手牌上排边缘取样行", HandRegions.topEdgeRow),
-            areaRect("手牌下排边缘取样行", HandRegions.bottomEdgeRow)
+            areaRect("手牌下排边缘取样行", HandRegions.bottomEdgeRow),
+            areaRect("手牌下排白色顶边取样行", HandRegions.bottomBorderRows)
         )
         everyBoxOnTheOverlay().forEach { (boxName, box) ->
             rows.forEach { (rowName, row) ->
                 assertFalse(
                     "悬浮窗的「$boxName」$box 盖住了手牌张数计数区「$rowName」$row，" +
-                        "请挪开这个框，或改采样行（HandRegions.topEdgeRow / bottomEdgeRow）",
+                        "请挪开这个框，或改采样行（HandRegions.topEdgeRow / bottomEdgeRow / bottomBorderRows）",
                     box.overlaps(row)
                 )
             }

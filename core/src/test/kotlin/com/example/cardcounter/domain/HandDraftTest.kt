@@ -119,6 +119,22 @@ class HandDraftTest {
         assertNull(unknown.confirmData())
     }
 
+    /** 数出 0 张等于没数出来：不标红、不提示对不上，确认时张数记 null，不把 0 写进账里。 */
+    @Test
+    fun zeroPositionCountIsTreatedAsUnknown() {
+        val untouched = HandDraft().refresh(counts(Rank.ACE to 2), 0)
+        assertFalse("数出 0 张不算对不上", untouched.mismatch)
+        assertEquals("还没数出手牌张数，暂时不能确认", untouched.blockReason)
+
+        val edited = untouched.adjust(Rank.ACE, +1)
+        assertFalse(edited.mismatch)
+        assertNull(edited.warning)
+        assertTrue(edited.canConfirm)
+        val data = requireNotNull(edited.confirmData())
+        assertEquals(3, data.cards.total())
+        assertNull(data.handCount)
+    }
+
     @Test
     fun cannotConfirmWhenTotalIsZeroEvenIfEdited() {
         val draft = HandDraft().refresh(counts(Rank.ACE to 1), null)

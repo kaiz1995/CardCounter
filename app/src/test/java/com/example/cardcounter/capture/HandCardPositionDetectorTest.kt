@@ -40,6 +40,19 @@ class HandCardPositionDetectorTest {
         assertEquals(34, detector.detect(luma("133745")))
     }
 
+    /** 两排张数差不在 0..1、某排没数出来或数出 0 张，都当没数出来，不能把错的张数交出去。 */
+    @Test
+    fun rowPairsThatCannotBeAWholeHandAreNotCounted() {
+        assertEquals(34, detector.detect(17 to 17))
+        assertEquals(33, detector.detect(16 to 17))
+        assertNull("下排比上排多 2 张", detector.detect(16 to 18))
+        assertNull("下排比上排少", detector.detect(17 to 16))
+        assertNull("两排都是 0", detector.detect(0 to 0))
+        assertNull("上排是 0", detector.detect(0 to 1))
+        assertNull("上排没数出来", detector.detect(null to 17))
+        assertNull("下排没数出来", detector.detect(17 to null))
+    }
+
     @Test
     fun rowsOfTheWholeHandStayWithinOneOfEachOther() {
         truth.keys.forEach { name ->

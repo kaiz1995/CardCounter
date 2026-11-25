@@ -59,6 +59,33 @@ class VersionedEventLogTest {
         assertEquals(3, old.getInt("schema"))
     }
 
+    /** 升级前手机上写下的原样日志（字面量，不经当前 encode）：handCount 是整数，必须照常读出来。 */
+    @Test
+    fun literalOldLogWithIntegerHandCountStillDecodes() {
+        val cards = Rank.entries.joinToString(",") { rank ->
+            "\"${rank.name}\":${if (rank == Rank.ACE) 3 else 0}"
+        }
+        val old = """{"schema":3,"seq":2,"events":[""" +
+            """{"id":"s","type":"NewSession"},""" +
+            """{"id":"hand","type":"HandConfirmed","cards":{$cards},"handCount":3}]}"""
+
+        val decoded = VersionedEventLog.decode(old)
+
+        assertEquals(2, decoded?.first)
+        val hand = decoded?.second?.get(1) as GameEvent.HandConfirmed
+        assertEquals(3, hand.handCount)
+        assertEquals(3, hand.cards[Rank.ACE])
+        assertTrue(VersionedEventLog.restoreOrNew(old).first.handConfirmed)
+    }
+
+    /** 手牌事件缺 handCount 键不是旧格式，是写坏了：整份丢弃，不能悄悄当成没数出来。 */
+    @Test
+    fun handConfirmedWithoutHandCountKeyIsDiscarded() {
+        val missing = validJson()
+        missing.getJSONArray("events").getJSONObject(2).remove("handCount")
+        assertDiscarded("手牌缺张数键", missing.toString())
+    }
+
     /** 新格式：张数没数出来时写显式 null，读回来是 null，手牌照常确认。 */
     @Test
     fun nullHandCountRoundTrips() {

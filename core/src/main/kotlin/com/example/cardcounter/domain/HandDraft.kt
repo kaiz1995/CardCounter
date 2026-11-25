@@ -21,7 +21,7 @@ data class HandDraft(
     fun isEdited(rank: Rank): Boolean = rank in edited
 
     /** 数出来的张数和点数合计对不上（已经数出张数才算）；界面据此把两个数标红。 */
-    val mismatch: Boolean get() = positionCount != null && total != positionCount
+    val mismatch: Boolean get() = positionCount != null && positionCount > 0 && total != positionCount
 
     /** 识别刷新：没改过的点数跟着识别走（不超过库存），改过的点数保持用户的值。 */
     fun refresh(recognized: RankCounts, positionCount: Int?): HandDraft = copy(
@@ -65,7 +65,7 @@ data class HandDraft(
     val warning: String?
         get() {
             val position = positionCount
-            return if (blockReason == null && edited.isNotEmpty() && position != null && total != position) {
+            return if (blockReason == null && edited.isNotEmpty() && position != null && position > 0 && total != position) {
                 "数出来 $position 张，和点数合计 $total 张不一样，核对没错就直接确认"
             } else null
         }
@@ -74,7 +74,7 @@ data class HandDraft(
 
     /** 可以确认时返回当时显示的点数和数出来的张数（没数出来为 null），否则 null。 */
     fun confirmData(): HandConfirmData? =
-        if (canConfirm) HandConfirmData(counts, positionCount) else null
+        if (canConfirm) HandConfirmData(counts, positionCount?.takeIf { it > 0 }) else null
 }
 
 /** 识别服务（采集线程）和悬浮窗（主线程）共享的手牌草稿，所有读写串行。 */

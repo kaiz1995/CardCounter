@@ -1,7 +1,7 @@
 package com.example.cardcounter.domain
 
 /**
- * 单个事件的派发结果。领域性拒绝（重复、张数对不上、已确认再确认、超库存、守恒失败）
+ * 单个事件的派发结果。领域性拒绝（重复、手牌为空、已确认再确认、超库存、守恒失败）
  * 一律以结果对象返回，不再抛异常，避免把可恢复问题放大成会话损坏。
  */
 sealed interface DispatchResult {

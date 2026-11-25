@@ -38,6 +38,12 @@ object HandRegions {
     val topEdgeRow: Area = Area(EDGE_MIN_X - 1, 420, EDGE_MAX_X + 1, 451)
     val bottomEdgeRow: Area = Area(EDGE_MIN_X - 1, 456, EDGE_MAX_X + 1, 469)
 
+    /**
+     * 下排牌白色顶边的取样区：第一行（y=452）是顶边上方，后三行（y=454..456）是顶边。
+     * 用来分清下排读到的是下排自己的牌，还是从下排两侧伸出来的上排外沿。
+     */
+    val bottomBorderRows: Area = Area(EDGE_MIN_X - 1, 452, EDGE_MAX_X + 1, 457)
+
     /** 牌面模板匹配取墨迹的区域。 */
     val inkArea: Area = Area(180, 380, 1_080, 481)
 }

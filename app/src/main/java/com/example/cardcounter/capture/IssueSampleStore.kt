@@ -7,6 +7,7 @@ import com.example.cardcounter.domain.RankCounts
 import com.example.cardcounter.vision.YoloDetection
 import java.io.File
 import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -28,22 +29,20 @@ internal class IssueSampleStore(context: Context) : AutoCloseable {
         result: RankCounts?,
         candidates: List<RankCountsCandidate>
     ) {
-        val copies = bitmaps.takeLast(MAX_FRAMES).map { it.copy(Bitmap.Config.ARGB_8888, false) }
+        // 内存吃紧时 copy 会返回 null：拷不出来的帧不存，不能因为存证据把识别搞崩。
+        val copies = bitmaps.takeLast(MAX_FRAMES).mapNotNull { it.copy(Bitmap.Config.ARGB_8888, false) }
         val metadata = evidenceMetadata(zone, reason, generation, timeMs, result, candidates)
-        executor.execute {
-            runCatching {
-                root.mkdirs()
-                trim()
-                val directory = File(root, "${System.currentTimeMillis()}_${zone.name}_$reason")
-                check(directory.mkdirs()) { "无法创建证据目录" }
-                copies.forEachIndexed { index, copy ->
-                    File(directory, "roi_$index.png").outputStream().use { out ->
-                        check(copy.compress(Bitmap.CompressFormat.PNG, 100, out)) { "无法写入证据 ROI" }
-                    }
+        submit(copies) {
+            root.mkdirs()
+            trim()
+            val directory = File(root, "${System.currentTimeMillis()}_${zone.name}_$reason")
+            check(directory.mkdirs()) { "无法创建证据目录" }
+            copies.forEachIndexed { index, copy ->
+                File(directory, "roi_$index.png").outputStream().use { out ->
+                    check(copy.compress(Bitmap.CompressFormat.PNG, 100, out)) { "无法写入证据 ROI" }
                 }
-                File(directory, "meta.json").writeText(metadata.toJson().toString())
-            }.onFailure { Log.w(TAG, "ISSUE_EVIDENCE_SAVE_FAILED", it) }
-            copies.forEach(Bitmap::recycle)
+            }
+            File(directory, "meta.json").writeText(metadata.toJson().toString())
         }
     }
 
@@ -63,22 +62,39 @@ internal class IssueSampleStore(context: Context) : AutoCloseable {
         template: RankCounts,
         edited: List<String>
     ) {
-        val copy = handArea.copy(Bitmap.Config.ARGB_8888, false)
+        val copy = handArea.copy(Bitmap.Config.ARGB_8888, false) ?: run {
+            Log.w(TAG, "ISSUE_EVIDENCE_SAVE_FAILED copy=null")
+            return
+        }
         val metadata = handCountMismatchJson(
             timeMs, shown, total, positionCount, topRowCount, bottomRowCount, model, template, edited
         )
-        executor.execute {
-            runCatching {
-                root.mkdirs()
-                trim()
-                val directory = File(root, "${System.currentTimeMillis()}_SELF_$HAND_COUNT_MISMATCH")
-                check(directory.mkdirs()) { "无法创建证据目录" }
-                File(directory, "hand.png").outputStream().use { out ->
-                    check(copy.compress(Bitmap.CompressFormat.PNG, 100, out)) { "无法写入手牌区截图" }
-                }
-                File(directory, "meta.json").writeText(metadata.toString())
-            }.onFailure { Log.w(TAG, "ISSUE_EVIDENCE_SAVE_FAILED", it) }
-            copy.recycle()
+        submit(listOf(copy)) {
+            root.mkdirs()
+            trim()
+            val directory = File(root, "${System.currentTimeMillis()}_SELF_$HAND_COUNT_MISMATCH")
+            check(directory.mkdirs()) { "无法创建证据目录" }
+            File(directory, "hand.png").outputStream().use { out ->
+                check(copy.compress(Bitmap.CompressFormat.PNG, 100, out)) { "无法写入手牌区截图" }
+            }
+            File(directory, "meta.json").writeText(metadata.toString())
+        }
+    }
+
+    /**
+     * 在写盘线程上存一组证据，写完回收 [copies]。服务退出后线程池已关，提交会被拒：
+     * 这时这组证据不存，拷贝当场回收，不抛到调用方（调用方在识别或回调线程上，抛出去会崩）。
+     */
+    private fun submit(copies: List<Bitmap>, write: () -> Unit) {
+        val task = Runnable {
+            runCatching(write).onFailure { Log.w(TAG, "ISSUE_EVIDENCE_SAVE_FAILED", it) }
+            copies.forEach(Bitmap::recycle)
+        }
+        try {
+            executor.execute(task)
+        } catch (error: RejectedExecutionException) {
+            Log.w(TAG, "ISSUE_EVIDENCE_SAVE_FAILED store closed", error)
+            copies.forEach(Bitmap::recycle)
         }
     }
 

@@ -8,7 +8,8 @@ object GameReducer {
 
     /**
      * 派发单个事件。真·程序错误（phase 非法等）抛 IllegalArgumentException；
-     * 领域性拒绝（重复、张数对不上、已确认再确认、超库存、守恒失败）返回结果对象，不抛异常。
+     * 领域性拒绝（重复、手牌为空、已确认再确认、超库存、守恒失败）返回结果对象，不抛异常。
+     * 手牌点数合计和数出来的张数对不上不拒绝：以点数合计为准，张数只作记录。
      */
     fun apply(state: GameState, event: GameEvent): DispatchResult {
         if (state.events.any { it.id == event.id }) {
@@ -63,7 +64,7 @@ object GameReducer {
         if (total <= 0) {
             return DispatchResult.Rejected(state, "手牌不能为空")
         }
-        // 手牌单个点数本身就超库存：错的一定是手牌，不是外面的账。拒绝，让用户改到一致，不停记。
+        // 手牌单个点数本身就超库存：错的一定是手牌，不是外面的账。拒绝，让用户把这个点数改回库存以内，不停记。
         val overInventory = Rank.entries.firstOrNull { event.cards[it] > Rank.initialInventory[it] }
         if (overInventory != null) {
             return DispatchResult.Rejected(
