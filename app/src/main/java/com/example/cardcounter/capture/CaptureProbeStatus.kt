@@ -72,16 +72,11 @@ internal fun handChangePercent(before: IntArray?, after: IntArray): Double? {
 }
 
 /**
- * 悬浮窗显示哪一路的手牌识别结果：优先点数合计等于边缘张数的那一路（模型优先），
- * 都对不上就用模型的结果，没有模型结果才用模板。只用于显示，不再决定是否锁手牌。
+ * 悬浮窗显示哪一路的手牌识别结果：模型有结果（合计大于 0）就用模型，没有才用模板。
+ * 数出来的张数不参与挑选：张数数错时，不能把对的模型结果换成错的模板结果。只用于显示，不决定是否锁手牌。
  */
-internal fun chooseHandCards(positionCount: Int?, model: RankCounts?, template: RankCounts): RankCounts {
-    if (positionCount != null) {
-        if (model != null && model.total() == positionCount) return model
-        if (template.total() == positionCount) return template
-    }
-    return model?.takeIf { it.total() > 0 } ?: template
-}
+internal fun chooseHandCards(model: RankCounts?, template: RankCounts): RankCounts =
+    model?.takeIf { it.total() > 0 } ?: template
 
 internal class SingleFlightGate {
     private val inFlight = AtomicBoolean(false)
