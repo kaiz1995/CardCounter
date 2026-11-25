@@ -29,7 +29,7 @@ data class HandPanelStatus(
     val mismatch: Boolean,
     val canEdit: Boolean,
     val canConfirm: Boolean,
-    /** 提示：不能确认的原因、确认被拒的原因、停记原因；没有就是 null。 */
+    /** 提示：不能确认的原因、确认被拒的原因、停记原因、可以确认但张数对不上的提醒（draft.warning）；没有就是 null。 */
     val message: String?
 )
 
@@ -88,7 +88,7 @@ fun handPanelStatus(
             mismatch = draft.mismatch,
             canEdit = true,
             canConfirm = draft.canConfirm,
-            message = rejectReason ?: draft.blockReason
+            message = rejectReason ?: draft.blockReason ?: draft.warning
         )
     }
 }

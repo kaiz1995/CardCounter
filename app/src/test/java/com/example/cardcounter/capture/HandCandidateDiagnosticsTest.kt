@@ -15,22 +15,19 @@ class HandCandidateDiagnosticsTest {
         assertEquals(100.0, handChangePercent(intArrayOf(0), intArrayOf(255))!!, 0.001)
     }
 
+    /** 回归：手牌实际 34 张、边缘只数出 33 张时，不能把对的模型结果换成恰好 33 张的错模板结果。 */
     @Test
-    fun showsTheRecognitionWhoseTotalMatchesTheEdgeCount() {
+    fun showsTheModelWheneverItHasAResult() {
         val model = RankCounts.of(mapOf(Rank.TEN to 16, Rank.NINE to 15))
         val template = RankCounts.of(mapOf(Rank.TEN to 16, Rank.NINE to 14))
-        assertEquals(model, chooseHandCards(31, model, template))
-        assertEquals(template, chooseHandCards(30, model, template))
+        assertEquals(model, chooseHandCards(model, template))
     }
 
     @Test
-    fun showsTheModelWhenNeitherMatchesAndTheTemplateWhenThereIsNoModel() {
-        val model = RankCounts.of(mapOf(Rank.TEN to 16, Rank.NINE to 15))
+    fun showsTheTemplateOnlyWhenThereIsNoModelResult() {
         val template = RankCounts.of(mapOf(Rank.TEN to 16, Rank.NINE to 14))
-        assertEquals(model, chooseHandCards(40, model, template))
-        assertEquals(model, chooseHandCards(null, model, template))
-        assertEquals(template, chooseHandCards(40, null, template))
-        assertEquals(template, chooseHandCards(40, RankCounts.zero(), template))
+        assertEquals(template, chooseHandCards(null, template))
+        assertEquals(template, chooseHandCards(RankCounts.zero(), template))
     }
 
     @Test

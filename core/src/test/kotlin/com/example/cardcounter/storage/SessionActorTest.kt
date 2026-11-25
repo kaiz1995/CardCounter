@@ -103,11 +103,12 @@ class SessionActorTest {
         val actor = SessionActor(ledger)
         val hand = RankCounts.of(mapOf(Rank.KING to 2, Rank.ACE to 1))
 
-        // 张数对不上：被拒，状态不变。
-        assertTrue(actor.post(LedgerCommand.ConfirmHand(hand, 4, "bad")) is DispatchResult.Rejected)
+        // 点数合计为 0：被拒，状态不变。
+        assertTrue(actor.post(LedgerCommand.ConfirmHand(RankCounts.zero(), null, "empty")) is DispatchResult.Rejected)
         assertFalse(ledger.state.handConfirmed)
 
-        assertTrue(actor.post(LedgerCommand.ConfirmHand(hand, 3, "ok")) is DispatchResult.Accepted)
+        // 数出来的张数和点数合计对不上：照常确认，张数只作记录。
+        assertTrue(actor.post(LedgerCommand.ConfirmHand(hand, 4, "ok")) is DispatchResult.Accepted)
         assertEquals(hand, ledger.state.selfHand)
 
         val again = actor.post(LedgerCommand.ConfirmHand(king, 1, "again"))
