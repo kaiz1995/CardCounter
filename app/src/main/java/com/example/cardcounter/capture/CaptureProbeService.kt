@@ -130,6 +130,7 @@ class CaptureProbeService : Service() {
         projection = null
         publicPlayYolo?.close()
         publicPlayYolo = null
+        replaceHandProbe(null)
         roiEventCache.reset(++captureGeneration, primeExistingTable = false)
         issueSampleStore.close()
         sessionActor.shutdown()
@@ -368,12 +369,14 @@ class CaptureProbeService : Service() {
     private fun confirmHandFromPanel() {
         val draft = HandPanelState.draft.snapshot()
         val data = draft.confirmData() ?: return
-        val probe = handProbe
+        val rows = handProbe?.rows
         val result = sessionActor.post(LedgerCommand.ConfirmHand(data.cards, data.handCount))
         HandPanelState.rejectReason = (result as? DispatchResult.Rejected)?.reason
         val mismatch = data.handCount != null && data.handCount != data.cards.total()
         val accepted = result is DispatchResult.Accepted
-        if (accepted && mismatch && probe != null) {
+        // 和 replaceHandProbe 用同一把锁：识别线程换下旧截图时会 recycle，拷贝要在锁里做完，否则会拷到已回收的截图而崩溃。
+        if (accepted && mismatch) synchronized(this) {
+            val probe = handProbe ?: return@synchronized
             issueSampleStore.saveHandCountMismatch(
                 probe.area, SystemClock.elapsedRealtime(), data.cards, data.cards.total(), data.handCount,
                 probe.rows.first, probe.rows.second, probe.model, probe.template,
@@ -385,7 +388,7 @@ class CaptureProbeService : Service() {
         Log.i(
             TAG,
             "SELF_HAND_CONFIRM total=${data.cards.total()} positionCount=${data.handCount} " +
-                "top=${probe?.rows?.first} bottom=${probe?.rows?.second} " +
+                "top=${rows?.first} bottom=${rows?.second} " +
                 "edited=${draft.edited.map { it.name }.sorted()} " +
                 "cards=${data.cards} result=${result.javaClass.simpleName}"
         )
@@ -720,6 +723,8 @@ class CaptureProbeService : Service() {
             0L
         }
         handRevision += 1
+        // 上一局的手牌截图不能留给新局当证据，也别一直占着内存。
+        replaceHandProbe(null)
         lastHandSignature = null
         lastHandSampleAt = 0L
         stableHandSamples = 0
