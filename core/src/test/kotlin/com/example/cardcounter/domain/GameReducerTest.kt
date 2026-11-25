@@ -94,16 +94,22 @@ class GameReducerTest {
         assertEquals(5, next.outsideRemaining[Rank.THREE])
     }
 
+    /** 回归：点数合计 34、边缘只数出 33 张，手牌照常确认入账；张数只作记录，不参与校验。 */
     @Test
-    fun handCountMismatchIsRejectedAndStateUnchanged() {
-        val before = GameReducer.newSession()
-        val result = GameReducer.apply(before, GameEvent.HandConfirmed(hand, 30, "bad"))
+    fun handCountDifferentFromTotalIsStillConfirmed() {
+        val result = GameReducer.apply(GameReducer.newSession(), GameEvent.HandConfirmed(hand, 30, "differs"))
 
-        val rejected = result as? DispatchResult.Rejected ?: error("应为 Rejected，实际 $result")
-        assertTrue(rejected.reason.contains("33"))
-        assertTrue(rejected.reason.contains("30"))
-        assertEquals(before, rejected.state)
-        assertFalse(rejected.state.handConfirmed)
+        val accepted = result as? DispatchResult.Accepted ?: error("应为 Accepted，实际 $result")
+        assertTrue(accepted.state.handConfirmed)
+        assertEquals(hand, accepted.state.selfHand)
+    }
+
+    @Test
+    fun unknownHandCountIsStillConfirmed() {
+        val result = GameReducer.apply(GameReducer.newSession(), GameEvent.HandConfirmed(hand, null, "unknown"))
+
+        val accepted = result as? DispatchResult.Accepted ?: error("应为 Accepted，实际 $result")
+        assertEquals(hand, accepted.state.selfHand)
     }
 
     @Test

@@ -50,7 +50,8 @@ object GameReducer {
     }
 
     /**
-     * 确认自己的手牌：每局只能一次，点数合计必须等于按牌边缘数出来的张数。
+     * 确认自己的手牌：每局只能一次，以点数合计为准；handCount（牌边缘数出来的张数）只作记录，不参与校验，
+     * 对得上对不上由手牌草稿在确认前提示。
      * 已记的外面出牌加上这手牌会让某个点数超库存 → 守恒失败暂停，确认事件不进账。
      */
     private fun confirmHand(state: GameState, event: GameEvent.HandConfirmed): DispatchResult {
@@ -59,12 +60,6 @@ object GameReducer {
             return DispatchResult.Rejected(state, "本局手牌已确认，不能修改")
         }
         val total = event.cards.total()
-        if (total != event.handCount) {
-            return DispatchResult.Rejected(
-                state,
-                "手牌点数合计与牌边缘张数对不上: cards.total()=$total, handCount=${event.handCount}"
-            )
-        }
         if (total <= 0) {
             return DispatchResult.Rejected(state, "手牌不能为空")
         }

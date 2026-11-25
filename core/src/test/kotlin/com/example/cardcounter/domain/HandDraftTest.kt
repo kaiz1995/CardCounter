@@ -70,16 +70,44 @@ class HandDraftTest {
     }
 
     @Test
-    fun cannotConfirmWhenTotalDiffersFromPositionCount() {
+    fun cannotConfirmWhenNothingEditedAndTotalDiffersFromPositionCount() {
         val draft = HandDraft().refresh(counts(Rank.ACE to 2), 3)
         assertFalse(draft.canConfirm)
         assertTrue(draft.mismatch)
-        assertEquals("点数合计 2 张，数出来 3 张，必须改到一致才能确认", draft.blockReason)
+        assertEquals(
+            "点数合计 2 张，数出来 3 张，对不上；核对后可以点点数加减改正，改完就能确认",
+            draft.blockReason
+        )
+        assertNull(draft.warning)
         assertNull(draft.confirmData())
     }
 
+    /** 回归：实际 34 张，边缘只数出 33 张，用户给 7 加一张后合计 34，必须能直接确认。 */
     @Test
-    fun cannotConfirmWhenPositionCountIsZeroOrUnknown() {
+    fun canConfirmWithWarningWhenEditedAndTotalDiffersFromPositionCount() {
+        val draft = HandDraft().refresh(counts(Rank.ACE to 2), 3).adjust(Rank.KING, +2)
+        assertEquals(4, draft.total)
+        assertTrue(draft.mismatch)
+        assertNull(draft.blockReason)
+        assertTrue(draft.canConfirm)
+        assertEquals("数出来 3 张，和点数合计 4 张不一样，核对没错就直接确认", draft.warning)
+        val data = requireNotNull(draft.confirmData())
+        assertEquals(4, data.cards.total())
+        assertEquals(3, data.handCount)
+    }
+
+    @Test
+    fun canConfirmWhenEditedAndPositionCountIsUnknown() {
+        val draft = HandDraft().refresh(counts(Rank.ACE to 2), null).adjust(Rank.ACE, +1)
+        assertTrue(draft.canConfirm)
+        assertNull(draft.warning)
+        val data = requireNotNull(draft.confirmData())
+        assertEquals(3, data.cards.total())
+        assertNull(data.handCount)
+    }
+
+    @Test
+    fun cannotConfirmWhenNothingEditedAndPositionCountIsZeroOrUnknown() {
         val zero = HandDraft().refresh(RankCounts.zero(), 0)
         assertFalse(zero.canConfirm)
         assertNotNull(zero.blockReason)
@@ -87,7 +115,26 @@ class HandDraftTest {
         val unknown = HandDraft().refresh(counts(Rank.ACE to 2), null)
         assertFalse(unknown.canConfirm)
         assertFalse("还没数出张数不算对不上", unknown.mismatch)
+        assertEquals("还没数出手牌张数，暂时不能确认", unknown.blockReason)
         assertNull(unknown.confirmData())
+    }
+
+    @Test
+    fun cannotConfirmWhenTotalIsZeroEvenIfEdited() {
+        val draft = HandDraft().refresh(counts(Rank.ACE to 1), null)
+            .adjust(Rank.ACE, -1)
+        assertTrue(draft.edited.isNotEmpty())
+        assertEquals(0, draft.total)
+        assertFalse(draft.canConfirm)
+        assertNotNull(draft.blockReason)
+    }
+
+    @Test
+    fun cannotConfirmWhenAnyRankExceedsInventory() {
+        val over = HandDraft(counts(Rank.BIG_JOKER to 5), positionCount = 5, edited = setOf(Rank.BIG_JOKER))
+        assertFalse(over.canConfirm)
+        assertEquals("有点数超过库存，必须改回库存以内才能确认", over.blockReason)
+        assertNull(over.confirmData())
     }
 
     @Test

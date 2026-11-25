@@ -88,7 +88,7 @@ fun handPanelStatus(
             mismatch = draft.mismatch,
             canEdit = true,
             canConfirm = draft.canConfirm,
-            message = rejectReason ?: draft.blockReason
+            message = rejectReason ?: draft.blockReason ?: draft.warning
         )
     }
 }

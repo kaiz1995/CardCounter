@@ -38,7 +38,27 @@ class HandPanelStatusTest {
 
         assertFalse(status.canConfirm)
         assertTrue(status.mismatch)
-        assertEquals("点数合计 2 张，数出来 3 张，必须改到一致才能确认", status.message)
+        assertEquals("点数合计 2 张，数出来 3 张，对不上；核对后可以点点数加减改正，改完就能确认", status.message)
+    }
+
+    /** 回归：改过点数、合计和数出来的张数对不上时，确认按钮可点，状态窗只给提示不拦。 */
+    @Test
+    fun editedMismatchStaysConfirmableAndShowsWarning() {
+        val draft = HandDraft().refresh(counts(Rank.ACE to 2), 3).adjust(Rank.KING, +2)
+        val status = handPanelStatus(newState(), draft, rejectReason = null, skipped = false)
+
+        assertTrue(status.canConfirm)
+        assertTrue(status.mismatch)
+        assertEquals("数出来 3 张，和点数合计 4 张不一样，核对没错就直接确认", status.message)
+    }
+
+    @Test
+    fun editedMismatchConfirmsIntoTheLedgerWithoutPositionCountMatch() {
+        val draft = HandDraft().refresh(counts(Rank.ACE to 2), 3).adjust(Rank.KING, +2)
+        val data = requireNotNull(draft.confirmData())
+        val result = GameReducer.apply(newState(), GameEvent.HandConfirmed(data.cards, data.handCount))
+        assertTrue(result is DispatchResult.Accepted)
+        assertEquals(4, (result as DispatchResult.Accepted).state.selfHand?.total())
     }
 
     @Test

@@ -25,10 +25,10 @@ sealed class LedgerCommand {
         override val evidenceId: String = UUID.randomUUID().toString()
     ) : LedgerCommand()
 
-    /** 确认自己的手牌（每局一次）；handCount 是按牌边缘数出来的张数，必须等于 cards.total()。 */
+    /** 确认自己的手牌（每局一次）；handCount 是按牌边缘数出来的张数，没数出来为 null，仅作记录，不参与校验。 */
     data class ConfirmHand(
         val cards: RankCounts,
-        val handCount: Int,
+        val handCount: Int?,
         override val evidenceId: String = UUID.randomUUID().toString()
     ) : LedgerCommand()
 
