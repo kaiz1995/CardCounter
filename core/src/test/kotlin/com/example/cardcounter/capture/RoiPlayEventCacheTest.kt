@@ -122,6 +122,59 @@ class RoiPlayEventCacheTest {
     }
 
     @Test
+    fun aChangedFrameAfterDeliveryIsNotDeliveredAsFallbackWhenTheZoneClears() {
+        // 已交出后来一帧变化画面（收牌、淡出动画）：它没停稳过，清桌时不能当兜底交出。
+        val discarded = mutableListOf<String>()
+        val cache = cache(stableSamples = 2, clearSamples = 2, discard = discarded::add)
+        cache.see("a-0")
+        cache.see("a-1")
+        assertTrue(cache.see("a-2") != null)
+        assertNull(cache.see("fade-0"))
+        assertFalse(cache.hasUndelivered(PlayZone.TOP, 1))
+        assertNull(cache.empty())
+        assertNull(cache.empty())
+        repeat(3) { assertNull(cache.empty()) }
+        assertTrue("fade-0" in discarded)
+    }
+
+    @Test
+    fun hasUndeliveredIsTrueOnlyForAPictureThatSettledOnceButWasNotDelivered() {
+        val cache = cache(stableSamples = 3, clearSamples = 2)
+        assertFalse(cache.hasUndelivered(PlayZone.TOP, 1))
+        // 刚出现：还没比较到过静止。
+        cache.see("a-0")
+        assertFalse(cache.hasUndelivered(PlayZone.TOP, 1))
+        // 静止过一次，还没停稳：清桌时会兜底交出。
+        cache.see("a-1")
+        assertTrue(cache.hasUndelivered(PlayZone.TOP, 1))
+        assertFalse(cache.hasUndelivered(PlayZone.TOP, 2))
+        assertFalse(cache.hasUndelivered(PlayZone.LEFT_TOP, 1))
+        cache.see("a-2")
+        assertTrue(cache.hasUndelivered(PlayZone.TOP, 1))
+        // 已交出。
+        assertTrue(cache.see("a-3") != null)
+        assertFalse(cache.hasUndelivered(PlayZone.TOP, 1))
+        // 换了画面又静止过一次，然后清桌兜底交出，交出后不再有待交出的牌。
+        cache.see("b-0")
+        assertFalse(cache.hasUndelivered(PlayZone.TOP, 1))
+        cache.see("b-1")
+        assertTrue(cache.hasUndelivered(PlayZone.TOP, 1))
+        assertNull(cache.empty())
+        assertTrue(cache.hasUndelivered(PlayZone.TOP, 1))
+        assertEquals(listOf("b-0", "b-1"), requireNotNull(cache.empty()).frames)
+        assertFalse(cache.hasUndelivered(PlayZone.TOP, 1))
+    }
+
+    @Test
+    fun hasUndeliveredIsFalseForPrimedTableCards() {
+        val cache = cache()
+        cache.reset(generation = 1, primeExistingTable = true)
+        cache.see("old-0")
+        cache.see("old-1")
+        assertFalse(cache.hasUndelivered(PlayZone.TOP, 1))
+    }
+
+    @Test
     fun primedTableCardsAreIgnoredUntilTheZoneClears() {
         val cache = cache()
         cache.reset(generation = 1, primeExistingTable = true)

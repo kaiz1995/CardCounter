@@ -400,17 +400,23 @@ class CaptureProbeService : Service() {
             restartPrimeDeadlineAt = 0L
             Log.i(TAG, "PLAY_GATE_PRIME_RELEASED_OUTSIDE_TABLE")
         }
+        // 圆标、指纹、截图、清桌计数全按同一个采样节拍推进（与电脑回放“每条观察就是一次采样”一致）；
+        // 非采样帧不能推进清桌计数，否则一帧闪空就会打断停稳。
+        if (!takeSample) return
+        lastRoiSampleAt = now
         PlayZone.entries.forEach { zone ->
             val visible = tableVisible && isPlayVisible(visibleZones[zone] == true)
-            // “出牌”圆标：这一区牌已收走、圆标连续两次采样都亮才算轮到他；之后再出一样的牌才算新的一手。
-            if (takeSample && tableVisible && zone.source == PlaySource.OUTSIDE) {
+            // “出牌”圆标：这一区牌已收走（且没有待兜底交出的牌）、圆标连续两次采样都亮才算轮到他；
+            // 之后再出一样的牌才算新的一手。兜底交出的入账先 post，所以一定排在 noteTurn 前面。
+            if (tableVisible && zone.source == PlaySource.OUTSIDE) {
                 val shown = TurnBadge.isShown(zone) { x, y -> pixelRgb(image, x, y) }
-                if (turnTracker.update(zone, shown, zoneEmpty = !visible)) {
+                val zoneEmpty = !visible && !roiEventCache.hasUndelivered(zone, generation)
+                if (turnTracker.update(zone, shown, zoneEmpty = zoneEmpty)) {
                     Log.i(TAG, "TURN_BADGE zone=$zone")
                     rankHandler.post { stablePlayGate.noteTurn(zone) }
                 }
             }
-            val frame = if (visible && takeSample && roiEventCache.needsFrame(zone, generation)) {
+            val frame = if (visible && roiEventCache.needsFrame(zone, generation)) {
                 val probe = RoiFrame(null, RoiFingerprint.of(zone) { x, y -> pixelRgb(image, x, y) })
                 // 已交出且画面没变：只要指纹，不再截 320 图送识别；画面一变，这一帧是下一段静止的起点，要带图。
                 if (roiEventCache.isRepeat(zone, generation, probe)) probe else probe.copy(bitmap = publicPlayBitmap(image, zone))
@@ -422,7 +428,6 @@ class CaptureProbeService : Service() {
                 rankHandler.post { finalizeRoiEvent(finalized) }
             }
         }
-        if (takeSample) lastRoiSampleAt = now
     }
 
     private fun finalizeRoiEvent(finalized: RoiPlayEventCache.Finalized<RoiFrame>) {

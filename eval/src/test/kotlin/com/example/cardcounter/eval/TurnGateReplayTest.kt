@@ -35,8 +35,8 @@ class TurnGateReplayTest {
         FrameObservation(clock, true, mapOf(PlayZone.TOP to zone))
     }
 
-    private fun replayAudits(frames: List<FrameObservation>): List<LegacyAudit> {
-        val pipeline = LegacyPipeline(stableSamples = 2, clearSamples = 2, finalizeFrameCount = 3)
+    private fun replayAudits(frames: List<FrameObservation>, finalizeFrameCount: Int = 3): List<LegacyAudit> {
+        val pipeline = LegacyPipeline(stableSamples = 2, clearSamples = 2, finalizeFrameCount = finalizeFrameCount)
         Replay.run(meta, frames, pipeline) { pipeline.audits }
         return pipeline.audits
     }
@@ -105,19 +105,41 @@ class TurnGateReplayTest {
     }
 
     @Test
-    fun slideInFramesDoNotOutvoteTheSettledPicture() {
-        // 牌还在滑进来时误认成 1 张（起点帧），停稳后的 2 帧认成 2 张：以停稳后的为准。
+    fun cardsPulledAwayBeforeSettlingStillCountAndThenTheSameCardsAfterTheirTurnCountAgain() {
+        // 一手牌只摆了不到停稳次数（停稳 2 次，只比较到 1 次静止）就收走：空出来的第一帧起圆标就亮着。
+        // 圆标亮满 2 次时这手牌还没兜底交出，不能算轮到他；兜底入账之后才算，这家下一手出一样的牌要入账。
         val result = replayAudits(
-            frames(1, obs(true, 1, still = false)) + frames(2, obs(true, 2))
+            frames(2, obs(true, 1)) +
+                frames(4, obs(false, 0, badge = true)) +
+                frames(3, obs(true, 1))
+        )
+        assertEquals(listOf(LegacyOutcome.ACCEPTED, LegacyOutcome.ACCEPTED), result.map { it.outcome })
+    }
+
+    @Test
+    fun slideInFramesDoNotOutvoteTheSettledPicture() {
+        // 牌滑进来的 4 帧（不静止）认成 1 张，停稳段第一帧认成 2 张（还没静止），再 2 帧静止认成 2 张。
+        // 投票帧数设得比总帧数大：只交最后一段静止的 3 帧，结果是 2 张，不被 4 帧滑入画面压过。
+        val result = replayAudits(
+            frames(4, obs(true, 1, still = false)) +
+                frames(1, obs(true, 2, still = false)) +
+                frames(2, obs(true, 2)),
+            finalizeFrameCount = 10
         )
         assertEquals(listOf(2), result.map { it.cards?.total() })
+        assertEquals(listOf(3), result.map { it.frameCount })
     }
 
     @Test
     fun slideInFramesBeforeTheSettledSegmentAreNotKept() {
-        // 滑入动画的帧（不静止）不会进入投票：只有最后一段静止的帧参与。
-        val slide = frames(3, obs(true, 1, still = false))
-        val result = replayAudits(slide + frames(3, obs(true, 2)))
+        // 滑入动画的帧（不静止，认成 3 张）不进入投票：交出的只有停稳段的 3 帧。
+        val result = replayAudits(
+            frames(2, obs(true, 3, still = false)) +
+                frames(1, obs(true, 2, still = false)) +
+                frames(2, obs(true, 2)),
+            finalizeFrameCount = 10
+        )
+        assertEquals(listOf(3), result.map { it.frameCount })
         assertEquals(listOf(2), result.map { it.cards?.total() })
     }
 }

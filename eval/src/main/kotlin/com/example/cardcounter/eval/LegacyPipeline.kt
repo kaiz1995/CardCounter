@@ -91,8 +91,10 @@ class LegacyPipeline(
             // 缺省的区表示这一帧没有该区观察（DATA-FORMATS 第 5 节）：不推进清桌计数，也不动门控。
             val observed = observation.zones[zone] ?: continue
             val visible = tableVisible && isPlayVisible(observed.cardVisible)
-            // 桌面可见时才看“出牌”圆标；这一区牌已收走时轮到这一家，之后再出一样的牌才算新的一手。
-            if (tableVisible && turns.update(zone, observed.turnBadge, zoneEmpty = !visible)) gate.noteTurn(zone)
+            // 桌面可见时才看“出牌”圆标；这一区牌已收走（且没有待兜底交出的牌）时轮到这一家，
+            // 之后再出一样的牌才算新的一手。待兜底交出的牌先交出入账，再算轮到他。
+            val zoneEmpty = !visible && !cache.hasUndelivered(zone, generation)
+            if (tableVisible && turns.update(zone, observed.turnBadge, zoneEmpty = zoneEmpty)) gate.noteTurn(zone)
             val sample = if (visible) ZoneSample(observation.timestampMs, observed.still, observed.detections) else null
             val finalized = cache.observe(zone, tableVisible, visible, sample, generation) ?: continue
             // 用这一手最后一帧还在桌上的时间：清桌交出要再等 clearSamples 次采样，

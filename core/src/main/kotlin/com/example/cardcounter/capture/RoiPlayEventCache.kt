@@ -3,7 +3,8 @@ package com.example.cardcounter.capture
 /**
  * 每个出牌区的停稳判定：牌面连续静止满 [stableSamples] 次就交出“最后一段连续静止”的帧。
  * 交出后不锁区：画面一旦不静止就算换了画面，再次停稳会再交出一次；同一张画面一直静止只交出一次。
- * 清桌（连续 [clearSamples] 次看不到牌）只清空缓存、解除 primed；清桌时若还没交出，兜底交出最后一段静止帧。
+ * 清桌（连续 [clearSamples] 次看不到牌）只清空缓存、解除 primed；清桌时若还没交出，且至少比较到过一次静止（见 [hasUndelivered]），
+ * 兜底交出最后一段静止帧。已交出后才来的一帧变化画面（收牌、淡出动画）没有停稳过，清桌时不兜底交出。
  * 同一手是不是新的一手由 [StablePlayGate] 判断，这里只负责停稳。
  *
  * [isStill] 只能依赖帧里的轻量指纹：帧交出、位图被回收之后，缓存还要拿上一帧继续比较。
@@ -71,6 +72,16 @@ class RoiPlayEventCache<T>(
             last != null && isStill(last, frame)
     }
 
+    /**
+     * 这一区有一手牌停稳过一次以上、还没交出，清桌时会兜底交出（见 [observe]）。
+     * 轮到他的判断要等这手交出、入账之后，否则兜底入账会把“轮到过”标志清掉。
+     */
+    @Synchronized
+    fun hasUndelivered(zone: PlayZone, generation: Long): Boolean {
+        val state = states.getValue(zone)
+        return state.generation == generation && hasPendingFallback(state)
+    }
+
     @Synchronized
     fun observe(
         zone: PlayZone,
@@ -125,7 +136,7 @@ class RoiPlayEventCache<T>(
         state.last = null
         state.emptySamples = (state.emptySamples + 1).coerceAtMost(clearSamples)
         if (state.emptySamples < clearSamples) return null
-        val fallback = !state.primed && !state.delivered && state.frames.isNotEmpty()
+        val fallback = hasPendingFallback(state)
         val frames = if (fallback) state.frames.toList() else emptyList()
         if (fallback) state.frames.clear() else clear(state)
         state.emptySamples = 0
@@ -134,6 +145,10 @@ class RoiPlayEventCache<T>(
         state.primed = false
         return if (fallback) Finalized(zone, frames, generation) else null
     }
+
+    /** 至少比较到一次静止：已交出后才来的一帧变化画面（收牌、淡出）不算。 */
+    private fun hasPendingFallback(state: State<T>): Boolean =
+        !state.primed && !state.delivered && state.stillCount > 0
 
     private fun clear(state: State<T>) {
         state.frames.forEach(discard)
