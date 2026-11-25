@@ -113,8 +113,9 @@ EVAL_CLIPS = ["SVID_20260728_145608_1.mp4", "SVID_20260728_145637_1.mp4", "SVID_
 # small joker = 34 cards) matches the screen from 8.5 s to 12.0 s, which covers
 # the whole eval window [anchor-0.8, anchor+0.5]; the hand only drops to 33
 # cards at ~13 s. Earlier versions skipped it because eval_crops' own connected-
-# component locator rejected the window (two touching glyphs merged into one
-# cluster), which is a locator problem, not a truth/screen mismatch.
+# component locator lost a thin J (its broken hook fragments fell under the size
+# gates, see eval_crops._band_rows), which is a locator problem, not a
+# truth/screen mismatch.
 EVAL_HAND_CLIPS = list(EVAL_CLIPS)
 
 # The only source/ recordings allowed to give negative (no-card) patches to training.

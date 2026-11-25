@@ -47,7 +47,7 @@ ALL_SCALES = ("hand", "outside", "self", "outside_top", "self_top")
 HAND_ROW_PITCH = 63  # measured: row 2 top - row 1 top inside the 140px strip
 
 # Row 1 of the hand shows the small suit pip under the rank glyph. Measured on
-# 77 clean row-1 glyphs of the 6 training clips: glyph 30px high, 6px of felt-white
+# 87 row-1 glyphs of the 6 training clips (synth/_check/suit_measure.json, medians): glyph 30px high, 6px of felt-white
 # gap, pip 18px high, pip bottom 50..56px (median 54) below the glyph top. The
 # row-1 tile therefore reaches 3 (glyph offset) + 56 + 1 = 60px. Row 2 is cut by
 # the 140px strip, so its (shorter) tiles stay exactly as they were.
@@ -137,8 +137,10 @@ def cut_tile(strip: np.ndarray, glyph: list[int], scale: str, tall: bool = False
         return None
     white = white_mask(tile)
     columns = white.mean(axis=0) > 0.5
+    # never trim past the glyph's own left edge: off_x must stay >= 0
+    max_trim = min(spec["off"][0], 6)
     trim = 0
-    while trim < columns.size and trim < 6 and not columns[trim]:
+    while trim < columns.size and trim < max_trim and not columns[trim]:
         trim += 1
     if trim:
         tile = tile[:, trim:]

@@ -81,6 +81,19 @@ class PasteCardsTest(unittest.TestCase):
         for box, index in placed:
             self.assertEqual(colour_class(centre_pixel(canvas, box)), index)
 
+    def test_negative_glyph_offset_never_gives_a_box_outside_the_canvas(self):
+        # A tile whose glyph starts 1px left of the tile (off_x=-1) pasted at x=0
+        # used to give x0<0 labels (60 such boxes in the real dataset).
+        tiles = [make_tile(i, 40, 34, off=(-1, -1)) for i in range(4)]
+        canvas = np.full((60, 200, 3), (40, 110, 50), np.uint8)
+        placed = S.paste_cards(canvas, tiles, (0.0, 0.0), 30.0, 1.0)
+        self.assertEqual([index for _, index in placed], [0, 1, 2, 3])
+        for box, _ in placed:
+            self.assertGreaterEqual(box[0], 0)
+            self.assertGreaterEqual(box[1], 0)
+            self.assertLessEqual(box[2], canvas.shape[1])
+            self.assertLessEqual(box[3], canvas.shape[0])
+
 
 class SceneLabelTest(unittest.TestCase):
     def setUp(self):
@@ -189,6 +202,20 @@ class PipSpriteTest(unittest.TestCase):
         short = E.cut_tile(strip, glyph, "hand", tall=False)[0]
         self.assertEqual(tall.shape[0], E.HAND_ROW1_H)
         self.assertEqual(short.shape[0], E.TILES["hand"]["h"])
+
+    def test_cut_tile_never_trims_into_the_glyph(self):
+        # Felt right up to the glyph: trimming the dark glyph columns as if they were
+        # felt used to give off_x=-1 and cut the glyph's left edge off.
+        strip = np.full((140, 870, 3), 250, np.uint8)
+        glyph = [100, 10, 114, 40]
+        strip[:, 96:100] = (40, 110, 50)  # felt left of the glyph
+        strip[10:40, 100:114] = 30  # dark glyph, its first columns are not white either
+        for tall in (True, False):
+            tile, off_x, off_y = E.cut_tile(strip, glyph, "hand", tall=tall)
+            self.assertGreaterEqual(off_x, 0)
+            self.assertEqual(off_y, E.TILES["hand"]["off"][1])
+            # the glyph's first column is still inside the tile, right at off_x
+            self.assertTrue((tile[off_y:off_y + 30, off_x] == 30).all())
 
     def test_pip_is_found_below_the_glyph_and_only_on_row1_tiles(self):
         box = E.find_pip(pip_hand_tile(), HAND_OFF, HAND_GLYPH)

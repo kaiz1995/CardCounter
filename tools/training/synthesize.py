@@ -150,12 +150,15 @@ def paste_cards(
             body_bottom = min(canvas.shape[0], y + body_h)
             if body_bottom > y + height:
                 canvas[y + height:body_bottom, x:x + width] = (250, 250, 248)
-        gx0 = x + tile["off_x"] * card_scale
-        gy0 = y + tile["off_y"] * card_scale
+        raw_x0 = x + tile["off_x"] * card_scale
+        raw_y0 = y + tile["off_y"] * card_scale
         full_w = tile["glyph_w"] * card_scale
         full_h = tile["glyph_h"] * card_scale
-        gx1 = min(gx0 + full_w, canvas.shape[1])
-        gy1 = min(gy0 + full_h, canvas.shape[0])
+        # labels must stay inside the canvas on every side
+        gx0 = max(0.0, raw_x0)
+        gy0 = max(0.0, raw_y0)
+        gx1 = min(raw_x0 + full_w, canvas.shape[1])
+        gy1 = min(raw_y0 + full_h, canvas.shape[0])
         visible = max(0.0, gx1 - gx0) * max(0.0, gy1 - gy0)
         # A glyph clipped by the canvas edge (hand row 2 is cut by the 140px
         # strip) is still a valid sample when most of it is visible.
