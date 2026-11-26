@@ -186,6 +186,7 @@ private fun decisionRecord(decision: RecordedDecision): DecisionRecord {
         is LedgerCommand.AcceptOutsidePlay -> "AcceptOutsidePlay"
         is LedgerCommand.ConfirmHand -> "ConfirmHand"
         is LedgerCommand.NewSession -> "NewSession"
+        is LedgerCommand.Revert -> "Revert"
         is LedgerCommand.Pause -> "Pause"
         LedgerCommand.Resume -> "Resume"
     }

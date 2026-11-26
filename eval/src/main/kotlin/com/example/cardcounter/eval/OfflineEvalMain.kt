@@ -37,7 +37,7 @@ object OfflineEvalCli {
         args: Array<String>,
         out: PrintStream = System.out,
         err: PrintStream = System.err,
-        pipelineFactory: PipelineFactory = PipelineFactory { LegacyPipeline() }
+        pipelineFactory: PipelineFactory? = null
     ): Int {
         if (args.isEmpty() || args.contains("--help") || args.contains("-h")) {
             printUsage(out)
@@ -65,7 +65,7 @@ object OfflineEvalCli {
         }
     }
 
-    private fun evaluate(options: EvalOptions, out: PrintStream, pipelineFactory: PipelineFactory): Int {
+    private fun evaluate(options: EvalOptions, out: PrintStream, pipelineFactory: PipelineFactory?): Int {
         val games = GamesJson.parse(
             readText(options.gamesPath), options.gamesPath.toString()
         )
@@ -91,7 +91,11 @@ object OfflineEvalCli {
             val truth = TruthCsv.parse(readText(truthPath), truthPath.toString(), meta.gameId)
                 .filter { it.zone != PlayZone.SELF }
             val frames = ObservationJsonl.parse(readText(obsPath), obsPath.toString())
-            val pipeline = pipelineFactory.create(meta)
+            val hasTurnSignals = frames.any { frame -> frame.zones.values.any { it.turnBadge } }
+            val pipeline = pipelineFactory?.create(meta) ?: LegacyPipeline(
+                // 历史旧观察流不含 turn 字段且已按 prePlayEndMs 切片；全段或含 turn 信号的回放默认开启开局门控。
+                requireOpeningSignal = hasTurnSignals || meta.prePlayEndMs <= 0
+            )
             val replay = Replay.run(meta, frames, pipeline) { (pipeline as? LegacyPipeline)?.audits.orEmpty() }
             val match = EventMatcher.match(truth, replay.accepted)
             val report = buildGameReport(meta, truth, replay, match)

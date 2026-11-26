@@ -39,6 +39,8 @@ interface StepwisePlayPipeline : PlayPipeline {
         ledger: () -> GameState,
         commit: (PipelineDecision) -> Unit
     )
+
+    fun onDecisionResult(decision: PipelineDecision, result: DispatchResult) {}
 }
 
 /** 一条已提交给账本的决策及其结果。 */
@@ -71,7 +73,9 @@ data class ReplayResult(
 ) {
     /** 本局是否确认了自己的手牌；没确认时横条不扣自己的牌，剩余牌不可算。 */
     val handConfirmed: Boolean get() = finalState.handConfirmed
-    val retryCount: Int get() = audits.count { it.outcome == LegacyOutcome.NO_CONSENSUS }
+    val retryCount: Int get() = audits.count {
+        it.outcome == LegacyOutcome.NO_CONSENSUS || it.outcome == LegacyOutcome.RULE_SUSPICIOUS
+    }
     val suppressedDuplicateCount: Int get() = audits.count { it.outcome == LegacyOutcome.DUPLICATE_SUPPRESSED }
     val notActiveCount: Int get() = audits.count { it.outcome == LegacyOutcome.NOT_ACTIVE }
 }
@@ -113,6 +117,9 @@ object Replay {
                 if (result is DispatchResult.Paused) pauses++
                 if (result is DispatchResult.Rejected) rejections++
                 decisions += RecordedDecision(decision.timestampMs, decision.zone, decision.command, result)
+                if (pipeline is StepwisePlayPipeline) {
+                    pipeline.onDecisionResult(decision, result)
+                }
             }
             for (frame in framesInPlay(game, frames)) {
                 if (pipeline is StepwisePlayPipeline) {
