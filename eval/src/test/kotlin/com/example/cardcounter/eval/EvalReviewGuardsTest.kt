@@ -585,4 +585,141 @@ class EvalReviewGuardsTest {
             }
         )
     }
+
+    @Test
+    fun devAndTuningTruthWithinStockAndRound2Fixes() {
+        val root = if (Files.exists(Path.of("datasets/games.json"))) Path.of(".") else Path.of("..")
+        val games = GamesJson.parse(Files.readString(root.resolve("datasets/games.json"), StandardCharsets.UTF_8))
+        fun loadTruth(gameId: String): List<TruthPlay> =
+            TruthCsv.parse(Files.readString(root.resolve("datasets/truth/$gameId.csv"), StandardCharsets.UTF_8), gameId)
+
+        // dev 全部有真值局（含 complete=false 的 g102658-5）+ tuning：每局每个点数不超四副牌初始库存（普通<=16，4<=8，3<=6，大小王各<=4）
+        for (meta in games.filter { it.split in setOf("dev", "tuning") }) {
+            val truthPath = root.resolve("datasets/truth/${meta.gameId}.csv")
+            if (!Files.exists(truthPath)) continue
+            val plays = loadTruth(meta.gameId)
+            if (plays.isEmpty()) continue
+            for (rank in Rank.entries) {
+                val sum = plays.sumOf { it.cards[rank] }
+                assertTrue(
+                    "${meta.gameId} ${rank.name} 累计 $sum 超过库存 ${rank.initialCount}",
+                    sum <= rank.initialCount
+                )
+            }
+        }
+
+        val g1 = loadTruth("g102658-1")
+        assertTrue(
+            "g102658-1 LEFT_BOTTOM 177026 实为 SMALL_JOKER:1;TWO:2;EIGHT:6（角标9）",
+            g1.any {
+                it.zone == PlayZone.LEFT_BOTTOM && it.appearMs == 177026L &&
+                    it.cards == RankCounts.of(mapOf(Rank.SMALL_JOKER to 1, Rank.TWO to 2, Rank.EIGHT to 6))
+            }
+        )
+        assertTrue(
+            "g102658-1 RIGHT_TOP 242225 实为 BIG_JOKER:1;ACE:2",
+            g1.any {
+                it.zone == PlayZone.RIGHT_TOP && it.appearMs == 242225L &&
+                    it.cards == RankCounts.of(mapOf(Rank.BIG_JOKER to 1, Rank.ACE to 2))
+            }
+        )
+        assertTrue(
+            "g102658-1 SELF 41424..44417 应合并为一手 FOUR:1",
+            g1.any { it.zone == PlayZone.SELF && it.appearMs == 41424L && it.clearMs == 44417L && it.cards == RankCounts.of(mapOf(Rank.FOUR to 1)) }
+        )
+        assertTrue(
+            "g102658-1 SELF 62613 与 92919 实为 KING:2",
+            g1.any { it.zone == PlayZone.SELF && it.appearMs == 62613L && it.cards == RankCounts.of(mapOf(Rank.KING to 2)) } &&
+                g1.any { it.zone == PlayZone.SELF && it.appearMs == 92919L && it.cards == RankCounts.of(mapOf(Rank.KING to 2)) }
+        )
+
+        val g2 = loadTruth("g102658-2")
+        assertTrue(
+            "g102658-2 TOP 366316 实为 FIVE:7（角标7）",
+            g2.any { it.zone == PlayZone.TOP && it.appearMs == 366316L && it.cards == RankCounts.of(mapOf(Rank.FIVE to 7)) }
+        )
+
+        val g3 = loadTruth("g102658-3")
+        assertTrue(
+            "g102658-3 SELF 443908..447113 应合并为一手 FOUR:1",
+            g3.any { it.zone == PlayZone.SELF && it.appearMs == 443908L && it.clearMs == 447113L && it.cards == RankCounts.of(mapOf(Rank.FOUR to 1)) }
+        )
+
+        val g4 = loadTruth("g102658-4")
+        assertTrue(
+            "g102658-4 SELF 685016..691027 应合并为一手 FOUR:1",
+            g4.any { it.zone == PlayZone.SELF && it.appearMs == 685016L && it.clearMs == 691027L && it.cards == RankCounts.of(mapOf(Rank.FOUR to 1)) }
+        )
+
+        val g141 = loadTruth("g143651-1")
+        assertTrue(
+            "g143651-1 RIGHT_TOP 147001 实为 BIG_JOKER:1;TWO:1;NINE:6（角标8）",
+            g141.any {
+                it.zone == PlayZone.RIGHT_TOP && it.appearMs == 147001L &&
+                    it.cards == RankCounts.of(mapOf(Rank.BIG_JOKER to 1, Rank.TWO to 1, Rank.NINE to 6))
+            }
+        )
+        assertTrue(
+            "g143651-1 SELF 71019..74019 应合并为一手 FOUR:1",
+            g141.any { it.zone == PlayZone.SELF && it.appearMs == 71019L && it.clearMs == 74019L && it.cards == RankCounts.of(mapOf(Rank.FOUR to 1)) }
+        )
+
+        val g142 = loadTruth("g143651-2")
+        assertTrue(
+            "g143651-2 SELF 289406 实为 KING:2",
+            g142.any { it.zone == PlayZone.SELF && it.appearMs == 289406L && it.cards == RankCounts.of(mapOf(Rank.KING to 2)) }
+        )
+        assertTrue(
+            "g143651-2 SELF 294218..297216 应合并为一手 FOUR:1",
+            g142.any { it.zone == PlayZone.SELF && it.appearMs == 294218L && it.clearMs == 297216L && it.cards == RankCounts.of(mapOf(Rank.FOUR to 1)) }
+        )
+
+        val g143 = loadTruth("g143651-3")
+        assertTrue(
+            "g143651-3 SELF 426517..432514 应合并为一手 FOUR:1",
+            g143.any { it.zone == PlayZone.SELF && it.appearMs == 426517L && it.clearMs == 432514L && it.cards == RankCounts.of(mapOf(Rank.FOUR to 1)) }
+        )
+
+        val g144 = loadTruth("g143651-4")
+        assertTrue(
+            "g143651-4 RIGHT_TOP 636219 实为 BIG_JOKER:1;KING:6（角标7，挂大王）",
+            g144.any {
+                it.zone == PlayZone.RIGHT_TOP && it.appearMs == 636219L &&
+                    it.cards == RankCounts.of(mapOf(Rank.BIG_JOKER to 1, Rank.KING to 6))
+            }
+        )
+        assertTrue(
+            "g143651-4 TOP 715921 实为 SEVEN:4",
+            g144.any { it.zone == PlayZone.TOP && it.appearMs == 715921L && it.cards == RankCounts.of(mapOf(Rank.SEVEN to 4)) }
+        )
+        assertTrue(
+            "g143651-4 SELF 678316..684324 应合并为一手 FOUR:1",
+            g144.any { it.zone == PlayZone.SELF && it.appearMs == 678316L && it.clearMs == 684324L && it.cards == RankCounts.of(mapOf(Rank.FOUR to 1)) }
+        )
+
+        val g145 = loadTruth("g143651-5")
+        assertTrue(
+            "g143651-5 TOP 839827 实为 SIX:7（角标7）",
+            g145.any { it.zone == PlayZone.TOP && it.appearMs == 839827L && it.cards == RankCounts.of(mapOf(Rank.SIX to 7)) }
+        )
+        assertTrue(
+            "g143651-5 TOP 854921..858320 实为三手单9与一手 BIG_JOKER:1;TEN:3",
+            g145.any { it.zone == PlayZone.TOP && it.appearMs == 854921L && it.clearMs == 855977L && it.cards == RankCounts.of(mapOf(Rank.NINE to 1)) } &&
+                g145.any { it.zone == PlayZone.TOP && it.appearMs == 855977L && it.clearMs == 857022L && it.cards == RankCounts.of(mapOf(Rank.NINE to 1)) } &&
+                g145.any { it.zone == PlayZone.TOP && it.appearMs == 857022L && it.clearMs == 858068L && it.cards == RankCounts.of(mapOf(Rank.NINE to 1)) } &&
+                g145.any {
+                    it.zone == PlayZone.TOP && it.appearMs == 858068L && it.clearMs == 858320L &&
+                        it.cards == RankCounts.of(mapOf(Rank.BIG_JOKER to 1, Rank.TEN to 3))
+                }
+        )
+
+        val g164 = loadTruth("g164333-1")
+        assertTrue(
+            "g164333-1 RIGHT_TOP 141101 实为 BIG_JOKER:1;ACE:2",
+            g164.any {
+                it.zone == PlayZone.RIGHT_TOP && it.appearMs == 141101L &&
+                    it.cards == RankCounts.of(mapOf(Rank.BIG_JOKER to 1, Rank.ACE to 2))
+            }
+        )
+    }
 }
