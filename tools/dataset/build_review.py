@@ -17,6 +17,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import dscommon as ds  # noqa: E402
+import stockrules as sr  # noqa: E402
 
 PAGE = """<!doctype html>
 <html lang="zh-CN">
@@ -41,6 +42,10 @@ PAGE = """<!doctype html>
   .tag-NORMAL {{ color:#7f8b95; }}
   .tag-REPLACE_DIRECT {{ color:#f0b44c; }}
   .note {{ color:#6f7a84; font-size:12px; }}
+  tr.stockover {{ background:#3a1a0e; outline:2px solid #ff7a1a; outline-offset:-2px; }}
+  tr.stockover td.cards, tr.stockover td.qty {{ color:#ffd0a0; }}
+  .flag.stock {{ background:#ff7a1a; color:#111; }}
+  tr:target td {{ background:#4a3a00 !important; }}
   tr.review {{ background:#2a1416; }}
   tr.review td {{ border-bottom:1px solid #5a2a2e; }}
   tr.review td.cards, tr.review td.qty {{ color:#ffb4a8; }}
@@ -81,6 +86,7 @@ def build_game(game: dict) -> Path | None:
         seq = int(row["event_seq"])
         zone = row["zone"]
         needs_review = "needs_review" in row["notes"]
+        stock_over = "stock-over" in row["notes"]
         blank = not row["cards"].strip()
         image = crop_dir / f"{seq:03d}_{zone}.png"
         rel = f"../crops/{game_id}/{image.name}"
@@ -89,12 +95,16 @@ def build_game(game: dict) -> Path | None:
         else:
             img_html = '<span class="note">无裁剪图</span>'
         flag_html = ""
-        if needs_review:
+        if stock_over:
+            match = sr.STOCK_OVER.search(row["notes"])
+            label = f"超库存 {match.group(1)} {match.group(2)}/{match.group(3)}" if match else "超库存"
+            flag_html = f'<span class="flag stock">{html.escape(label)}</span>'
+        elif needs_review:
             flag_html = '<span class="flag">待核对</span>'
         elif blank:
             flag_html = '<span class="flag blank">点数未识别</span>'
         body_rows.append(
-            f'<tr class="{"review" if needs_review or blank else ""}">'
+            f'<tr id="seq-{seq}" class="{"stockover review" if stock_over else ("review" if needs_review or blank else "")}">'
             f'<td class="qty">{seq}</td>'
             f'<td class="time">{fmt_time(int(row["stable_ms"]))}</td>'
             f'<td class="zone">{html.escape(zone)}</td>'
@@ -121,6 +131,7 @@ def build_game(game: dict) -> Path | None:
         f'· split={game["split"]} · complete={str(game["complete"]).lower()} '
         f'· firstPlay={fmt_time(game["firstPlayMs"])} · 共 {len(rows)} 手 · review=AUTO'
         f' · 待核对 {sum(1 for row in rows if "needs_review" in row["notes"])} 手'
+        f' · 其中超库存 {sum(1 for row in rows if "stock-over" in row["notes"])} 手'
     )
     page = PAGE.format(title=f"{game_id} 预标核对", meta=meta, body=body)
     out = ds.REVIEW_DIR / f"{game_id}.html"
@@ -146,6 +157,9 @@ def main() -> None:
         print(f"{game['gameId']}: {out}")
         count += 1
     print(f"生成 {count} 个核对页")
+    import stock_report  # noqa: E402
+    entries = stock_report.write_reports(payload)
+    print(f"超库存清单: {len(entries)} 行 -> {ds.REVIEW_DIR / 'stock_over.csv'}")
 
 
 if __name__ == "__main__":

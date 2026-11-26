@@ -4,7 +4,9 @@
 
 1) 整库硬门槛（complete=true 的局）：
     python tools/dataset/check_truth.py --all
-   - 任何点数累计超过库存（Rank.kt 的 4 副牌库存）、或全局合计超过 198 张 -> 报错
+   - 任何点数累计超过库存（Rank.kt 的 4 副牌库存）、或全局合计超过 198 张 -> 报错，
+     并列出贡献该点数的可疑手（按可疑程度排序）。库存是硬规则：交贡/还贡/买牌只在 198 张
+     内部转移；不检查“每家不超过 33 张”（交贡/买牌会让各家实际持牌数偏离 33）
    - 一手里出现两种普通点数（大王/小王/2 之外）-> 报错
    - 第一手 appear_ms 早于该局 firstPlayMs -> 报错
    - cards 合计与 quantity 不一致、stable<appear、clear<stable -> 报错
@@ -32,28 +34,8 @@ RANK_ALIAS = {
     "3": "THREE", "BIG_JOKER": "BIG_JOKER", "SMALL_JOKER": "SMALL_JOKER",
 }
 
-# 4 副牌 198 张（core/src/main/kotlin/com/example/cardcounter/domain/Rank.kt）
-STOCK = {
-    "BIG_JOKER": 4,
-    "SMALL_JOKER": 4,
-    "TWO": 16,
-    "ACE": 16,
-    "KING": 16,
-    "QUEEN": 16,
-    "JACK": 16,
-    "TEN": 16,
-    "NINE": 16,
-    "EIGHT": 16,
-    "SEVEN": 16,
-    "SIX": 16,
-    "FIVE": 16,
-    "FOUR": 8,
-    "THREE": 6,
-}
-TOTAL_STOCK = sum(STOCK.values())
-NORMAL_RANKS = tuple(
-    rank for rank in ds.RANK_ORDER if rank not in ("BIG_JOKER", "SMALL_JOKER", "TWO")
-)
+import stockrules as sr  # noqa: E402
+from stockrules import NORMAL_RANKS, STOCK, TOTAL_STOCK  # noqa: E402  库存见 stockrules.py
 
 
 def parse_cards(text: str):
@@ -125,9 +107,14 @@ def check_game(game: dict) -> list[str]:
                 totals[rank] += count
         earliest = appear if earliest is None else min(earliest, appear)
 
-    for rank, count in totals.items():
-        if count > STOCK[rank]:
-            errors.append(f"{game_id}: {rank} 合计 {count}/{STOCK[rank]} 超库存")
+    for finding in sr.find_stock_over(rows):
+        errors.append(
+            f"{game_id}: {finding['rank']} 合计 {finding['total']}/{finding['stock']} 超库存；"
+            f"可疑手 {len(finding['suspects'])} 手："
+            + " | ".join(sr.describe_hand(row) for row in finding["suspects"][:8])
+            + (" | …" if len(finding["suspects"]) > 8 else "")
+            + "（完整清单见 D:\\CardCounterData\\review\\stock_over.csv）"
+        )
     if total_quantity > TOTAL_STOCK:
         errors.append(
             f"{game_id}: 全局合计 {total_quantity}/{TOTAL_STOCK} 张"
