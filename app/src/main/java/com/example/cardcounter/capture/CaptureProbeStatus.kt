@@ -65,6 +65,43 @@ object CaptureProbeStatus {
     }
 }
 
+/** 悬浮窗与主界面只读的手牌/牌桌实时状态；由采集服务更新，新局或停止时清掉。 */
+data class OverlayProbeSnapshot(
+    val tableVisible: Boolean = false,
+    val latestHandCards: RankCounts? = null,
+    val handLocked: Boolean = false,
+    val handConfirmedAtMs: Long? = null,
+    val handConfirmedCount: Int? = null,
+    val gameSkipped: Boolean = false
+)
+
+object OverlayProbeState {
+    @Volatile
+    private var current = OverlayProbeSnapshot()
+
+    @Volatile
+    var onChange: (() -> Unit)? = null
+
+    fun snapshot(): OverlayProbeSnapshot = current
+
+    fun update(transform: (OverlayProbeSnapshot) -> OverlayProbeSnapshot) {
+        val next = transform(current)
+        if (next != current) {
+            current = next
+            onChange?.invoke()
+        }
+    }
+
+    fun notifyChanged() {
+        onChange?.invoke()
+    }
+
+    fun reset() {
+        current = OverlayProbeSnapshot()
+        onChange?.invoke()
+    }
+}
+
 internal fun handChangePercent(before: IntArray?, after: IntArray): Double? {
     if (before == null || before.size != after.size) return null
     return before.indices.sumOf { kotlin.math.abs(before[it] - after[it]) }.toDouble() /

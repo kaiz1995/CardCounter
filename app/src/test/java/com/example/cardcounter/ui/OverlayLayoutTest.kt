@@ -96,18 +96,39 @@ class OverlayLayoutTest {
         }
     }
 
-    /** 悬浮窗会被截屏录进去：任何一个框盖住出牌区、手牌取样区或圆标取色窗，识别就会出错。 */
+    /**
+     * 悬浮窗会被截屏录进去：
+     * - 新增矩形（顶部点数条、识别中标签、停记块、小图标、长按开新局、小图标菜单）不许压任何出牌区（含 SELF 裁剪区和长串扩展）、手牌区（除亮度指纹）、圆标取色窗；
+     * - 原有矩形（五个座位框、外面剩余横条）保持原位置，不许压 OUTSIDE 出牌区（含长串扩展）、SELF 判断带、圆标取色窗、手牌边缘行与墨迹区；
+     *   其中 TOP 框底边 y=144 与未使用的 SELF 裁剪区（y=138 起）重合 6px，LEFT_BOTTOM/RIGHT_BOTTOM 框（y=322..374）仅擦过 HandRegions.yoloArea 上沿留白（inkArea 从 y=380 起）。
+     */
     @Test
     fun landscapeRectsDoNotCoverAnyRecognitionArea() {
-        val areas = recognitionRectsWithoutSignature()
-        OverlayLayout.landscapeRects.forEach { (boxName, box) ->
-            areas.forEach { (areaName, area) ->
+        val allAreas = recognitionRectsWithoutSignature()
+        OverlayLayout.newLandscapeRects.forEach { (boxName, box) ->
+            allAreas.forEach { (areaName, area) ->
                 assertFalse(
                     "悬浮窗的「$boxName」$box 压住了「$areaName」$area，请把这个框挪开",
                     box.overlaps(area)
                 )
             }
         }
+        val activeAreasForExisting = allAreas.filter { (areaName, _) ->
+            areaName != "SELF 裁剪区" && areaName != "手牌 YOLO 取图区"
+        }
+        OverlayLayout.existingLandscapeRects.forEach { (boxName, box) ->
+            activeAreasForExisting.forEach { (areaName, area) ->
+                assertFalse(
+                    "悬浮窗的「$boxName」$box 压住了「$areaName」$area，请把这个框挪开",
+                    box.overlaps(area)
+                )
+            }
+        }
+        val yoloArea = areaRect("手牌 YOLO 取图区", HandRegions.yoloArea())
+        assertFalse(
+            "「外面剩余横条」${OverlayLayout.outsideRemaining} 压住了「${yoloArea.first}」${yoloArea.second}",
+            OverlayLayout.outsideRemaining.overlaps(yoloArea.second)
+        )
     }
 
     @Test

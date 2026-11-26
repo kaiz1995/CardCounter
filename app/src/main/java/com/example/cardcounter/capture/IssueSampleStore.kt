@@ -3,6 +3,7 @@ package com.example.cardcounter.capture
 import android.content.Context
 import android.graphics.Bitmap
 import android.util.Log
+import com.example.cardcounter.domain.HandReading
 import com.example.cardcounter.domain.RankCounts
 import com.example.cardcounter.vision.RankModelContract
 import com.example.cardcounter.vision.YoloDetection
@@ -67,6 +68,25 @@ internal class IssueSampleStore(context: Context) : AutoCloseable {
             val directory = newDirectory("SELF_$reason")
             File(directory, "hand.png").outputStream().use { out ->
                 check(copy.compress(Bitmap.CompressFormat.PNG, 100, out)) { "无法写入手牌区截图" }
+            }
+            File(directory, "meta.json").writeText(metadata.toString())
+        }
+    }
+
+    /**
+     * 开局门打开时刻未能锁定合格手牌，或锁定确认失败时存证据包（有手牌区截图就一并存下，没有也存 meta.json）。
+     */
+    fun saveHandNotRecognized(handArea: Bitmap?, metadata: JSONObject) {
+        val copy = handArea?.takeIf { !it.isRecycled }?.copy(Bitmap.Config.ARGB_8888, false)
+        val copies = listOfNotNull(copy)
+        submit(copies) {
+            root.mkdirs()
+            trim()
+            val directory = newDirectory("SELF_HAND_NOT_RECOGNIZED")
+            if (copy != null) {
+                File(directory, "hand.png").outputStream().use { out ->
+                    check(copy.compress(Bitmap.CompressFormat.PNG, 100, out)) { "无法写入手牌区截图" }
+                }
             }
             File(directory, "meta.json").writeText(metadata.toString())
         }
@@ -196,6 +216,31 @@ internal fun handEvidenceJson(
 
 /** 手牌识别低把握或合并多出牌时存的训练样本的原因。 */
 internal const val HAND_LOW_CONFIDENCE = "HAND_LOW_CONFIDENCE"
+
+/** 自动锁定失败（未认清自己手牌或入账失败）的证据 meta。 */
+internal fun handAutoLockEvidenceJson(
+    reason: String,
+    timeMs: Long,
+    latest: HandReading?,
+    topRowCount: Int?,
+    bottomRowCount: Int?,
+    model: RankCounts?,
+    modelDetections: List<YoloDetection>,
+    template: RankCounts?,
+    outcome: String
+): JSONObject = JSONObject()
+    .put("reason", reason)
+    .put("timeMs", timeMs)
+    .put("areaTop", HandRegions.YOLO_TOP)
+    .put("latestCards", latest?.cards?.let(::rankCountsJson) ?: JSONObject.NULL)
+    .put("latestTotal", latest?.cards?.total() ?: 0)
+    .put("latestPositionCount", latest?.positionCount ?: JSONObject.NULL)
+    .put("topRowCount", topRowCount ?: JSONObject.NULL)
+    .put("bottomRowCount", bottomRowCount ?: JSONObject.NULL)
+    .put("model", model?.let(::rankCountsJson) ?: JSONObject.NULL)
+    .put("modelDetections", detectionsJson(modelDetections))
+    .put("template", template?.let(::rankCountsJson) ?: JSONObject.NULL)
+    .put("outcome", outcome)
 
 /**
  * 低把握手牌样本的 meta：检测框坐标是模型输入（[RankModelContract.INPUT_SIZE] 见方）上的像素，
