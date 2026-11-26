@@ -238,10 +238,12 @@ def make_hand_scene(assets: Assets, rng: random.Random):
     boxes: list[list[float]] = []
     classes: list[int] = []
     for row, row_top in enumerate(HAND_ROW_TOPS):
-        count = rng.randint(12, 18)
+        count = rng.randint(12, 20)
         ranks = [rng.choice(C.RANKS) for _ in range(count)]
+        if rng.random() < 0.6:
+            ranks.sort(key=C.RANK_TO_ID.__getitem__)
         pitch = (HAND_STRIP_W - 52) / max(1, count - 1)
-        pitch = max(40.0, min(pitch, 52.0))
+        pitch = max(38.0, min(pitch, 52.0))
         row_width = (count - 1) * pitch + 52
         start_x = (HAND_STRIP_W - row_width) / 2 + rng.uniform(-3, 3)
         # 17-18 cards fill the strip edge to edge: keep the whole row inside it.
@@ -336,7 +338,7 @@ def render(assets: Assets, rng: random.Random, kind: str | None = None):
     if kind is None:
         roll = rng.random()
         kind = (
-            "outside" if roll < 0.45 else "self" if roll < 0.62 else "hand" if roll < 0.89
+            "outside" if roll < 0.41 else "self" if roll < 0.57 else "hand" if roll < 0.89
             else "neg" if roll < 0.94 else "pip"
         )
     if kind == "hand":

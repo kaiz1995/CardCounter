@@ -64,6 +64,7 @@ def train(
         name=name,
         exist_ok=True,
         patience=patience,
+        optimizer="SGD",
         lr0=lr0,
         lrf=0.05,
         warmup_epochs=1.0,

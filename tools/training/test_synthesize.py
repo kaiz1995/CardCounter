@@ -304,6 +304,22 @@ class PipSceneTest(unittest.TestCase):
                 self.assertLess(gap, 0.2, f"seed {seed}: box {box} reaches the pip")
         self.assertGreater(checked, 500)
 
+    def test_undersized_glyph_gate_and_adjacent_pip_detection(self):
+        self.assertTrue(E.is_undersized_glyph(10, 29, 20.0, 29.0))
+        self.assertTrue(E.is_undersized_glyph(20, 16, 20.0, 29.0))
+        self.assertFalse(E.is_undersized_glyph(18, 28, 20.0, 29.0))
+
+        # 模拟 Q 的斜撇紧贴花色（间隔 0~1px）：find_pip 必须能识别出花色。
+        tile = np.full((E.HAND_ROW1_H, 56, 3), 250, np.uint8)
+        tile[3:33, 4:20] = 30
+        tile[33:51, 6:18] = 30  # start=0 紧贴字形下沿
+        self.assertIsNotNone(E.find_pip(tile, (4, 3), (16, 30)))
+        self.assertEqual(E.ink_color(tile[3:33, 4:20]), "black")
+
+        red_tile = tile.copy()
+        red_tile[3:33, 4:20] = (30, 30, 210)
+        self.assertEqual(E.ink_color(red_tile[3:33, 4:20]), "red")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

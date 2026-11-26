@@ -213,7 +213,7 @@ def read_hand_labels(video: Path, truth: dict, timestamps=None) -> list[dict]:
     expected = C.expanded_hand(truth[key]["counts"])
     if timestamps is None:
         anchor = float(truth[key]["frame_s"])
-        timestamps = (anchor - 0.6, anchor, anchor + 0.8)
+        timestamps = (anchor - 0.6, anchor - 0.2, anchor, anchor + 0.4, anchor + 0.8)
     frames = C.grab_frames(video, timestamps)
     labelled = []
     for second, frame in frames.items():
@@ -225,7 +225,10 @@ def read_hand_labels(video: Path, truth: dict, timestamps=None) -> list[dict]:
         clusters: list[tuple[int, list[int]]] = []
         for row_index, band_top in enumerate(bands):
             band = strip[band_top:band_top + 38]
-            row_glyphs = clusters_from_mask(ink_mask(band))
+            mask = ink_mask(band)
+            # 垂直 (5,1) 闭运算只连接同一字形上下断笔（如 9/7/4/5 细笔画），不横向粘连相邻牌。
+            closed = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((5, 1), np.uint8))
+            row_glyphs = clusters_from_mask(closed)
             row_glyphs = [g for g in row_glyphs if g[2] - g[0] <= 40]
             for g in row_glyphs:
                 g[1] += band_top
@@ -245,26 +248,59 @@ def read_hand_labels(video: Path, truth: dict, timestamps=None) -> list[dict]:
     return labelled
 
 
+def is_undersized_glyph(gw: int, gh: int, median_w: float, median_h: float) -> bool:
+    return gw < 0.6 * median_w or gh < 0.6 * median_h
+
+
 def extract_hand(bank: SpriteBank, truth: dict) -> tuple[int, list[dict]]:
     total = 0
+    dropped_small = 0
     labelled_frames: list[dict] = []
+    raw_items: list[tuple[dict, np.ndarray, list[dict]]] = []
+    dims_by_rank: dict[str, list[tuple[int, int]]] = defaultdict(list)
+
     for video in C.nine_games(train_only=True):
         frames = read_hand_labels(video, truth)
         for item in frames:
             frame = C.grab_frames(video, [item["second"]])[item["second"]]
             strip = C.hand_strip(frame)
+            per_card = []
             for (row, glyph), rank in zip(item["clusters"], item["ranks"]):
-                cut = cut_tile(strip, glyph, "hand", tall=(row == 0))
-                if cut is None:
-                    continue
-                tile, off_x, off_y = cut
-                if bank.add(
-                    tile, (off_x, off_y), rank, "hand", C.clip_key(video),
-                    (glyph[2] - glyph[0], glyph[3] - glyph[1]),
-                ):
-                    total += 1
-        labelled_frames.extend(frames)
+                gw, gh = glyph[2] - glyph[0], glyph[3] - glyph[1]
+                dims_by_rank[rank].append((gw, gh))
+                per_card.append({"row": row, "glyph": glyph, "rank": rank, "gw": gw, "gh": gh})
+            raw_items.append((item, strip, per_card))
         print(f"  {video.name}: {len(frames)} labelled hand frames")
+
+    medians = {
+        rank: (
+            float(np.median([w for w, _ in dims])),
+            float(np.median([h for _, h in dims])),
+        )
+        for rank, dims in dims_by_rank.items()
+    }
+
+    for item, strip, per_card in raw_items:
+        src_key = C.clip_key(Path(item["video"]))
+        has_small = False
+        for card in per_card:
+            mw, mh = medians[card["rank"]]
+            if is_undersized_glyph(card["gw"], card["gh"], mw, mh):
+                dropped_small += 1
+                has_small = True
+                continue
+            cut = cut_tile(strip, card["glyph"], "hand", tall=(card["row"] == 0))
+            if cut is None:
+                continue
+            tile, off_x, off_y = cut
+            if bank.add(
+                tile, (off_x, off_y), card["rank"], "hand", src_key,
+                (card["gw"], card["gh"]),
+            ):
+                total += 1
+        if not has_small:
+            labelled_frames.append(item)
+    print(f"  dropped undersized hand sprites (<60% rank median): {dropped_small}")
     return total, labelled_frames
 
 
@@ -280,10 +316,15 @@ def save_real_hand_frames(labelled: list[dict], out_dir: Path) -> int:
     for existing in labels.glob("*.txt"):
         existing.unlink()
     written = 0
+    seen_hashes: set[str] = set()
     for item in labelled:
         video = C.ensure_allowed(C.NINE_GAMES / item["video"])
         frame = C.grab_frames(video, [item["second"]])[item["second"]]
         strip = C.hand_strip(frame)
+        digest = hashlib.sha1(strip.tobytes()).hexdigest()[:12]
+        if digest in seen_hashes:
+            continue
+        seen_hashes.add(digest)
         model_img = C.model_input_hand(strip)
         scale = C.MODEL_INPUT / (C.HAND_RIGHT - C.HAND_LEFT)
         boxes, classes = [], []
@@ -458,7 +499,7 @@ def find_pip(tile: np.ndarray, off, glyph):
             if zeros >= 3:
                 break
     height = end - start + 1
-    if not (2 <= start <= 10) or not (PIP_MIN_H <= height <= PIP_MAX_H):
+    if not (0 <= start <= 10) or not (PIP_MIN_H <= height <= PIP_MAX_H):
         return None
     if y_start + end >= tile.shape[0] - 1:
         return None  # pip touches the tile edge: it was cut
@@ -532,8 +573,19 @@ def compose_play_card(tile, off, glyph, spec, pip=None, big=False, joker=False):
     return card, (gx, gy), (gw, gh)
 
 
+def ink_color(patch: np.ndarray) -> str:
+    """Distinguish red suits/ranks from black ones so grafted pips match the rank ink."""
+    if patch.size == 0:
+        return "black"
+    hsv = cv2.cvtColor(patch, cv2.COLOR_BGR2HSV)
+    hue, sat, val = hsv[:, :, 0].astype(int), hsv[:, :, 1].astype(int), hsv[:, :, 2].astype(int)
+    red = int((((hue < 12) | (hue > 168)) & (sat > 90) & (val > 50)).sum())
+    dark = int((val < 120).sum())
+    return "red" if red > dark else "black"
+
+
 def build_pip_bank(bank: SpriteBank) -> list:
-    """[(pip crop, source clip)] cut from real row-1 hand tiles of the training clips."""
+    """[(pip crop, source clip, color)] cut from real row-1 hand tiles of the training clips."""
 
     pips = []
     for entry in bank.entries:
@@ -544,7 +596,8 @@ def build_pip_bank(bank: SpriteBank) -> list:
             continue
         box = find_pip(tile, (entry["off_x"], entry["off_y"]), (entry["glyph_w"], entry["glyph_h"]))
         if box:
-            pips.append((tile[box[1]:box[3], box[0]:box[2]].copy(), entry["source"]))
+            crop = tile[box[1]:box[3], box[0]:box[2]].copy()
+            pips.append((crop, entry["source"], ink_color(crop)))
     return pips
 
 
@@ -557,6 +610,10 @@ def derive_play_tiles(bank: SpriteBank, pips: list) -> dict:
 
     if not pips:
         raise SystemExit("no suit pip found on any row-1 hand tile: check HAND_ROW1_H / find_pip")
+    by_color = {
+        "red": [p[0] for p in pips if len(p) >= 3 and p[2] == "red"] or [p[0] for p in pips],
+        "black": [p[0] for p in pips if len(p) >= 3 and p[2] == "black"] or [p[0] for p in pips],
+    }
     stats = Counter()
     rng = np.random.default_rng(11)
     hand_entries = [entry for entry in bank.entries if entry["scale"] == "hand"]
@@ -565,11 +622,15 @@ def derive_play_tiles(bank: SpriteBank, pips: list) -> dict:
         if tile is None:
             continue
         joker = entry["rank"] in JOKERS
-        pip = pips[int(rng.integers(len(pips)))][0]
+        ox, oy = entry["off_x"], entry["off_y"]
+        gw, gh = entry["glyph_w"], entry["glyph_h"]
+        color = "black" if joker else ink_color(tile[oy:oy + gh, ox:ox + gw])
+        color_pips = by_color[color]
+        pip = color_pips[int(rng.integers(len(color_pips)))]
         for scale, spec in PLAY_CARD.items():
             for suffix, big in (("", False), ("_top", True)):
                 card, off, glyph = compose_play_card(
-                    tile, (entry["off_x"], entry["off_y"]), (entry["glyph_w"], entry["glyph_h"]),
+                    tile, (ox, oy), (gw, gh),
                     spec, pip, big and not joker, joker,
                 )
                 if bank.add(card, off, entry["rank"], scale + suffix, entry["source"], glyph):
@@ -604,7 +665,7 @@ def extract_pip_negatives(bank: SpriteBank, pips: list, per_kind: int = 60) -> i
         for _ in range(per_kind):
             scale_name = ("outside", "self")[int(rng.integers(2))]
             spec = PLAY_CARD[scale_name]
-            image, source = pips[int(rng.integers(len(pips)))]
+            image, source = pips[int(rng.integers(len(pips)))][:2]
             if kind == "half":
                 patch = _face_block(int(rng.integers(18, spec["w"] + 1)), int(rng.integers(10, 36)), rng)
             else:
@@ -661,6 +722,39 @@ def build_mosaics(bank: SpriteBank) -> None:
         cv2.imwrite(str(out_dir / "_negatives.png"), sheet)
 
 
+def _play_geometry_detector():
+    import oldmodel as O
+
+    if O.MODEL_PATH.is_file():
+        return O.OldDetector()
+    onnx_path = C.ROOT / "app" / "src" / "main" / "assets" / "poker_rank15_yolo11n_320.onnx"
+    if not onnx_path.is_file():
+        raise SystemExit(f"missing play geometry detector: {O.MODEL_PATH} and {onnx_path}")
+    import onnxruntime as ort
+
+    session = ort.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
+    input_name = session.get_inputs()[0].name
+
+    class _OnnxGeoDetector:
+        def detect_letterbox(self, crop: np.ndarray, conf: float = 0.5, iou: float = 0.4) -> list[dict]:
+            img, scale, dx, dy = C.letterbox(crop)
+            raw = session.run(None, {input_name: O.to_tensor(img)})[0][0]
+            scores = raw[4:].max(axis=0)
+            keep = scores >= conf
+            if not keep.any():
+                return []
+            cx, cy, bw, bh = raw[0][keep], raw[1][keep], raw[2][keep], raw[3][keep]
+            boxes = np.stack([cx - bw / 2, cy - bh / 2, cx + bw / 2, cy + bh / 2], axis=1)
+            indices = O.nms(boxes, scores[keep], iou)
+            out = []
+            for idx in indices:
+                b = C.unletterbox_boxes([boxes[idx]], scale, dx, dy)[0]
+                out.append({"box": tuple(float(v) for v in b)})
+            return out
+
+    return _OnnxGeoDetector()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--skip-play", action="store_true")
@@ -681,10 +775,8 @@ def main() -> int:
 
     play_stats = {}
     if not args.skip_play:
-        print("[2/4] play-zone geometry + empty crops (old MNN model locates corners)")
-        from oldmodel import OldDetector
-
-        play_stats = extract_play(bank, OldDetector(), pitch)
+        print("[2/4] play-zone geometry + empty crops")
+        play_stats = extract_play(bank, _play_geometry_detector(), pitch)
         print(f"  play geometry: {play_stats}")
         derived = derive_play_tiles(bank, pips)
         print(f"  play tiles derived from hand glyphs: {sum(derived.values())}")
