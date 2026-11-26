@@ -63,10 +63,86 @@ class HandDraftTest {
         assertEquals(5, refreshed.positionCount)
     }
 
+    /** 识别值超库存时原样保留，由 blockReason 拦下，不再悄悄截断成库存。 */
     @Test
-    fun refreshCapsRecognizedCountAtInventory() {
+    fun refreshKeepsOverInventoryRecognitionAndBlocksConfirm() {
         val draft = HandDraft().refresh(counts(Rank.BIG_JOKER to 9), 9)
-        assertEquals(4, draft.counts[Rank.BIG_JOKER])
+        assertEquals(9, draft.counts[Rank.BIG_JOKER])
+        assertFalse(draft.canConfirm)
+        assertEquals("有点数超过库存，必须改回库存以内才能确认", draft.blockReason)
+        assertNull(draft.confirmData())
+    }
+
+    /** 超库存的点数只能往下减，减到库存以内后可以确认。 */
+    @Test
+    fun overInventoryRankCanOnlyBeReducedBackIntoInventory() {
+        val over = HandDraft().refresh(counts(Rank.BIG_JOKER to 5), 4)
+        val same = over.adjust(Rank.BIG_JOKER, +1)
+        assertEquals("超库存时再加一张没有变化", over, same)
+        val fixed = over.adjust(Rank.BIG_JOKER, -1)
+        assertEquals(4, fixed.counts[Rank.BIG_JOKER])
+        assertTrue(fixed.canConfirm)
+    }
+
+    /** 回归：误触 +1 再 -1，点数回到识别值，不能留下 edited 永久绕过张数校验。 */
+    @Test
+    fun adjustBackToRecognizedValueClearsEditedMark() {
+        val draft = HandDraft().refresh(counts(Rank.ACE to 2), 3)
+        val back = draft.adjust(Rank.ACE, +1).adjust(Rank.ACE, -1)
+        assertTrue(back.edited.isEmpty())
+        assertEquals(draft.counts, back.counts)
+        assertFalse("合计 2、数出来 3，仍要拦", back.canConfirm)
+    }
+
+    /** 识别后来追上了用户改的值，该点数不再算改过，之后跟着识别走。 */
+    @Test
+    fun refreshThatCatchesUpWithEditedRankClearsEditedMark() {
+        val edited = HandDraft().refresh(counts(Rank.ACE to 2), 3).adjust(Rank.ACE, +1)
+        val caught = edited.refresh(counts(Rank.ACE to 3), 3)
+        assertTrue(caught.edited.isEmpty())
+        assertEquals(3, caught.counts[Rank.ACE])
+        val next = caught.refresh(counts(Rank.ACE to 2), 2)
+        assertEquals(2, next.counts[Rank.ACE])
+    }
+
+    /** 用户改过点数后，合计和数出来的张数差 2 张及以上，不能一键放行；差 1 张只提示。 */
+    @Test
+    fun editedTotalFarFromPositionCountIsBlocked() {
+        val far = HandDraft().refresh(counts(Rank.ACE to 2), 10).adjust(Rank.KING, +1)
+        assertEquals(3, far.total)
+        assertFalse(far.canConfirm)
+        assertEquals("点数合计 3 张，数出来 10 张，差得太多；请再核对点数，对上后就能确认", far.blockReason)
+        assertNull(far.warning)
+        assertNull(far.confirmData())
+
+        val gapTwo = HandDraft().refresh(counts(Rank.ACE to 2), 5).adjust(Rank.KING, +1)
+        assertFalse("差 2 张要拦", gapTwo.canConfirm)
+
+        val gapOne = HandDraft().refresh(counts(Rank.ACE to 2), 4).adjust(Rank.KING, +1)
+        assertTrue("差 1 张只提示", gapOne.canConfirm)
+        assertNotNull(gapOne.warning)
+    }
+
+    /** 版本号：内容变了才涨；内容没变的重复刷新不涨；新局清空后继续往上走。 */
+    @Test
+    fun versionOnlyChangesWhenContentChanges() {
+        val first = HandDraft().refresh(counts(Rank.ACE to 2), 2)
+        val repeated = first.refresh(counts(Rank.ACE to 2), 2)
+        assertEquals(first.version, repeated.version)
+
+        val changed = repeated.refresh(counts(Rank.ACE to 3), 3)
+        assertTrue(changed.version > repeated.version)
+
+        val adjusted = changed.adjust(Rank.KING, +1)
+        assertTrue(adjusted.version > changed.version)
+        val noChange = HandDraft().adjust(Rank.KING, -1)
+        assertEquals("到下限没有实际变化的加减不涨版本", 0L, noChange.version)
+
+        val holder = HandDraftHolder()
+        holder.refresh(counts(Rank.ACE to 2), 2)
+        val before = holder.snapshot().version
+        holder.clear()
+        assertTrue("清空后版本号继续往上", holder.snapshot().version > before)
     }
 
     @Test
@@ -179,6 +255,36 @@ class HandDraftTest {
         assertTrue(cleared.edited.isEmpty())
     }
 
+    /** 所见即所确认：点击时的版本和现在一致才确认；后台刷新或又改过一次，版本变了就不确认。 */
+    @Test
+    fun gateConfirmsOnlyTheVersionTheUserClicked() {
+        val seen = HandDraft().refresh(counts(Rank.ACE to 2), 2)
+        val ready = seen.gate(seen.version)
+        assertTrue(ready is HandConfirmGate.Ready)
+        assertEquals(counts(Rank.ACE to 2), (ready as HandConfirmGate.Ready).data.cards)
+
+        val refreshed = seen.refresh(counts(Rank.ACE to 3), 3)
+        assertEquals(HandConfirmGate.Stale, refreshed.gate(seen.version))
+
+        val adjusted = seen.adjust(Rank.KING, +1)
+        assertEquals(HandConfirmGate.Stale, adjusted.gate(seen.version))
+        assertTrue(adjusted.gate(adjusted.version) is HandConfirmGate.Ready)
+    }
+
+    @Test
+    fun gateReportsBlockedWhenTheClickedVersionCannotBeConfirmed() {
+        val mismatch = HandDraft().refresh(counts(Rank.ACE to 2), 3)
+        assertEquals(HandConfirmGate.Blocked, mismatch.gate(mismatch.version))
+    }
+
+    /** 内容没变的重复刷新不涨版本：用户看着没变的画面点确认，不会被后台的重复刷新误判成过期。 */
+    @Test
+    fun repeatedIdenticalRefreshKeepsTheClickedVersionValid() {
+        val seen = HandDraft().refresh(counts(Rank.ACE to 2), 2)
+        val again = seen.refresh(counts(Rank.ACE to 2), 2)
+        assertTrue(again.gate(seen.version) is HandConfirmGate.Ready)
+    }
+
     @Test
     fun holderIsSafeUnderConcurrentRefreshAndAdjust() {
         val holder = HandDraftHolder()
@@ -193,6 +299,8 @@ class HandDraftTest {
         val draft = holder.snapshot()
         assertEquals(2, draft.counts[Rank.ACE])
         assertEquals(0, draft.counts[Rank.KING])
-        assertTrue(draft.isEdited(Rank.KING))
+        // 加一减一后回到识别值（0），不再算改过，不会永久绕过张数校验。
+        assertFalse(draft.isEdited(Rank.KING))
+        assertTrue(draft.edited.isEmpty())
     }
 }
