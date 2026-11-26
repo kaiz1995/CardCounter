@@ -1,6 +1,5 @@
 package com.example.cardcounter.capture
 
-import com.example.cardcounter.domain.Rank
 import com.example.cardcounter.domain.RankCounts
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -57,10 +56,6 @@ object CaptureProbeStatus {
         )
     }
 
-    fun manualNewGameFailed() {
-        current = current.copy(error = "未识别到稳定自己手牌，保持原局")
-    }
-
     fun failed(message: String) {
         current = current.copy(running = false, error = message)
     }
@@ -76,25 +71,13 @@ internal fun handChangePercent(before: IntArray?, after: IntArray): Double? {
         (after.size * 255.0) * 100.0
 }
 
-internal fun stableRankCandidateCount(
-    previous: RankCounts?,
-    stableCount: Int,
-    next: RankCounts
-): Int = when {
-    next.total() == 0 -> 0
-    next == previous -> stableCount + 1
-    else -> 1
-}
-
-internal fun isValidBaseline(positionCount: Int?, cards: RankCounts): Boolean =
-    positionCount != null && kotlin.math.abs(positionCount - cards.total()) <= 1 &&
-        cards.total() > 0 && cards.fitsWithin(Rank.initialInventory)
-
-internal fun shouldInvalidatePrePlayHand(
-    firstPlayArmed: Boolean,
-    hasStableHand: Boolean,
-    handChanged: Boolean
-): Boolean = handChanged && !firstPlayArmed && !hasStableHand
+/**
+ * 这一帧手牌用哪一路的识别结果；返回 null = 这一帧不刷新草稿。
+ * 模型已加载：只认模型，这一帧没结果（出错或 0 个框）就跳过，不拿模板顶替，也不去跑 [template]；
+ * 模型没加载：才用模板。数出来的张数不参与挑选。
+ */
+internal fun chooseHandCards(modelLoaded: Boolean, model: RankCounts?, template: () -> RankCounts): RankCounts? =
+    if (modelLoaded) model?.takeIf { it.total() > 0 } else template()
 
 internal class SingleFlightGate {
     private val inFlight = AtomicBoolean(false)
@@ -103,28 +86,5 @@ internal class SingleFlightGate {
 
     fun release() {
         inFlight.set(false)
-    }
-}
-
-internal enum class FirstPlayBoundary {
-    NONE,
-    LOCK
-}
-
-internal class FirstPlayBoundaryGate {
-    private var readySamples = 0
-    private var fired = false
-
-    fun update(hasStableHand: Boolean): FirstPlayBoundary {
-        if (fired) return FirstPlayBoundary.NONE
-        readySamples = if (hasStableHand) readySamples + 1 else 0
-        if (readySamples < 2) return FirstPlayBoundary.NONE
-        fired = true
-        return FirstPlayBoundary.LOCK
-    }
-
-    fun reset() {
-        readySamples = 0
-        fired = false
     }
 }

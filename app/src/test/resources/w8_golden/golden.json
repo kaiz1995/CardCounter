@@ -1,0 +1,482 @@
+{
+ "model_sha256": "95f84f5e88d2190f42d189103bce047c605f402073a731a240de3d5a785ca444",
+ "onnxruntime_python": "1.26.0",
+ "conf": 0.25,
+ "nms_iou": 0.45,
+ "ranks": [
+  "BIG_JOKER",
+  "SMALL_JOKER",
+  "TWO",
+  "ACE",
+  "KING",
+  "QUEEN",
+  "JACK",
+  "TEN",
+  "NINE",
+  "EIGHT",
+  "SEVEN",
+  "SIX",
+  "FIVE",
+  "FOUR",
+  "THREE"
+ ],
+ "cases": [
+  {
+   "id": "current_a_right_bottom__TOP",
+   "file": "current_a_right_bottom.png",
+   "zone": "TOP",
+   "expected_counts": {},
+   "python_counts": {},
+   "detections": []
+  },
+  {
+   "id": "current_a_right_bottom__LEFT_TOP",
+   "file": "current_a_right_bottom.png",
+   "zone": "LEFT_TOP",
+   "expected_counts": {},
+   "python_counts": {},
+   "detections": []
+  },
+  {
+   "id": "current_a_right_bottom__LEFT_BOTTOM",
+   "file": "current_a_right_bottom.png",
+   "zone": "LEFT_BOTTOM",
+   "expected_counts": {},
+   "python_counts": {},
+   "detections": []
+  },
+  {
+   "id": "current_a_right_bottom__RIGHT_TOP",
+   "file": "current_a_right_bottom.png",
+   "zone": "RIGHT_TOP",
+   "expected_counts": {},
+   "python_counts": {},
+   "detections": []
+  },
+  {
+   "id": "current_a_right_bottom__RIGHT_BOTTOM",
+   "file": "current_a_right_bottom.png",
+   "zone": "RIGHT_BOTTOM",
+   "expected_counts": {
+    "ACE": 2
+   },
+   "python_counts": {
+    "ACE": 2
+   },
+   "detections": [
+    {
+     "class": 3,
+     "rank": "ACE",
+     "conf": 0.9616976380348206,
+     "box": [
+      114.06721496582031,
+      165.802978515625,
+      145.3849334716797,
+      200.4854736328125
+     ]
+    },
+    {
+     "class": 3,
+     "rank": "ACE",
+     "conf": 0.948855996131897,
+     "box": [
+      146.71621704101562,
+      165.7318115234375,
+      178.7041015625,
+      199.47769165039062
+     ]
+    }
+   ]
+  },
+  {
+   "id": "current_a_right_bottom__SELF",
+   "file": "current_a_right_bottom.png",
+   "zone": "SELF",
+   "expected_counts": {},
+   "python_counts": {},
+   "detections": []
+  },
+  {
+   "id": "current_left_bottom_7x4__TOP",
+   "file": "current_left_bottom_7x4.png",
+   "zone": "TOP",
+   "expected_counts": {},
+   "python_counts": {},
+   "detections": []
+  },
+  {
+   "id": "current_left_bottom_7x4__LEFT_TOP",
+   "file": "current_left_bottom_7x4.png",
+   "zone": "LEFT_TOP",
+   "expected_counts": {},
+   "python_counts": {},
+   "detections": []
+  },
+  {
+   "id": "current_left_bottom_7x4__LEFT_BOTTOM",
+   "file": "current_left_bottom_7x4.png",
+   "zone": "LEFT_BOTTOM",
+   "expected_counts": {
+    "SEVEN": 4
+   },
+   "python_counts": {
+    "SEVEN": 4
+   },
+   "detections": [
+    {
+     "class": 10,
+     "rank": "SEVEN",
+     "conf": 0.9519716501235962,
+     "box": [
+      139.59954833984375,
+      165.643310546875,
+      158.46102905273438,
+      192.7301025390625
+     ]
+    },
+    {
+     "class": 10,
+     "rank": "SEVEN",
+     "conf": 0.9262640476226807,
+     "box": [
+      113.90623474121094,
+      165.62115478515625,
+      133.11270141601562,
+      192.35931396484375
+     ]
+    },
+    {
+     "class": 10,
+     "rank": "SEVEN",
+     "conf": 0.9210672378540039,
+     "box": [
+      62.41880416870117,
+      165.5869598388672,
+      81.58851623535156,
+      191.4153594970703
+     ]
+    },
+    {
+     "class": 10,
+     "rank": "SEVEN",
+     "conf": 0.9206095933914185,
+     "box": [
+      88.20608520507812,
+      165.58775329589844,
+      106.86146545410156,
+      191.90211486816406
+     ]
+    }
+   ]
+  },
+  {
+   "id": "current_left_bottom_7x4__RIGHT_TOP",
+   "file": "current_left_bottom_7x4.png",
+   "zone": "RIGHT_TOP",
+   "expected_counts": {},
+   "python_counts": {},
+   "detections": []
+  },
+  {
+   "id": "current_left_bottom_7x4__RIGHT_BOTTOM",
+   "file": "current_left_bottom_7x4.png",
+   "zone": "RIGHT_BOTTOM",
+   "expected_counts": {},
+   "python_counts": {},
+   "detections": []
+  },
+  {
+   "id": "current_left_bottom_7x4__SELF",
+   "file": "current_left_bottom_7x4.png",
+   "zone": "SELF",
+   "expected_counts": {},
+   "python_counts": {},
+   "detections": []
+  },
+  {
+   "id": "current_right_top_7x2_overcount__TOP",
+   "file": "current_right_top_7x2_overcount.png",
+   "zone": "TOP",
+   "expected_counts": {
+    "NINE": 2
+   },
+   "python_counts": {
+    "NINE": 2
+   },
+   "detections": [
+    {
+     "class": 8,
+     "rank": "NINE",
+     "conf": 0.9461493492126465,
+     "box": [
+      30.885833740234375,
+      84.82070922851562,
+      70.84477996826172,
+      144.49630737304688
+     ]
+    },
+    {
+     "class": 8,
+     "rank": "NINE",
+     "conf": 0.9366083145141602,
+     "box": [
+      87.68806457519531,
+      85.55453491210938,
+      126.77085876464844,
+      144.31484985351562
+     ]
+    }
+   ]
+  },
+  {
+   "id": "current_right_top_7x2_overcount__LEFT_TOP",
+   "file": "current_right_top_7x2_overcount.png",
+   "zone": "LEFT_TOP",
+   "expected_counts": {},
+   "python_counts": {},
+   "detections": []
+  },
+  {
+   "id": "current_right_top_7x2_overcount__LEFT_BOTTOM",
+   "file": "current_right_top_7x2_overcount.png",
+   "zone": "LEFT_BOTTOM",
+   "expected_counts": {},
+   "python_counts": {},
+   "detections": []
+  },
+  {
+   "id": "current_right_top_7x2_overcount__RIGHT_TOP",
+   "file": "current_right_top_7x2_overcount.png",
+   "zone": "RIGHT_TOP",
+   "expected_counts": {
+    "SEVEN": 2
+   },
+   "python_counts": {
+    "SEVEN": 2
+   },
+   "detections": [
+    {
+     "class": 10,
+     "rank": "SEVEN",
+     "conf": 0.9673094153404236,
+     "box": [
+      148.80728149414062,
+      164.2622528076172,
+      172.60342407226562,
+      199.1765899658203
+     ]
+    },
+    {
+     "class": 10,
+     "rank": "SEVEN",
+     "conf": 0.9633291959762573,
+     "box": [
+      115.37295532226562,
+      164.37637329101562,
+      140.1042022705078,
+      199.66720581054688
+     ]
+    }
+   ]
+  },
+  {
+   "id": "current_right_top_7x2_overcount__RIGHT_BOTTOM",
+   "file": "current_right_top_7x2_overcount.png",
+   "zone": "RIGHT_BOTTOM",
+   "expected_counts": {
+    "SIX": 2
+   },
+   "python_counts": {
+    "SIX": 2
+   },
+   "detections": [
+    {
+     "class": 11,
+     "rank": "SIX",
+     "conf": 0.9679940938949585,
+     "box": [
+      115.66912841796875,
+      166.32171630859375,
+      138.67782592773438,
+      201.07415771484375
+     ]
+    },
+    {
+     "class": 11,
+     "rank": "SIX",
+     "conf": 0.9646967649459839,
+     "box": [
+      148.441162109375,
+      166.16268920898438,
+      171.7420654296875,
+      200.45281982421875
+     ]
+    }
+   ]
+  },
+  {
+   "id": "current_right_top_7x2_overcount__SELF",
+   "file": "current_right_top_7x2_overcount.png",
+   "zone": "SELF",
+   "expected_counts": {},
+   "python_counts": {},
+   "detections": []
+  },
+  {
+   "id": "current_pass_and_sixes__TOP",
+   "file": "current_pass_and_sixes.png",
+   "zone": "TOP",
+   "expected_counts": {
+    "SEVEN": 2
+   },
+   "python_counts": {
+    "SEVEN": 2
+   },
+   "detections": [
+    {
+     "class": 10,
+     "rank": "SEVEN",
+     "conf": 0.9701138734817505,
+     "box": [
+      32.12139892578125,
+      86.4163818359375,
+      71.88526916503906,
+      142.90518188476562
+     ]
+    },
+    {
+     "class": 10,
+     "rank": "SEVEN",
+     "conf": 0.9432876706123352,
+     "box": [
+      88.13430786132812,
+      86.425537109375,
+      129.10357666015625,
+      142.4984130859375
+     ]
+    }
+   ]
+  },
+  {
+   "id": "current_pass_and_sixes__LEFT_TOP",
+   "file": "current_pass_and_sixes.png",
+   "zone": "LEFT_TOP",
+   "expected_counts": {
+    "TEN": 2
+   },
+   "python_counts": {
+    "TEN": 2
+   },
+   "detections": [
+    {
+     "class": 7,
+     "rank": "TEN",
+     "conf": 0.9448502659797668,
+     "box": [
+      84.61494445800781,
+      164.08102416992188,
+      112.01057434082031,
+      196.70016479492188
+     ]
+    },
+    {
+     "class": 7,
+     "rank": "TEN",
+     "conf": 0.9082753658294678,
+     "box": [
+      54.380279541015625,
+      164.3388671875,
+      81.90226745605469,
+      196.45718383789062
+     ]
+    }
+   ]
+  },
+  {
+   "id": "current_pass_and_sixes__LEFT_BOTTOM",
+   "file": "current_pass_and_sixes.png",
+   "zone": "LEFT_BOTTOM",
+   "expected_counts": {
+    "QUEEN": 2
+   },
+   "python_counts": {
+    "QUEEN": 2
+   },
+   "detections": [
+    {
+     "class": 5,
+     "rank": "QUEEN",
+     "conf": 0.9627281427383423,
+     "box": [
+      63.06420135498047,
+      164.76016235351562,
+      82.15911102294922,
+      194.38961791992188
+     ]
+    },
+    {
+     "class": 5,
+     "rank": "QUEEN",
+     "conf": 0.9202580451965332,
+     "box": [
+      88.70103454589844,
+      164.667724609375,
+      107.59828186035156,
+      194.2818603515625
+     ]
+    }
+   ]
+  },
+  {
+   "id": "current_pass_and_sixes__RIGHT_TOP",
+   "file": "current_pass_and_sixes.png",
+   "zone": "RIGHT_TOP",
+   "expected_counts": {},
+   "python_counts": {},
+   "detections": []
+  },
+  {
+   "id": "current_pass_and_sixes__RIGHT_BOTTOM",
+   "file": "current_pass_and_sixes.png",
+   "zone": "RIGHT_BOTTOM",
+   "expected_counts": {
+    "SIX": 2
+   },
+   "python_counts": {
+    "SIX": 2
+   },
+   "detections": [
+    {
+     "class": 11,
+     "rank": "SIX",
+     "conf": 0.9693589806556702,
+     "box": [
+      115.66641235351562,
+      166.3426513671875,
+      138.6800537109375,
+      201.0916748046875
+     ]
+    },
+    {
+     "class": 11,
+     "rank": "SIX",
+     "conf": 0.961084246635437,
+     "box": [
+      148.49502563476562,
+      166.24240112304688,
+      171.80288696289062,
+      200.27236938476562
+     ]
+    }
+   ]
+  },
+  {
+   "id": "current_pass_and_sixes__SELF",
+   "file": "current_pass_and_sixes.png",
+   "zone": "SELF",
+   "expected_counts": {},
+   "python_counts": {},
+   "detections": []
+  }
+ ]
+}

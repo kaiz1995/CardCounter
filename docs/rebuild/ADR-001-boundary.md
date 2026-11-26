@@ -10,7 +10,7 @@
 
 ```text
 capture/    FrameSource、FrameSampler、GameGeometry —— 仅负责获得帧
-vision/     DetectorAdapter、MNN/TFLite/Template 实现、Observation
+vision/     DetectorAdapter、ONNX Runtime 检测器实现、Observation
 recognition/ OpeningStateMachine、ZoneStateMachine、CandidateResolver
 domain/     LedgerCommand、LedgerReducer、LedgerState —— 纯 Kotlin
 storage/    SessionActor（单写者）、SessionStore（原子追加/版本检查/恢复）
@@ -26,7 +26,7 @@ domain ← ui presenter
 Android Service → capture/recognition/application
 ```
 
-**Domain 禁止依赖**：Android SDK、Bitmap、ImageReader、SharedPreferences、MNN、TFLite。
+**Domain 禁止依赖**：Android SDK、Bitmap、ImageReader、SharedPreferences、ONNX Runtime。
 
 ## 现状验证（基线 commit dda6b451）
 

@@ -9,8 +9,11 @@ import com.example.cardcounter.domain.Rank
 import com.example.cardcounter.domain.RankCounts
 
 /** 固定游戏皮肤的 Rank 角标模板；只输出候选，不直接写入会话。 */
-class HandRankMatcher(context: Context) {
-    private data class Template(
+class HandRankMatcher internal constructor(
+    private val normal: List<Template>,
+    private val jokers: List<Template>
+) {
+    internal data class Template(
         val rank: Rank,
         val width: Int,
         val height: Int,
@@ -21,35 +24,8 @@ class HandRankMatcher(context: Context) {
     data class InkFrame(val pixels: BooleanArray, val prefix: IntArray)
     internal data class Match(val x: Int, val rank: Rank, val score: Double)
 
-    private val normal = listOf(
-        template(context, Rank.TWO, R.drawable.rank_two), template(context, Rank.ACE, R.drawable.rank_ace),
-        template(context, Rank.KING, R.drawable.rank_king), template(context, Rank.QUEEN, R.drawable.rank_queen),
-        template(context, Rank.JACK, R.drawable.rank_jack), template(context, Rank.TEN, R.drawable.rank_ten),
-        template(context, Rank.TEN, R.drawable.rank_ten_black),
-        template(context, Rank.NINE, R.drawable.rank_nine), template(context, Rank.EIGHT, R.drawable.rank_eight),
-        template(context, Rank.SEVEN, R.drawable.rank_seven), template(context, Rank.SIX, R.drawable.rank_six),
-        template(context, Rank.FIVE, R.drawable.rank_five), template(context, Rank.FIVE, R.drawable.rank_five_alt),
-        template(context, Rank.FOUR, R.drawable.rank_four),
-        template(context, Rank.THREE, R.drawable.rank_three)
-    )
-    private val jokers = listOf(
-        template(context, Rank.BIG_JOKER, R.drawable.rank_big),
-        template(context, Rank.BIG_JOKER, R.drawable.rank_big_alt),
-        template(context, Rank.SMALL_JOKER, R.drawable.rank_small),
-        template(context, Rank.SMALL_JOKER, R.drawable.rank_small_alt),
-        template(context, Rank.SMALL_JOKER, R.drawable.rank_small_current)
-    )
-    private val playNormal = normal.filterNot { it.rank == Rank.ACE } + listOf(
-        template(context, Rank.ACE, R.drawable.rank_ace, ACE_PLAY_THRESHOLD),
-        template(context, Rank.SIX, R.drawable.rank_six_play),
-        template(context, Rank.FIVE, R.drawable.rank_five_play),
-        template(context, Rank.FOUR, R.drawable.rank_four_play),
-        template(context, Rank.TEN, R.drawable.rank_ten_play),
-        template(context, Rank.QUEEN, R.drawable.rank_queen_play),
-        template(context, Rank.EIGHT, R.drawable.rank_eight_play),
-        template(context, Rank.SEVEN, R.drawable.rank_seven_play),
-        template(context, Rank.SEVEN, R.drawable.rank_seven_play_alt)
-    )
+    constructor(context: Context) : this(normalTemplates(context), jokerTemplates(context))
+
     fun snapshot(image: Image): BooleanArray = canonicalInk(image)
 
     fun prepare(pixels: BooleanArray): InkFrame {
@@ -73,36 +49,7 @@ class HandRankMatcher(context: Context) {
         val jokerMatches = findAcrossRows(
             ink, JOKER_RANK_YS, jokers, 180, 400, JOKER_THRESHOLD, 8, JOKER_MATCH_GAP
         )
-        (selectDistinctMatches(topMatches + jokerMatches, 40, DEFAULT_MATCH_GAP) + bottomMatches)
-            .forEach { counts[it.rank] = counts.getValue(it.rank) + 1 }
-        return RankCounts.of(counts)
-    }
-
-    /** 正式出牌区只取牌左上角的固定 Rank 行；空区返回零。 */
-    fun detectPlay(ink: InkFrame, zone: PlayZone): RankCounts {
-        val rankY = zone.rankY(CANONICAL_HEIGHT)
-        val normalMatches = findBestRow(
-            ink,
-            (rankY - 4..rankY + 4).toList().toIntArray(),
-            playNormal,
-            zone.left(CANONICAL_WIDTH),
-            zone.right(CANONICAL_WIDTH),
-            NORMAL_THRESHOLD,
-            MAX_PLAY_CARDS,
-            PLAY_CARD_GAP
-        )
-        val jokerMatches = findBestRow(
-            ink,
-            (rankY - 4..rankY + 4).toList().toIntArray(),
-            jokers,
-            zone.left(CANONICAL_WIDTH),
-            zone.right(CANONICAL_WIDTH),
-            JOKER_THRESHOLD,
-            MAX_PLAY_CARDS,
-            PLAY_CARD_GAP
-        )
-        val counts = Rank.entries.associateWith { 0 }.toMutableMap()
-        selectDistinctMatches(normalMatches + jokerMatches, MAX_PLAY_CARDS, PLAY_CARD_GAP)
+        (mergeNormalAndJokerMatches(topMatches, jokerMatches, DEFAULT_MATCH_GAP) + bottomMatches)
             .forEach { counts[it.rank] = counts.getValue(it.rank) + 1 }
         return RankCounts.of(counts)
     }
@@ -133,19 +80,6 @@ class HandRankMatcher(context: Context) {
         return selectDistinctMatches(peaks, maxCount, minGap)
     }
 
-    private fun findBestRow(
-        ink: InkFrame,
-        ys: IntArray,
-        templates: List<Template>,
-        minX: Int,
-        maxX: Int,
-        threshold: Double,
-        maxCount: Int,
-        minGap: Int = DEFAULT_MATCH_GAP
-    ): List<Match> = ys.map { y -> find(ink, y, templates, minX, maxX, threshold, maxCount, minGap) }
-        .maxWithOrNull(compareBy<List<Match>> { matches -> matches.sumOf { it.score } }.thenBy { it.size })
-        .orEmpty()
-
     private fun findAcrossRows(
         ink: InkFrame,
         ys: IntArray,
@@ -168,29 +102,16 @@ class HandRankMatcher(context: Context) {
             val tx = index % template.width
             val ty = index / template.width
             val pixelInk = ink.pixels[(y + ty) * CANONICAL_WIDTH + x + tx]
-            val templateInk = template.ink[index]
-            if (pixelInk || templateInk) union++
-            if (pixelInk && templateInk) intersection++
+            val templateOn = template.ink[index]
+            if (pixelInk || templateOn) union++
+            if (pixelInk && templateOn) intersection++
         }
         return if (union == 0) 0.0 else intersection.toDouble() / union
     }
 
     private fun canonicalInk(image: Image): BooleanArray {
-        val plane = image.planes[0]
-        val buffer = plane.buffer
         val result = BooleanArray(CANONICAL_WIDTH * CANONICAL_HEIGHT)
         fillInk(image, result, 180, 1_079, 380, 480)
-        PlayZone.entries.forEach { zone ->
-            val rankY = zone.rankY(CANONICAL_HEIGHT)
-            fillInk(
-                image,
-                result,
-                zone.left(CANONICAL_WIDTH),
-                zone.right(CANONICAL_WIDTH) + maxTemplateWidth,
-                rankY - 4,
-                rankY + 4 + maxTemplateHeight
-            )
-        }
         return result
     }
 
@@ -225,49 +146,65 @@ class HandRankMatcher(context: Context) {
         }
     }
 
-    private fun template(
-        context: Context,
-        rank: Rank,
-        id: Int,
-        minScore: Double? = null
-    ): Template {
-        val bitmap = requireNotNull(
-            BitmapFactory.decodeResource(
-                context.resources,
-                id,
-                BitmapFactory.Options().apply { inScaled = false }
-            )
-        )
-        val ink = BooleanArray(bitmap.width * bitmap.height) { index ->
-            val color = bitmap.getPixel(index % bitmap.width, index / bitmap.width)
-            Color.luminance(color) * 255 < INK_LIMIT
-        }
-        return Template(rank, bitmap.width, bitmap.height, ink, ink.count { it }, minScore)
-    }
-
     companion object {
+        private fun normalTemplates(context: Context): List<Template> = listOf(
+            template(context, Rank.TWO, R.drawable.rank_two), template(context, Rank.ACE, R.drawable.rank_ace),
+            template(context, Rank.KING, R.drawable.rank_king), template(context, Rank.QUEEN, R.drawable.rank_queen),
+            template(context, Rank.JACK, R.drawable.rank_jack), template(context, Rank.TEN, R.drawable.rank_ten),
+            template(context, Rank.TEN, R.drawable.rank_ten_black),
+            template(context, Rank.NINE, R.drawable.rank_nine), template(context, Rank.EIGHT, R.drawable.rank_eight),
+            template(context, Rank.SEVEN, R.drawable.rank_seven), template(context, Rank.SIX, R.drawable.rank_six),
+            template(context, Rank.FIVE, R.drawable.rank_five), template(context, Rank.FIVE, R.drawable.rank_five_alt),
+            template(context, Rank.FOUR, R.drawable.rank_four),
+            template(context, Rank.THREE, R.drawable.rank_three)
+        )
+
+        private fun jokerTemplates(context: Context): List<Template> = listOf(
+            template(context, Rank.BIG_JOKER, R.drawable.rank_big),
+            template(context, Rank.BIG_JOKER, R.drawable.rank_big_alt),
+            template(context, Rank.SMALL_JOKER, R.drawable.rank_small),
+            template(context, Rank.SMALL_JOKER, R.drawable.rank_small_alt),
+            template(context, Rank.SMALL_JOKER, R.drawable.rank_small_current)
+        )
+
+        private fun template(
+            context: Context,
+            rank: Rank,
+            id: Int,
+            minScore: Double? = null
+        ): Template {
+            val bitmap = requireNotNull(
+                BitmapFactory.decodeResource(
+                    context.resources,
+                    id,
+                    BitmapFactory.Options().apply { inScaled = false }
+                )
+            )
+            val ink = BooleanArray(bitmap.width * bitmap.height) { index ->
+                val color = bitmap.getPixel(index % bitmap.width, index / bitmap.width)
+                // 和场景截图二值化（fillInk）同一个灰度公式，模板和场景才在同一把尺子上比。
+                (Color.red(color) * 30 + Color.green(color) * 59 + Color.blue(color) * 11) / 100 < INK_LIMIT
+            }
+            return Template(rank, bitmap.width, bitmap.height, ink, ink.count { it }, minScore)
+        }
+
         private const val CANONICAL_WIDTH = 1_280
         private const val CANONICAL_HEIGHT = 578
         private const val INK_LIMIT = 180
         private const val NORMAL_THRESHOLD = 0.55
-        private const val ACE_PLAY_THRESHOLD = 0.50
         private const val JOKER_THRESHOLD = 0.72
-        private const val MAX_PLAY_CARDS = 12
         private const val DEFAULT_MATCH_GAP = 28
         private const val JOKER_MATCH_GAP = 20
-        private const val PLAY_CARD_GAP = 10
         private val TOP_RANK_YS = intArrayOf(380, 385, 390, 395)
         private val JOKER_RANK_YS = intArrayOf(393, 395)
         private val BOTTOM_RANK_YS = intArrayOf(435, 437, 440, 445, 450, 455)
     }
 
-    private val maxTemplateWidth = (normal + jokers).maxOf { it.width }
-    private val maxTemplateHeight = (normal + jokers).maxOf { it.height }
 }
 
-internal fun canReachIoUThreshold(sceneInk: Int, templateInk: Int, threshold: Double): Boolean {
-    if (sceneInk == 0 || templateInk == 0) return false
-    return minOf(sceneInk, templateInk).toDouble() / maxOf(sceneInk, templateInk) >= threshold
+internal fun canReachIoUThreshold(sceneInk: Int, templatePixels: Int, threshold: Double): Boolean {
+    if (sceneInk == 0 || templatePixels == 0) return false
+    return minOf(sceneInk, templatePixels).toDouble() / maxOf(sceneInk, templatePixels) >= threshold
 }
 
 internal fun selectDistinctMatches(
@@ -279,3 +216,27 @@ internal fun selectDistinctMatches(
         if (size < maxCount && none { kotlin.math.abs(it.x - candidate.x) <= minGap }) add(candidate)
     }
 }.sortedBy { it.x }
+
+/**
+ * 上排普通牌和大小王合并：普通牌和大小王之间按分数高的先留、相距不超过 [minGap] 的去重；
+ * 大小王之间不再互相去重（它们已按 JOKER_MATCH_GAP 选过，相邻两张王间距可以小于 [minGap]）。
+ * 最多留 [maxCount] 个。
+ */
+internal fun mergeNormalAndJokerMatches(
+    normal: List<HandRankMatcher.Match>,
+    jokers: List<HandRankMatcher.Match>,
+    minGap: Int = 28,
+    maxCount: Int = 40
+): List<HandRankMatcher.Match> {
+    val kept = ArrayList<HandRankMatcher.Match>()
+    val keptNormal = ArrayList<HandRankMatcher.Match>()
+    val ordered = (normal.map { it to false } + jokers.map { it to true }).sortedByDescending { it.first.score }
+    for ((candidate, isJoker) in ordered) {
+        if (kept.size >= maxCount) break
+        val clash = if (isJoker) keptNormal else kept
+        if (clash.any { kotlin.math.abs(it.x - candidate.x) <= minGap }) continue
+        kept += candidate
+        if (!isJoker) keptNormal += candidate
+    }
+    return kept.sortedBy { it.x }
+}

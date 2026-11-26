@@ -91,8 +91,9 @@ object VersionedEventLog {
         .put("type", event.javaClass.simpleName)
         .also { json ->
             when (event) {
+                // handCount 没数出来时显式写 JSON null（org.json 的 put(key, null) 会删键，读回来会当缺键判损坏）。
                 is GameEvent.HandConfirmed -> json.put("cards", encodeCounts(event.cards))
-                    .put("handCount", event.handCount)
+                    .put("handCount", event.handCount ?: JSONObject.NULL)
                 is GameEvent.OutsideCardsPlayed -> json.put("cards", encodeCounts(event.cards))
                     .put("seat", event.seat.name)
                 is GameEvent.Reverted -> json.put("target", event.targetEventId)
@@ -108,7 +109,7 @@ object VersionedEventLog {
         return when (json.getString("type")) {
             "NewSession" -> GameEvent.NewSession(id)
             "HandConfirmed" -> GameEvent.HandConfirmed(
-                decodeCounts(json.getJSONObject("cards")), strictInt(json, "handCount"), id
+                decodeCounts(json.getJSONObject("cards")), strictIntOrNull(json, "handCount"), id
             )
             "OutsideCardsPlayed" -> GameEvent.OutsideCardsPlayed(
                 decodeCounts(json.getJSONObject("cards")),
@@ -142,6 +143,14 @@ object VersionedEventLog {
     private fun strictInt(json: JSONObject, key: String): Int {
         val value = json.get(key)
         require(value is Int) { "字段 $key 不是整数: $value" }
+        return value
+    }
+
+    /** 键必须在；值只认 JSON 整数或显式 null，缺键、字符串、小数、布尔都抛异常。 */
+    private fun strictIntOrNull(json: JSONObject, key: String): Int? {
+        val value = json.get(key)
+        if (value == JSONObject.NULL) return null
+        require(value is Int) { "字段 $key 不是整数或 null: $value" }
         return value
     }
 }

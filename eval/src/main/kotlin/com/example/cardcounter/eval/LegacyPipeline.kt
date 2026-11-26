@@ -1,53 +1,64 @@
 package com.example.cardcounter.eval
 
+import com.example.cardcounter.capture.OpeningPlayGate
+import com.example.cardcounter.capture.PlayFrameVote
+import com.example.cardcounter.capture.PlayGateDecision
 import com.example.cardcounter.capture.PlaySource
 import com.example.cardcounter.capture.PlayZone
 import com.example.cardcounter.capture.RoiPlayEventCache
 import com.example.cardcounter.capture.StablePlayGate
-import com.example.cardcounter.capture.canFastConfirmPlay
+import com.example.cardcounter.capture.ZoneSignalTracker
+import com.example.cardcounter.capture.routeZoneSignals
 import com.example.cardcounter.capture.isPlayVisible
 import com.example.cardcounter.capture.isPublicRankBand
+import com.example.cardcounter.domain.DispatchResult
 import com.example.cardcounter.domain.GameState
-import com.example.cardcounter.domain.Rank
 import com.example.cardcounter.domain.RankCounts
 import com.example.cardcounter.domain.SessionPhase
 import com.example.cardcounter.recognition.Detection
 import com.example.cardcounter.recognition.FrameObservation
+import com.example.cardcounter.recognition.GoujiPlayRules
 import com.example.cardcounter.recognition.PipelineDecision
-import com.example.cardcounter.recognition.PlayPipeline
+import com.example.cardcounter.recognition.PlayRuleCheck
 import com.example.cardcounter.storage.LedgerCommand
+import com.example.cardcounter.vision.RankModelContract
+import com.example.cardcounter.vision.YoloDetection
 import java.util.UUID
 
 /** 一次最终化尝试的结果，用于诊断，不写入账本。 */
-enum class LegacyOutcome { ACCEPTED, NO_CONSENSUS, NOT_ACTIVE, DUPLICATE_SUPPRESSED }
+enum class LegacyOutcome {
+    ACCEPTED,
+    NO_CONSENSUS,
+    RULE_SUSPICIOUS,
+    PRE_PLAY_SKIPPED,
+    NOT_ACTIVE,
+    DUPLICATE_SUPPRESSED
+}
 
 data class LegacyAudit(
     val zone: PlayZone,
     val timestampMs: Long,
     val outcome: LegacyOutcome,
     val cards: RankCounts?,
-    val frameCount: Int
+    val frameCount: Int,
+    val reason: String? = null
 )
 
 /**
- * 手机现行出牌判定（W5 新状态机到位前的临时裁判实现）：
- * RoiPlayEventCache 停稳/清桌交出 → 多帧检测投票 → StablePlayGate.acceptStable。
- *
- * 与 CaptureProbeService.finalizeRoiEvent 的已知差异：没有手牌模板融合
- * （fuseSinglePublicPlay 需要位图），帧按时间取最近 N 帧而不是按 quality 排序。
- * 决策时间取这一手最后一帧证据的时间，不是交出时刻（清桌交出要多等 clearSamples 次采样）。
- * 回放走逐区路径：每个区判定前读最新账本、判定后立即提交；同帧前一区让账本暂停后，
- * 后一区走“非 ACTIVE”分支，不动去重门控，与手机 finalizeRoiEvent 逐区串行一致。
+ * 手机现行出牌判定（与 CaptureProbeService 同一套状态机与投票合并）：
+ * RoiPlayEventCache 停稳交出 → 多帧检测按牌位合并投票 → GoujiPlayRules 校验 →
+ * OpeningPlayGate 开局换牌期拦截 → StablePlayGate 只读检查 → 账本 Accepted 后提交门控状态；
+ * 出牌圆标（TurnBadge）经 TurnTracker 告诉去重门“轮到过这一家”，同时追踪 1.5s 长清桌。
  */
 class LegacyPipeline(
     stableSamples: Int = 15,
     clearSamples: Int = 6,
     maxFrames: Int = 8,
     private val finalizeFrameCount: Int = 3,
+    private val requireOpeningSignal: Boolean = true,
     private val onAudit: (LegacyAudit) -> Unit = {}
 ) : StepwisePlayPipeline {
     private data class ZoneSample(val timestampMs: Long, val still: Boolean, val detections: List<Detection>?)
-    private data class Candidate(val cards: RankCounts, val minimumConfidence: Float)
 
     private val cache = RoiPlayEventCache<ZoneSample>(
         maxFrames = maxFrames,
@@ -56,7 +67,12 @@ class LegacyPipeline(
         isStill = { _, current -> current.still }
     )
     private val gate = StablePlayGate()
+    private val signals = ZoneSignalTracker()
+    private val openingGate = OpeningPlayGate()
     private var generation = 0L
+
+    /** 当前这一帧的采样时间：账本接受后提交去重门要用和检查时同一个时间。 */
+    private var currentNowMs = 0L
     private val auditLog = mutableListOf<LegacyAudit>()
 
     /** 本次回放的全部最终化尝试，按发生顺序。 */
@@ -64,6 +80,7 @@ class LegacyPipeline(
 
     init {
         cache.reset(generation, primeExistingTable = false)
+        openingGate.reset(alreadyInPlay = !requireOpeningSignal)
     }
 
     private fun audit(entry: LegacyAudit) {
@@ -84,22 +101,45 @@ class LegacyPipeline(
         commit: (PipelineDecision) -> Unit
     ) {
         val tableVisible = observation.tableVisible
+        currentNowMs = observation.timestampMs
         for (zone in PlayZone.entries) {
             // 自己那一区的出牌完全不管：不判定、不发命令。
             if (zone.source == PlaySource.SELF) continue
             // 缺省的区表示这一帧没有该区观察（DATA-FORMATS 第 5 节）：不推进清桌计数，也不动门控。
             val observed = observation.zones[zone] ?: continue
             val visible = tableVisible && isPlayVisible(observed.cardVisible)
-            // 手机在“看得见桌面但该区没牌”时用零候选清门控；桌面不可见时不动门控。
-            if (tableVisible && !visible) {
-                gate.update(zone, RankCounts.zero())
-            }
             val sample = if (visible) ZoneSample(observation.timestampMs, observed.still, observed.detections) else null
-            val finalized = cache.observe(zone, tableVisible, visible, sample, generation) ?: continue
-            // 用这一手最后一帧还在桌上的时间：清桌交出要再等 clearSamples 次采样，
-            // 若用交出时刻，延迟随采样间隔变化，会掉出真值对齐时间窗。
-            val evidenceMs = finalized.frames.lastOrNull()?.timestampMs ?: observation.timestampMs
-            finalize(finalized, evidenceMs, ledger())?.let(commit)
+            val finalized = cache.observe(zone, tableVisible, visible, sample, generation)
+            if (finalized != null) {
+                // 用这一手最后一帧还在桌上的时间：清桌交出要再等 clearSamples 次采样，
+                // 若用交出时刻，延迟随采样间隔变化，会掉出真值对齐时间窗。
+                val evidenceMs = finalized.frames.lastOrNull()?.timestampMs ?: observation.timestampMs
+                finalize(finalized, evidenceMs, observation.timestampMs, ledger())?.let(commit)
+            }
+            // “出牌”圆标和清桌计时放在交出之后看（与手机一致）：清桌这次采样兜底交出的一手先入账，这次采样的信号再生效。
+            // 牌桌被遮挡时也要采样，空桌计时和圆标连续计数在里面归零；手机和评测共用 [ZoneSignalTracker] 与 [routeZoneSignals]。
+            val signal = signals.sample(
+                zone,
+                badgeShown = tableVisible && observed.turnBadge,
+                cleared = cache.isCleared(zone, generation),
+                zoneEmpty = !visible && !cache.hasUndelivered(zone, generation),
+                tableVisible = tableVisible,
+                nowMs = observation.timestampMs
+            )
+            if (signal.any) {
+                val retries = routeZoneSignals(
+                    zone, signal, observation.timestampMs, gate, openingGate, ledger().handConfirmed
+                ) { other -> isOnTable(observation, other) }
+                for (retry in retries) replaySkipped(retry, ledger())?.let(commit)
+            }
+        }
+    }
+
+    override fun onDecisionResult(decision: PipelineDecision, result: DispatchResult) {
+        val zone = decision.zone ?: return
+        val command = decision.command as? LedgerCommand.AcceptOutsidePlay ?: return
+        if (result is DispatchResult.Accepted) {
+            gate.commitAccepted(zone, command.cards, currentNowMs) { cache.isCleared(it, generation) }
         }
     }
 
@@ -107,62 +147,108 @@ class LegacyPipeline(
         generation++
         cache.reset(generation, primeExistingTable = false)
         gate.reset()
+        signals.reset()
+        openingGate.reset(alreadyInPlay = !requireOpeningSignal)
         auditLog.clear()
     }
+
+    private fun isOnTable(observation: FrameObservation, zone: PlayZone): Boolean =
+        observation.tableVisible && (observation.zones[zone]?.let { isPlayVisible(it.cardVisible) } ?: false)
 
     private fun finalize(
         finalized: RoiPlayEventCache.Finalized<ZoneSample>,
         timestampMs: Long,
+        nowMs: Long,
         ledger: GameState
     ): PipelineDecision? {
-        val candidates = finalized.frames
+        val frameDetections = finalized.frames
             .takeLast(finalizeFrameCount)
-            .mapNotNull { sample -> sample.detections?.let(::candidateOf) }
-        val winner = candidates
-            .filter { it.cards.total() > 0 }
-            .groupBy { it.cards }
-            .maxWithOrNull(
-                compareBy<Map.Entry<RankCounts, List<Candidate>>> { it.value.size }
-                    .thenBy { entry -> entry.value.minOf { it.minimumConfidence } }
-            )
-        val cards = winner?.let { entry ->
-            entry.key.takeIf {
-                entry.value.size >= 2 || canFastConfirmPlay(it, entry.value.first().minimumConfidence)
-            }
-        }
+            .mapNotNull { sample -> sample.detections?.let(::toYoloDetections) }
+        val voteOutcome = PlayFrameVote.resolve(frameDetections)
+        val cards = voteOutcome?.cards
         if (cards == null) {
             audit(LegacyAudit(finalized.zone, timestampMs, LegacyOutcome.NO_CONSENSUS, null, finalized.frames.size))
+            return null
+        }
+        val ruleCheck = GoujiPlayRules.check(cards)
+        if (ruleCheck is PlayRuleCheck.Suspicious) {
+            audit(
+                LegacyAudit(
+                    finalized.zone, timestampMs, LegacyOutcome.RULE_SUSPICIOUS,
+                    cards, finalized.frames.size, reason = "${ruleCheck.code}:${ruleCheck.detail}"
+                )
+            )
             return null
         }
         if (ledger.phase != SessionPhase.ACTIVE) {
             audit(LegacyAudit(finalized.zone, timestampMs, LegacyOutcome.NOT_ACTIVE, cards, finalized.frames.size))
             return null
         }
-        val stable = gate.acceptStable(finalized.zone, cards) ?: run {
+        return admit(finalized.zone, cards, finalized.frames.size, timestampMs, nowMs, ledger)
+    }
+
+    /** 开局门因圆标打开后补记门控打开前交出过、牌还在桌上的一手：规则早已校验过，只重走账本状态、开局门和去重门（与手机一致）。 */
+    private fun replaySkipped(play: OpeningPlayGate.SkippedPlay, ledger: GameState): PipelineDecision? {
+        if (ledger.phase != SessionPhase.ACTIVE) {
+            audit(LegacyAudit(play.zone, play.atMs, LegacyOutcome.NOT_ACTIVE, play.cards, 0))
+            return null
+        }
+        return admit(play.zone, play.cards, 0, play.atMs, currentNowMs, ledger)
+    }
+
+    /** 开局门 → 去重门检查 → 生成账本命令；正常交出和补记共用。 */
+    private fun admit(
+        zone: PlayZone,
+        cards: RankCounts,
+        frameCount: Int,
+        timestampMs: Long,
+        nowMs: Long,
+        ledger: GameState
+    ): PipelineDecision? {
+        if (requireOpeningSignal && !openingGate.isReady(ledger.handConfirmed)) {
+            // 记下这一手：开局门稍后因圆标打开时，桌上还摆着的会补记。
+            openingGate.notePrePlaySkipped(zone, cards, nowMs)
             audit(
-                LegacyAudit(finalized.zone, timestampMs, LegacyOutcome.DUPLICATE_SUPPRESSED, cards, finalized.frames.size)
+                LegacyAudit(
+                    zone, timestampMs, LegacyOutcome.PRE_PLAY_SKIPPED,
+                    cards, frameCount, reason = "PRE_PLAY_SKIPPED"
+                )
             )
             return null
         }
-        audit(LegacyAudit(finalized.zone, timestampMs, LegacyOutcome.ACCEPTED, stable.cards, finalized.frames.size))
+        val stable = when (val decision = gate.check(zone, cards, nowMs)) {
+            is PlayGateDecision.Accept -> decision.play
+            is PlayGateDecision.Suppressed -> {
+                audit(
+                    LegacyAudit(
+                        zone, timestampMs, LegacyOutcome.DUPLICATE_SUPPRESSED,
+                        cards, frameCount, reason = decision.reason.name
+                    )
+                )
+                return null
+            }
+        }
+        audit(LegacyAudit(zone, timestampMs, LegacyOutcome.ACCEPTED, stable.cards, frameCount))
         val evidenceId = UUID.randomUUID().toString()
-        val command = LedgerCommand.AcceptOutsidePlay(
-            stable.cards, requireNotNull(finalized.zone.seat), evidenceId
-        )
-        return PipelineDecision(command, finalized.zone, timestampMs)
+        val command = LedgerCommand.AcceptOutsidePlay(stable.cards, requireNotNull(zone.seat), evidenceId)
+        return PipelineDecision(command, zone, timestampMs)
     }
 
-    /** 与 detectYoloCards(publicPlay = true) 等价：只保留点数带内的框，按点数计数。 */
-    private fun candidateOf(detections: List<Detection>): Candidate {
-        val counts = mutableMapOf<Rank, Int>()
-        var minimum = 0f
-        var seen = 0
-        for (detection in detections) {
-            if (!isPublicRankBand(detection.cy)) continue
-            counts[detection.rank] = (counts[detection.rank] ?: 0) + 1
-            minimum = if (seen == 0) detection.confidence else minOf(minimum, detection.confidence)
-            seen++
-        }
-        return Candidate(RankCounts.of(counts), minimum)
+    /** 只保留点数带内的框（[isPublicRankBand]，为兼容旧模型回放保留），换算到 320 画布像素。 */
+    private fun toYoloDetections(detections: List<Detection>): List<YoloDetection> {
+        val scale = RankModelContract.INPUT_SIZE.toFloat()
+        return detections
+            .filter { isPublicRankBand(it.cy) }
+            .map { d ->
+                YoloDetection(
+                    rank = d.rank,
+                    rawLabel = d.rank.name,
+                    confidence = d.confidence,
+                    centerX = d.cx * scale,
+                    centerY = d.cy * scale,
+                    width = d.w * scale,
+                    height = d.h * scale
+                )
+            }
     }
 }

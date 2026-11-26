@@ -15,52 +15,28 @@ class HandCandidateDiagnosticsTest {
         assertEquals(100.0, handChangePercent(intArrayOf(0), intArrayOf(255))!!, 0.001)
     }
 
+    /** 回归：手牌实际 34 张、边缘只数出 33 张时，不能把对的模型结果换成恰好 33 张的错模板结果。 */
     @Test
-    fun doesNotStabilizeAnEmptyRankCandidate() {
-        val hand = RankCounts.of(mapOf(Rank.ACE to 2))
-        assertEquals(1, stableRankCandidateCount(null, 0, hand))
-        assertEquals(2, stableRankCandidateCount(hand, 1, hand))
-        assertEquals(0, stableRankCandidateCount(hand, 2, RankCounts.zero()))
+    fun showsTheModelWheneverItHasAResult() {
+        val model = RankCounts.of(mapOf(Rank.TEN to 16, Rank.NINE to 15))
+        val template = RankCounts.of(mapOf(Rank.TEN to 16, Rank.NINE to 14))
+        assertEquals(model, chooseHandCards(modelLoaded = true, model = model) { template })
+    }
+
+    /** 模型已加载但这一帧没结果：本帧不刷新草稿，不拿模板顶替，也不白跑模板匹配。 */
+    @Test
+    fun loadedModelWithoutAResultSkipsTheFrameAndNeverRunsTheTemplate() {
+        var templateRuns = 0
+        val template = RankCounts.of(mapOf(Rank.TEN to 16, Rank.NINE to 14))
+        assertNull(chooseHandCards(modelLoaded = true, model = null) { templateRuns++; template })
+        assertNull(chooseHandCards(modelLoaded = true, model = RankCounts.zero()) { templateRuns++; template })
+        assertEquals(0, templateRuns)
     }
 
     @Test
-    fun acceptsStableBaselineAtItsActualHandCount() {
-        assertEquals(
-            true,
-            isValidBaseline(31, RankCounts.of(mapOf(Rank.TEN to 16, Rank.NINE to 15)))
-        )
-        assertEquals(
-            true,
-            isValidBaseline(30, RankCounts.of(mapOf(Rank.TEN to 16, Rank.NINE to 13)))
-        )
-        assertEquals(
-            true,
-            isValidBaseline(35, RankCounts.of(mapOf(Rank.TEN to 16, Rank.NINE to 16, Rank.THREE to 3)))
-        )
-        assertEquals(
-            false,
-            isValidBaseline(33, RankCounts.of(mapOf(Rank.TEN to 16, Rank.NINE to 16, Rank.THREE to 3)))
-        )
-    }
-
-    @Test
-    fun keepsValidBaselineThroughAnyPrePlayTransition() {
-        assertEquals(
-            false,
-            shouldInvalidatePrePlayHand(
-                firstPlayArmed = false,
-                hasStableHand = true,
-                handChanged = true
-            )
-        )
-        assertEquals(
-            true,
-            shouldInvalidatePrePlayHand(
-                firstPlayArmed = false,
-                hasStableHand = false,
-                handChanged = true
-            )
-        )
+    fun usesTheTemplateOnlyWhenTheModelIsNotLoaded() {
+        val template = RankCounts.of(mapOf(Rank.TEN to 16, Rank.NINE to 14))
+        assertEquals(template, chooseHandCards(modelLoaded = false, model = null) { template })
     }
 
     @Test
@@ -71,34 +47,6 @@ class HandCandidateDiagnosticsTest {
         assertEquals(false, gate.tryAcquire())
         gate.release()
         assertEquals(true, gate.tryAcquire())
-    }
-
-    @Test
-    fun locksAfterTwoStableHandSamples() {
-        val gate = FirstPlayBoundaryGate()
-
-        assertEquals(FirstPlayBoundary.NONE, gate.update(hasStableHand = false))
-        assertEquals(FirstPlayBoundary.NONE, gate.update(hasStableHand = true))
-        assertEquals(FirstPlayBoundary.LOCK, gate.update(hasStableHand = true))
-        assertEquals(FirstPlayBoundary.NONE, gate.update(hasStableHand = true))
-    }
-
-    @Test
-    fun keepsWaitingWhenFirstPlayArrivesWithoutBaseline() {
-        val gate = FirstPlayBoundaryGate()
-
-        assertEquals(FirstPlayBoundary.NONE, gate.update(hasStableHand = false))
-        assertEquals(FirstPlayBoundary.NONE, gate.update(hasStableHand = false))
-    }
-
-    @Test
-    fun newSessionRearmsFirstPlayBoundary() {
-        val gate = FirstPlayBoundaryGate()
-        gate.update(hasStableHand = true)
-        assertEquals(FirstPlayBoundary.LOCK, gate.update(hasStableHand = true))
-        gate.reset()
-        gate.update(hasStableHand = true)
-        assertEquals(FirstPlayBoundary.LOCK, gate.update(hasStableHand = true))
     }
 
     @Test
@@ -117,8 +65,8 @@ class HandCandidateDiagnosticsTest {
 
     @Test
     fun skipsTemplateScoresWhoseInkDensityCannotReachThreshold() {
-        assertEquals(false, canReachIoUThreshold(sceneInk = 2, templateInk = 10, threshold = 0.55))
-        assertEquals(true, canReachIoUThreshold(sceneInk = 8, templateInk = 10, threshold = 0.55))
+        assertEquals(false, canReachIoUThreshold(sceneInk = 2, templatePixels = 10, threshold = 0.55))
+        assertEquals(true, canReachIoUThreshold(sceneInk = 8, templatePixels = 10, threshold = 0.55))
     }
 
     @Test
@@ -129,6 +77,18 @@ class HandCandidateDiagnosticsTest {
         )
 
         assertEquals(2, selectDistinctMatches(matches, maxCount = 8, minGap = 20).size)
+    }
+
+    @Test
+    fun keepsTwoSameRankMatchesFartherApartThanTheDefaultGap() {
+        // 手牌普通点数用默认间距 28：同点数的两张牌间距大于它都保留，间距不大于它的才算同一张。
+        val matches = listOf(
+            HandRankMatcher.Match(100, Rank.SEVEN, 1.0),
+            HandRankMatcher.Match(129, Rank.SEVEN, 0.9),
+            HandRankMatcher.Match(150, Rank.SEVEN, 0.8)
+        )
+
+        assertEquals(listOf(100, 129), selectDistinctMatches(matches, maxCount = 40).map { it.x })
     }
 
 }

@@ -37,6 +37,11 @@ data class GameState(
     /** 这一家累计出了几张；由点数向量推出。 */
     fun playedCountBy(seat: OutsideSeat): Int = playedBy(seat).total()
 
+    /** 最近一条尚未撤销的外面出牌事件；没有则为 null。 */
+    fun lastUnrevertedOutsidePlay(): GameEvent.OutsideCardsPlayed? =
+        events.filterIsInstance<GameEvent.OutsideCardsPlayed>()
+            .lastOrNull { it.id !in revertedEventIds }
+
     fun requireInvariant() {
         check(Rank.initialInventory.total() == 198)
         selfHand?.let { check(it.total() > 0) { "已确认的手牌不能为空" } }

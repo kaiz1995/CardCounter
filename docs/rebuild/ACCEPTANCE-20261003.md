@@ -21,7 +21,7 @@
 | A0 构建 | **通过** | `assembleDebug` BUILD SUCCESSFUL，APK 47,089,539 字节 |
 | A1 组件单测 | **通过** | `testDebugUnitTest` **87/87**（0 fail / 0 error），含 Phase 1 新增 22 例 reducer 测试、Phase 2 新增 12 例 storage 测试 |
 | P0 交付物 | **通过** | docs/rebuild/ 四件套入库；manifest 逐视频 SHA256 实测（主代理抽查 1 例一致）；9局/ 与 source/ 确认为两批不同素材 |
-| P1 账本契约 | **通过**（A1 级） | DispatchResult 四态语义；手牌点数合计≠牌边缘张数拒绝；超库存/守恒失败 → PAUSED 且原事件不进账；重复事件 DuplicateIgnored；`withoutRecoverablePause` 已删除，重启不解除暂停有测试锁定 |
+| P1 账本契约 | **通过**（A1 级） | DispatchResult 四态语义；手牌确认以点数合计为准（牌边缘张数仅作记录，对不上由手牌草稿提示；合计为 0 拒绝）；超库存/守恒失败 → PAUSED 且原事件不进账；重复事件 DuplicateIgnored；`withoutRecoverablePause` 已删除，重启不解除暂停有测试锁定 |
 | P2 单写者存储 | **通过**（A1 级） | SessionActor 单线程串行（并发测试无丢失）；VersionedEventLog CAS 旧版本写入被拒；诊断词表 OBSERVED/STABLE/ACCEPTED/REJECTED/RETRY/PAUSED/DUPLICATE；显式 Resume 仅 PAUSED→ACTIVE |
 | A2 离线整局 | **未验证** | 需要 30 局标注数据 + offline runner（Phase 5） |
 | A3 真机链路 | **未验证** | 需要 Mate 60 真机（Phase 6） |
@@ -38,8 +38,8 @@
 | 识别失败静默丢失 | NO_CONSENSUS → RETRY 诊断记录保留证据 |
 | 重启自动解除未确认暂停 | **已修复**（withoutRecoverablePause 删除 + 测试锁定） |
 | 持久化后 replay 与实时不一致 | replayMatchesLiveState 测试锁定 |
-| MNN/TFLite 后端不可观察 | **未处理**（Phase 3 范围） |
-| 数量与 Rank 矛盾仍显示伪精确 | **已修复**（只接受点数完整的出牌；各家张数和外面总张数由点数向量推出，不再有独立数量账；手牌确认时点数合计必须等于牌边缘张数，对不上 → Rejected） |
+| MNN/TFLite 后端不可观察 | **已不存在**（W8 删除 MNN/TFLite，手机只剩官方 ONNX Runtime 一个后端） |
+| 数量与 Rank 矛盾仍显示伪精确 | **已修复**（只接受点数完整的出牌；各家张数和外面总张数由点数向量推出，不再有独立数量账；手牌确认以点数合计为准，牌边缘张数仅作记录；对不上时手牌草稿提示，用户改过点数可直接确认，没改过则拦在确认前） |
 
 ## 主代理审查记录（子代理产出修正项）
 

@@ -23,17 +23,32 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.example.cardcounter.R
 import com.example.cardcounter.capture.CaptureProbeService
+import com.example.cardcounter.capture.HandPanelState
+import com.example.cardcounter.domain.HandPanelMode
+import com.example.cardcounter.domain.Rank
+import com.example.cardcounter.domain.resumePlan
 import com.example.cardcounter.persistence.SessionRepository
+import com.example.cardcounter.storage.LedgerCommand
+import com.example.cardcounter.storage.SessionActor
 import com.example.cardcounter.ui.CounterOverlayView
+import com.example.cardcounter.ui.HandPanelView
 import com.example.cardcounter.ui.OverlayLayout
 import kotlin.math.roundToInt
 
-class OverlayService : Service() {
+class OverlayService : Service(), HandPanelView.Actions {
     private lateinit var windowManager: WindowManager
     private var counter: CounterOverlayView? = null
     private var hideControl: TextView? = null
     private var resetControl: TextView? = null
+    private val handViews = mutableListOf<HandPanelView>()
+    private val mainHandler = Handler(Looper.getMainLooper())
     private var hidden = false
+
+    /** 点点数时是加一张还是减一张；只在主线程读写。 */
+    private var addMode = true
+
+    /** 手牌确认后是否展开看牌；只在主线程读写。 */
+    private var expanded = false
 
     override fun onCreate() {
         super.onCreate()
@@ -49,17 +64,20 @@ class OverlayService : Service() {
             ACTION_SHOW -> setHidden(false)
             ACTION_HIDE -> setHidden(true)
         }
-        counter?.render(SessionRepository.get(this).state)
+        renderAll()
         return START_STICKY
     }
 
     override fun onDestroy() {
-        listOfNotNull(counter, hideControl, resetControl).forEach { view ->
+        HandPanelState.onChange = null
+        mainHandler.removeCallbacksAndMessages(null)
+        (listOfNotNull(counter, hideControl, resetControl) + handViews).forEach { view ->
             runCatching { windowManager.removeView(view) }
         }
         counter = null
         hideControl = null
         resetControl = null
+        handViews.clear()
         super.onDestroy()
     }
 
@@ -78,16 +96,105 @@ class OverlayService : Service() {
             installResetLongPress(view)
             windowManager.addView(view, controlParams(OverlayLayout.resetButton))
         }
-        counter?.visibility = if (hidden) View.GONE else View.VISIBLE
-        resetControl?.visibility = if (hidden) View.GONE else View.VISIBLE
+        // 手牌面板是几块单独的可触摸小窗；全屏显示层仍然不接收触摸，不挡游戏操作。
+        listOf(
+            HandPanelView.Kind.RANKS_LEFT to OverlayLayout.handRanksLeft,
+            HandPanelView.Kind.RANKS_RIGHT to OverlayLayout.handRanksRight,
+            HandPanelView.Kind.CONTROL to OverlayLayout.handControl,
+            HandPanelView.Kind.STATUS to OverlayLayout.handStatus
+        ).forEach { (kind, rect) ->
+            val view = HandPanelView(this, kind, rect, this)
+            windowManager.addView(view, controlParams(rect))
+            handViews += view
+        }
+        HandPanelState.onChange = { mainHandler.post { renderAll() } }
     }
 
     private fun setHidden(value: Boolean) {
         hidden = value
         getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).edit().putBoolean(KEY_HIDDEN, value).apply()
-        counter?.visibility = if (value) View.GONE else View.VISIBLE
-        resetControl?.visibility = if (value) View.GONE else View.VISIBLE
         hideControl?.text = if (value) "显示" else "隐藏"
+        renderAll()
+    }
+
+    /** 最近一次画到屏幕上的手牌草稿版本：点“确认手牌”时带上它，草稿换了就不确认。 */
+    @Volatile private var renderedDraftVersion = -1L
+
+    /** 按账本状态和手牌草稿重画所有悬浮窗内容，并决定哪几块手牌小窗显示。必须在主线程调用。 */
+    private fun renderAll() {
+        val state = SessionRepository.get(this).state
+        // 草稿只取一次：显示的状态、改过标记和确认时认的版本必须是同一版。
+        val draft = HandPanelState.draft.snapshot()
+        renderedDraftVersion = draft.version
+        val status = HandPanelState.status(state, draft)
+        if (status.mode != HandPanelMode.CONFIRMED) expanded = false
+        counter?.render(state, status.handUnconfirmed)
+        counter?.visibility = if (hidden) View.GONE else View.VISIBLE
+        resetControl?.visibility = if (hidden) View.GONE else View.VISIBLE
+        val edited = draft.edited
+        handViews.forEach { view ->
+            if (view.kind == HandPanelView.Kind.STATUS) {
+                // 手牌确认后状态窗缩成小条，不再占着整块触摸区挡游戏操作。
+                val target = if (status.mode == HandPanelMode.CONFIRMED) {
+                    OverlayLayout.handConfirmedChip
+                } else {
+                    OverlayLayout.handStatus
+                }
+                if (view.rect != target) {
+                    view.rect = target
+                    windowManager.updateViewLayout(view, controlParams(target))
+                }
+            }
+            view.render(status, edited, addMode, expanded)
+            val shown = when (view.kind) {
+                HandPanelView.Kind.RANKS_LEFT, HandPanelView.Kind.RANKS_RIGHT -> when (status.mode) {
+                    HandPanelMode.EDITING, HandPanelMode.PAUSED -> true
+                    HandPanelMode.CONFIRMED -> expanded
+                    HandPanelMode.SKIPPED -> false
+                }
+                HandPanelView.Kind.CONTROL -> status.mode == HandPanelMode.EDITING || status.mode == HandPanelMode.PAUSED
+                HandPanelView.Kind.STATUS -> true
+            }
+            view.visibility = if (!hidden && shown) View.VISIBLE else View.GONE
+        }
+    }
+
+    override fun adjust(rank: Rank, delta: Int) {
+        HandPanelState.draft.adjust(rank, delta)
+        HandPanelState.rejectNote = null
+        renderAll()
+    }
+
+    override fun toggleAddMode() {
+        addMode = !addMode
+        renderAll()
+    }
+
+    override fun confirm() {
+        CaptureProbeService.confirmHand(this, renderedDraftVersion)
+    }
+
+    override fun toggleExpanded() {
+        expanded = !expanded
+        renderAll()
+    }
+
+    override fun resume(revertLast: Boolean) {
+        if (CaptureProbeService.resume(this, revertLast)) return
+        // 截屏服务没在运行时，由独立单写者安全兜底执行；和服务里一样，只有账本正处于停记才做。
+        val repository = SessionRepository.get(this)
+        val plan = resumePlan(repository.state, revertLast)
+        if (plan != null) {
+            val actor = SessionActor(repository)
+            try {
+                plan.revertTarget?.let { actor.post(LedgerCommand.Revert(it.id)) }
+                actor.post(LedgerCommand.Resume)
+            } finally {
+                actor.shutdown()
+            }
+        }
+        HandPanelState.rejectNote = null
+        renderAll()
     }
 
     private fun installResetLongPress(view: View) {

@@ -103,11 +103,12 @@ class SessionActorTest {
         val actor = SessionActor(ledger)
         val hand = RankCounts.of(mapOf(Rank.KING to 2, Rank.ACE to 1))
 
-        // 张数对不上：被拒，状态不变。
-        assertTrue(actor.post(LedgerCommand.ConfirmHand(hand, 4, "bad")) is DispatchResult.Rejected)
+        // 点数合计为 0：被拒，状态不变。
+        assertTrue(actor.post(LedgerCommand.ConfirmHand(RankCounts.zero(), null, "empty")) is DispatchResult.Rejected)
         assertFalse(ledger.state.handConfirmed)
 
-        assertTrue(actor.post(LedgerCommand.ConfirmHand(hand, 3, "ok")) is DispatchResult.Accepted)
+        // 数出来的张数和点数合计对不上：照常确认，张数只作记录。
+        assertTrue(actor.post(LedgerCommand.ConfirmHand(hand, 4, "ok")) is DispatchResult.Accepted)
         assertEquals(hand, ledger.state.selfHand)
 
         val again = actor.post(LedgerCommand.ConfirmHand(king, 1, "again"))
@@ -150,6 +151,33 @@ class SessionActorTest {
         // 新会话本身就是 ACTIVE：直接 Resume 必须 Rejected。
         assertTrue(actor.post(LedgerCommand.Resume) is DispatchResult.Rejected)
         assertEquals(SessionPhase.ACTIVE, ledger.state.phase)
+        actor.shutdown()
+    }
+
+    @Test
+    fun revertCommandAndResumeRecoverFromConservationPause() {
+        val ledger = FakeLedger()
+        val actor = SessionActor(ledger)
+        assertTrue(actor.post(LedgerCommand.ConfirmHand(RankCounts.of(mapOf(Rank.ACE to 4)), 4)) is DispatchResult.Accepted)
+        // 外面出 10 张 A（合法），再出 4 张 A 超库存（14+4 > 16）触发守恒暂停。
+        val first = LedgerCommand.AcceptOutsidePlay(RankCounts.of(mapOf(Rank.ACE to 10)), OutsideSeat.TOP, "p1")
+        assertTrue(actor.post(first) is DispatchResult.Accepted)
+        assertTrue(
+            actor.post(LedgerCommand.AcceptOutsidePlay(RankCounts.of(mapOf(Rank.ACE to 4)), OutsideSeat.LEFT_TOP, "p2"))
+                is DispatchResult.Paused
+        )
+
+        val target = requireNotNull(ledger.state.lastUnrevertedOutsidePlay())
+        assertEquals("p1", target.id)
+        assertTrue(actor.post(LedgerCommand.Revert(target.id)) is DispatchResult.Accepted)
+        assertTrue(actor.post(LedgerCommand.Resume) is DispatchResult.Accepted)
+        assertEquals(SessionPhase.ACTIVE, ledger.state.phase)
+        assertEquals(0, ledger.state.outsidePlayed[Rank.ACE])
+        assertTrue(
+            actor.post(LedgerCommand.AcceptOutsidePlay(RankCounts.of(mapOf(Rank.ACE to 4)), OutsideSeat.LEFT_TOP, "p3"))
+                is DispatchResult.Accepted
+        )
+        assertEquals(4, ledger.state.outsidePlayed[Rank.ACE])
         actor.shutdown()
     }
 }

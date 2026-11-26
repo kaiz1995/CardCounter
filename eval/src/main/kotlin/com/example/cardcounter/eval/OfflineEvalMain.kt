@@ -37,7 +37,7 @@ object OfflineEvalCli {
         args: Array<String>,
         out: PrintStream = System.out,
         err: PrintStream = System.err,
-        pipelineFactory: PipelineFactory = PipelineFactory { LegacyPipeline() }
+        pipelineFactory: PipelineFactory? = null
     ): Int {
         if (args.isEmpty() || args.contains("--help") || args.contains("-h")) {
             printUsage(out)
@@ -65,7 +65,7 @@ object OfflineEvalCli {
         }
     }
 
-    private fun evaluate(options: EvalOptions, out: PrintStream, pipelineFactory: PipelineFactory): Int {
+    private fun evaluate(options: EvalOptions, out: PrintStream, pipelineFactory: PipelineFactory?): Int {
         val games = GamesJson.parse(
             readText(options.gamesPath), options.gamesPath.toString()
         )
@@ -91,8 +91,16 @@ object OfflineEvalCli {
             val truth = TruthCsv.parse(readText(truthPath), truthPath.toString(), meta.gameId)
                 .filter { it.zone != PlayZone.SELF }
             val frames = ObservationJsonl.parse(readText(obsPath), obsPath.toString())
-            val pipeline = pipelineFactory.create(meta)
-            val replay = Replay.run(meta, frames, pipeline) { (pipeline as? LegacyPipeline)?.audits.orEmpty() }
+            val fullSegment = meta.prePlayEndMs <= 0
+            val pipeline = pipelineFactory?.create(meta) ?: LegacyPipeline(
+                // 只有不切 prePlayEndMs 的全段回放才有换牌期；已切到首出之后的回放，手牌本来就是确认过的。
+                requireOpeningSignal = fullSegment
+            )
+            // 全段回放开着开局门控时，手牌不能在 0 秒就确认（那等于把门控关了）：改在真值里第一手外面出牌出现的时间确认。
+            val confirmAt = if (fullSegment) truth.minOfOrNull { it.appearMs } ?: 0L else 0L
+            val replay = Replay.run(meta, frames, pipeline, confirmHandAtMs = confirmAt) {
+                (pipeline as? LegacyPipeline)?.audits.orEmpty()
+            }
             val match = EventMatcher.match(truth, replay.accepted)
             val report = buildGameReport(meta, truth, replay, match)
             reports += report

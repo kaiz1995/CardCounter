@@ -398,7 +398,7 @@ class EvalReviewGuardsTest {
         assertEquals(0, replay.rejectionCount)
         assertEquals(listOf<PlayZone?>(PlayZone.TOP), replay.decisions.map { it.zone })
         assertTrue(replay.accepted.isEmpty())
-        // 手机读到非 ACTIVE 直接返回，不调 acceptStable：后一区审计应是 NOT_ACTIVE，不是 ACCEPTED。
+        // 手机读到非 ACTIVE 直接返回，不调 accept：后一区审计应是 NOT_ACTIVE，不是 ACCEPTED。
         assertEquals(
             listOf(PlayZone.TOP to LegacyOutcome.ACCEPTED, PlayZone.LEFT_TOP to LegacyOutcome.NOT_ACTIVE),
             replay.audits.map { it.zone to it.outcome }
@@ -449,9 +449,31 @@ class EvalReviewGuardsTest {
     @Test
     fun unknownSelfHandStillCountsOutsidePlays() {
         val unknown = game(selfHand = RankCounts.zero(), selfHandCount = null)
-        fun frameOf(ts: Long, top: Int) = FrameObservation(ts, true, mapOf(PlayZone.TOP to kings(PlayZone.TOP, top)))
+        fun frameOf(ts: Long, top: Int, badge: Boolean = false) = FrameObservation(
+            ts,
+            true,
+            mapOf(
+                PlayZone.TOP to ZoneObservation(
+                    PlayZone.TOP,
+                    top > 0,
+                    true,
+                    List(top) { Detection(Rank.KING, 0.9f, 0.3f + 0.2f * it, 0.42f, 0.12f, 0.22f) },
+                    turnBadge = badge
+                )
+            )
+        )
         val pipeline = LegacyPipeline(stableSamples = 100, clearSamples = 1)
-        val replay = Replay.run(unknown, listOf(frameOf(0, 2), frameOf(100, 2), frameOf(200, 0)), pipeline) {
+        val replay = Replay.run(
+            unknown,
+            listOf(
+                frameOf(0, 0, badge = true),
+                frameOf(50, 0, badge = true),
+                frameOf(100, 2),
+                frameOf(150, 2),
+                frameOf(250, 0)
+            ),
+            pipeline
+        ) {
             pipeline.audits
         }
         assertEquals(0, replay.pauseCount)

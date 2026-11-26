@@ -15,11 +15,11 @@ sealed interface GameEvent {
 
     /**
      * 本局唯一一次确认自己的手牌（按点数的完整向量）。
-     * handCount 是按牌边缘数出来的张数，必须等于 cards.total()，对不上不许确认。
+     * handCount 是按牌边缘数出来的张数，没数出来为 null，仅作记录，不参与校验（点数合计以 cards 为准）。
      */
     data class HandConfirmed(
         val cards: RankCounts,
-        val handCount: Int,
+        val handCount: Int?,
         override val id: String = UUID.randomUUID().toString()
     ) : GameEvent
 

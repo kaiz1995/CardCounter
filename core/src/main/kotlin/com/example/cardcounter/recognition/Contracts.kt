@@ -31,7 +31,7 @@ data class Detection(
     val h: Float
 )
 
-enum class DetectorBackend { ONNX_CPU, LEGACY_MNN, OFFLINE_REPLAY, DISABLED }
+enum class DetectorBackend { ONNX_CPU, OFFLINE_REPLAY, DISABLED }
 
 /** 输入为已等比缩放并 letterbox 到 320×320 的裁剪（填充值 114），输出已做 NMS。 */
 interface Detector : AutoCloseable {
@@ -43,12 +43,14 @@ interface Detector : AutoCloseable {
 /** 一个出牌区在某一采样时刻的观察结果。 */
 data class ZoneObservation(
     val zone: PlayZone,
-    /** 白色牌面面积达到可见阈值（hasVisibleCardArea）。 */
+    /** 白色牌面面积达到可见阈值（hasVisibleCardArea）；OUTSIDE 区采用 yoloCrop 范围且要求局部绿桌 ≥ 12%（否则视为被遮挡，不推进清桌）。 */
     val cardVisible: Boolean,
     /** 与上一次采样相比画面静止（无动画）。 */
     val still: Boolean,
     /** 只在需要识别时填；不需要识别的采样为 null。 */
-    val detections: List<Detection>?
+    val detections: List<Detection>?,
+    /** 这一区的“出牌”倒计时圆标亮着（轮到这一家），见 TurnBadge。 */
+    val turnBadge: Boolean = false
 )
 
 /** 一次采样（手机约 50~100ms 一次）的全部观察。 */
