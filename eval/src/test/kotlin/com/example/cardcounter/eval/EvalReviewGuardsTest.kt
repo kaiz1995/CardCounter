@@ -547,13 +547,25 @@ class EvalReviewGuardsTest {
                     it.cards == RankCounts.of(mapOf(Rank.BIG_JOKER to 1, Rank.TWO to 1, Rank.NINE to 4))
             }
         )
+        // 863641/863741 截图王牌竖条为红字 JOKER（大王），气泡“挂大王”
         assertTrue(
-            "g102658-5 应包含 863564..863809 RIGHT_BOTTOM SMALL_JOKER:1;JACK:4",
+            "g102658-5 应包含 863564..863809 RIGHT_BOTTOM BIG_JOKER:1;JACK:4",
             g5Plays.any {
                 it.zone == PlayZone.RIGHT_BOTTOM && it.appearMs == 863564L && it.clearMs == 863809L &&
-                    it.cards == RankCounts.of(mapOf(Rank.SMALL_JOKER to 1, Rank.JACK to 4))
+                    it.cards == RankCounts.of(mapOf(Rank.BIG_JOKER to 1, Rank.JACK to 4))
             }
         )
+        // 844223 截图王牌竖条为红字 JOKER（大王），与 845121 那手大王同色；828474 那手才是黑字小王
+        assertTrue(
+            "g102658-5 SELF 843325 实为 BIG_JOKER:1;JACK:2（非小王）",
+            g5Plays.any {
+                it.zone == PlayZone.SELF && it.appearMs == 843325L &&
+                    it.cards == RankCounts.of(mapOf(Rank.BIG_JOKER to 1, Rank.JACK to 2))
+            }
+        )
+        val g5Big = g5Plays.sumOf { it.cards[Rank.BIG_JOKER] }
+        val g5Small = g5Plays.sumOf { it.cards[Rank.SMALL_JOKER] }
+        assertEquals("g102658-5 大王/小王各 4 张（4 副牌）", 4 to 4, g5Big to g5Small)
 
         val g141Plays = loadTruth("g143651-1")
         assertTrue(
