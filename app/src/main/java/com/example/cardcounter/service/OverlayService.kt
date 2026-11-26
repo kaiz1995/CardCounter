@@ -294,19 +294,20 @@ class OverlayService : Service() {
 
     private fun installIconTouch(view: View) {
         val touchSlop = ViewConfiguration.get(this).scaledTouchSlop
-        val longPressRunnable = Runnable {
-            if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE && effectiveOnTable) {
-                view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                menuVisible = !menuVisible
-                renderAll()
-            }
-        }
         var downRawX = 0f
         var downRawY = 0f
         var startX = 0
         var startY = 0
         var dragging = false
         var longPressed = false
+        val longPressRunnable = Runnable {
+            if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE && effectiveOnTable) {
+                longPressed = true
+                view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                menuVisible = !menuVisible
+                renderAll()
+            }
+        }
 
         view.setOnTouchListener { _, event ->
             val config = resources.configuration
@@ -314,6 +315,7 @@ class OverlayService : Service() {
             val screen = screenSize()
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
+                    mainHandler.removeCallbacks(longPressRunnable)
                     downRawX = event.rawX
                     downRawY = event.rawY
                     val currentRect = iconPixelRect(config)
@@ -322,10 +324,10 @@ class OverlayService : Service() {
                     dragging = false
                     longPressed = false
                     if (isLandscape && effectiveOnTable) {
-                        mainHandler.postDelayed({
-                            longPressed = true
-                            longPressRunnable.run()
-                        }, ViewConfiguration.getLongPressTimeout().toLong())
+                        mainHandler.postDelayed(
+                            longPressRunnable,
+                            ViewConfiguration.getLongPressTimeout().toLong()
+                        )
                     }
                     true
                 }
