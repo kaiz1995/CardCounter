@@ -30,7 +30,9 @@ data class HandPanelStatus(
     val canEdit: Boolean,
     val canConfirm: Boolean,
     /** 提示：不能确认的原因、确认被拒的原因、停记原因、可以确认但张数对不上的提醒（draft.warning）；没有就是 null。 */
-    val message: String?
+    val message: String?,
+    /** 停记时是否可以撤销上一手外面出牌。 */
+    val canRevertLastOutsidePlay: Boolean = false
 )
 
 /**
@@ -66,7 +68,8 @@ fun handPanelStatus(
             mismatch = false,
             canEdit = false,
             canConfirm = false,
-            message = "已停记：${state.pauseReason.displayName}"
+            message = "已停记：${state.pauseReason.displayName}",
+            canRevertLastOutsidePlay = state.lastUnrevertedOutsidePlay() != null
         )
         confirmedHand != null -> HandPanelStatus(
             mode = HandPanelMode.CONFIRMED,

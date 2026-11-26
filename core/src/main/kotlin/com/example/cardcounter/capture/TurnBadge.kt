@@ -45,48 +45,93 @@ object TurnBadge {
                 val g = (rgb shr 8) and 0xff
                 val b = rgb and 0xff
                 samples++
-                if (r >= 140 && g <= 70 && b <= 70) red++
-                if (r >= 200 && g >= 170 && b <= 120) yellow++
+                if (isBadgeRed(r, g, b)) red++
+                if (isBadgeYellow(r, g, b)) yellow++
                 x += STEP
             }
             y += STEP
         }
-        return red * 10 >= samples * 3 && yellow * 5 >= samples
+        return red * 100 >= samples * 43 && yellow * 5 >= samples
     }
+
+    /** 红色圆标底色：相对色差 + 低绿蓝比，烧牌/开点整屏压暗时仍能识别，同时不被暖黄色或半透明移动边误触。 */
+    internal fun isBadgeRed(r: Int, g: Int, b: Int): Boolean =
+        r >= 65 && r - g >= 45 && r - b >= 45 && g * 2 <= r && b * 2 <= r
+
+    /** 黄色“出牌”字：红绿显著高于蓝、且红绿接近，兼容压暗画面，排除白/灰/绿/纯红。 */
+    internal fun isBadgeYellow(r: Int, g: Int, b: Int): Boolean =
+        r >= 85 && g >= 70 && r - b >= 40 && g - b >= 30 && r - g <= 75
 }
+
+/** 单次 [TurnTracker.track] 更新结果：[turned] 刚确认轮到这一家；[longCleared] 连续空桌满 1.5s。 */
+data class TurnUpdate(val turned: Boolean, val longCleared: Boolean)
 
 /**
  * 同一家连续 [CONSECUTIVE] 次采样都看到圆标、而且这一区桌面已空、没有待兜底交出的牌（[RoiPlayEventCache.hasUndelivered]），
  * 才算“轮到他”；每次只触发一次。
- * 挂王时上一手还摆在桌上圆标就亮了，这时不算：否则画面闪一下再交出同一手，会被当成新的一手重记。
- * 代价：挂王后牌没收走就直接盖上与上一手完全相同的牌，会被当重复漏记（要连续两手都含王且完全相同，极少见）。
+ * 同时跟踪这一区连续空桌（桌面可见且无牌无待兜底）时长：满 [LONG_CLEAR_MS]（1.5 秒）触发一次 [TurnUpdate.longCleared]，
+ * 作为圆标漏判的兜底解锁；300ms 等瞬时闪空不会触发。
  */
-class TurnTracker {
+class TurnTracker(private val longClearMs: Long = LONG_CLEAR_MS) {
     private val consecutive = IntArray(PlayZone.entries.size)
     private val fired = BooleanArray(PlayZone.entries.size)
+    private val emptySinceMs = LongArray(PlayZone.entries.size) { -1L }
+    private val longClearFired = BooleanArray(PlayZone.entries.size)
 
     /** 返回 true 表示这一次采样刚确认“轮到这一家”。 */
     @Synchronized
-    fun update(zone: PlayZone, shown: Boolean, zoneEmpty: Boolean): Boolean {
+    fun update(zone: PlayZone, shown: Boolean, zoneEmpty: Boolean): Boolean =
+        track(zone, shown, zoneEmpty, timestampMs = null, tableVisible = true).turned
+
+    /** 完整跟踪：同时推进圆标连续计数与连续空桌长清桌计时。 */
+    @Synchronized
+    fun track(
+        zone: PlayZone,
+        shown: Boolean,
+        zoneEmpty: Boolean,
+        timestampMs: Long?,
+        tableVisible: Boolean = true
+    ): TurnUpdate {
         val index = zone.ordinal
-        if (!shown || !zoneEmpty) {
+        val longCleared = if (tableVisible && zoneEmpty && timestampMs != null) {
+            if (emptySinceMs[index] < 0L) {
+                emptySinceMs[index] = timestampMs
+                false
+            } else if (!longClearFired[index] && timestampMs - emptySinceMs[index] >= longClearMs) {
+                longClearFired[index] = true
+                true
+            } else {
+                false
+            }
+        } else {
+            emptySinceMs[index] = -1L
+            longClearFired[index] = false
+            false
+        }
+
+        if (!tableVisible || !shown || !zoneEmpty) {
             consecutive[index] = 0
             fired[index] = false
-            return false
+            return TurnUpdate(turned = false, longCleared = longCleared)
         }
         consecutive[index]++
-        if (consecutive[index] < CONSECUTIVE || fired[index]) return false
+        if (consecutive[index] < CONSECUTIVE || fired[index]) {
+            return TurnUpdate(turned = false, longCleared = longCleared)
+        }
         fired[index] = true
-        return true
+        return TurnUpdate(turned = true, longCleared = longCleared)
     }
 
     @Synchronized
     fun reset() {
         consecutive.fill(0)
         fired.fill(false)
+        emptySinceMs.fill(-1L)
+        longClearFired.fill(false)
     }
 
-    private companion object {
+    companion object {
         const val CONSECUTIVE = 2
+        const val LONG_CLEAR_MS = 1_500L
     }
 }

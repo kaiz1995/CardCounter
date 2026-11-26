@@ -39,6 +39,12 @@ sealed class LedgerCommand {
         override val evidenceId: String
     ) : LedgerCommand()
 
+    /** 撤销指定的一手外面出牌；evidenceId 兼作 Reverted 事件 id。 */
+    data class Revert(
+        val targetEventId: String,
+        override val evidenceId: String = UUID.randomUUID().toString()
+    ) : LedgerCommand()
+
     /** 保护性/人工暂停。 */
     data class Pause(
         val reason: PauseReason
@@ -117,6 +123,7 @@ class SessionActor(private val repository: LedgerGateway) {
         is LedgerCommand.AcceptOutsidePlay -> GameEvent.OutsideCardsPlayed(
             command.cards, command.seat, command.evidenceId
         )
+        is LedgerCommand.Revert -> GameEvent.Reverted(command.targetEventId, command.evidenceId)
         is LedgerCommand.Pause -> GameEvent.SessionPaused(command.reason)
         LedgerCommand.Resume -> GameEvent.SessionResumed()
     }

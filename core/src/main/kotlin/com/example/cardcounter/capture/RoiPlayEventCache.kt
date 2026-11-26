@@ -33,6 +33,7 @@ class RoiPlayEventCache<T>(
         var stillCount = 0
         var primed = false
         var delivered = false
+        var cleared = false
         var generation = 0L
     }
 
@@ -85,6 +86,13 @@ class RoiPlayEventCache<T>(
         return state.generation == generation && fallbackSource(state) != null
     }
 
+    /** 这一区已连续空桌满 [clearSamples] 次完成清桌，且当前没有牌或待兜底的牌。 */
+    @Synchronized
+    fun isCleared(zone: PlayZone, generation: Long): Boolean {
+        val state = states.getValue(zone)
+        return state.generation == generation && state.cleared && fallbackSource(state) == null
+    }
+
     @Synchronized
     fun observe(
         zone: PlayZone,
@@ -105,6 +113,7 @@ class RoiPlayEventCache<T>(
         }
         if (cardVisible) {
             state.emptySamples = 0
+            state.cleared = false
             if (state.primed || frame == null) {
                 frame?.let(discard)
                 return null
@@ -151,6 +160,7 @@ class RoiPlayEventCache<T>(
         val frames = source?.toList().orEmpty()
         source?.clear()
         clear(state)
+        state.cleared = true
         state.primed = false
         return if (source != null) Finalized(zone, frames, generation) else null
     }
@@ -179,5 +189,6 @@ class RoiPlayEventCache<T>(
         state.emptySamples = 0
         state.stillCount = 0
         state.delivered = false
+        state.cleared = false
     }
 }

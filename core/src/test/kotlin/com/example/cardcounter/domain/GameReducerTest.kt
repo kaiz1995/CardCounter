@@ -340,4 +340,41 @@ class GameReducerTest {
         assertEquals(SessionPhase.PAUSED, state.phase)
         assertEquals(PauseReason.CORRUPTED_SESSION, state.pauseReason)
     }
+
+    @Test
+    fun revertingLastOutsidePlayAndResumingRestoresConservationAndAllowsPlayingAgain() {
+        // 自己 3 张 A（总库存 16，外面最多 13 张）。
+        var state = confirmed()
+        val badPlay = GameEvent.OutsideCardsPlayed(counts(Rank.ACE to 10), OutsideSeat.TOP, "bad-10a")
+        state = apply(state, badPlay)
+        // 再出 4 张 A（10+4=14 > 13）触发守恒失败暂停。
+        val pausedResult = GameReducer.apply(
+            state,
+            GameEvent.OutsideCardsPlayed(counts(Rank.ACE to 4), OutsideSeat.RIGHT_BOTTOM, "trigger-pause")
+        )
+        assertTrue(pausedResult is DispatchResult.Paused)
+        var paused = pausedResult.state
+        assertEquals(SessionPhase.PAUSED, paused.phase)
+        assertEquals(badPlay.id, paused.lastUnrevertedOutsidePlay()?.id)
+
+        // 撤销上一手外面出牌并恢复。
+        val reverted = GameReducer.apply(paused, GameEvent.Reverted(badPlay.id, "rv-bad"))
+        assertTrue(reverted is DispatchResult.Accepted)
+        val resumed = GameReducer.apply(reverted.state, GameEvent.SessionResumed("resumed"))
+        assertTrue(resumed is DispatchResult.Accepted)
+        val active = resumed.state
+
+        assertEquals(SessionPhase.ACTIVE, active.phase)
+        assertNull(active.pauseReason)
+        assertEquals(0, active.outsidePlayed[Rank.ACE])
+        assertNull(active.lastUnrevertedOutsidePlay())
+
+        // 恢复后可以继续正常记那 4 张 A。
+        val nextPlay = GameReducer.apply(
+            active,
+            GameEvent.OutsideCardsPlayed(counts(Rank.ACE to 4), OutsideSeat.RIGHT_BOTTOM, "valid-4a")
+        )
+        assertTrue(nextPlay is DispatchResult.Accepted)
+        assertEquals(4, nextPlay.state.outsidePlayed[Rank.ACE])
+    }
 }

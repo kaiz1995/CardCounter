@@ -46,4 +46,26 @@ class TurnBadgeRealFramesTest {
     fun seesNothingWhenNobodyHasTheBadge() {
         assertEquals(emptySet<PlayZone>(), shownZones("1795569740419"))
     }
+
+    @Test
+    fun seesDimmedBadgesAcrossRealFrames() {
+        fun dimmedShownZones(stem: String, factor: Double = 0.55): Set<PlayZone> {
+            val image = requireNotNull(javaClass.getResourceAsStream("/turn_badge/$stem.png")) { "缺少夹具 $stem" }
+                .use { ImageIO.read(it) }
+            return PlayZone.entries.filter { zone ->
+                TurnBadge.isShown(zone) { x, y ->
+                    val rgb = image.getRGB(x, y)
+                    val r = (((rgb shr 16) and 0xff) * factor).toInt().coerceIn(0, 255)
+                    val g = (((rgb shr 8) and 0xff) * factor).toInt().coerceIn(0, 255)
+                    val b = ((rgb and 0xff) * factor).toInt().coerceIn(0, 255)
+                    (r shl 16) or (g shl 8) or b
+                }
+            }.toSet()
+        }
+        assertEquals(setOf(PlayZone.LEFT_BOTTOM), dimmedShownZones("1795569612742"))
+        assertEquals(setOf(PlayZone.RIGHT_BOTTOM), dimmedShownZones("1795569687901"))
+        assertEquals(setOf(PlayZone.TOP), dimmedShownZones("1795569730540"))
+        assertEquals(emptySet<PlayZone>(), dimmedShownZones("1795569567722"))
+        assertEquals(emptySet<PlayZone>(), dimmedShownZones("1795569740419"))
+    }
 }

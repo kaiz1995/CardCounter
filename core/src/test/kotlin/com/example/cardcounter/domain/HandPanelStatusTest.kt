@@ -96,7 +96,14 @@ class HandPanelStatusTest {
         assertFalse(status.canEdit)
         assertFalse(status.canConfirm)
         assertEquals("已停记：守恒失败", status.message)
+        assertFalse(status.canRevertLastOutsidePlay)
         assertTrue("停记时手牌若还没确认，横条仍要标未确认", status.handUnconfirmed)
+
+        val withPlay = (GameReducer.apply(newState(), GameEvent.OutsideCardsPlayed(counts(Rank.ACE to 2), OutsideSeat.TOP, "p"))
+            as DispatchResult.Accepted).state
+        val pausedWithPlay = (GameReducer.apply(withPlay, GameEvent.SessionPaused(PauseReason.CONSERVATION_FAILURE))
+            as DispatchResult.Accepted).state
+        assertTrue(handPanelStatus(pausedWithPlay, draft, rejectReason = null, skipped = false).canRevertLastOutsidePlay)
     }
 
     @Test

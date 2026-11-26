@@ -153,4 +153,31 @@ class SessionActorTest {
         assertEquals(SessionPhase.ACTIVE, ledger.state.phase)
         actor.shutdown()
     }
+
+    @Test
+    fun revertCommandAndResumeRecoverFromConservationPause() {
+        val ledger = FakeLedger()
+        val actor = SessionActor(ledger)
+        assertTrue(actor.post(LedgerCommand.ConfirmHand(RankCounts.of(mapOf(Rank.ACE to 4)), 4)) is DispatchResult.Accepted)
+        // 外面出 10 张 A（合法），再出 4 张 A 超库存（14+4 > 16）触发守恒暂停。
+        val first = LedgerCommand.AcceptOutsidePlay(RankCounts.of(mapOf(Rank.ACE to 10)), OutsideSeat.TOP, "p1")
+        assertTrue(actor.post(first) is DispatchResult.Accepted)
+        assertTrue(
+            actor.post(LedgerCommand.AcceptOutsidePlay(RankCounts.of(mapOf(Rank.ACE to 4)), OutsideSeat.LEFT_TOP, "p2"))
+                is DispatchResult.Paused
+        )
+
+        val target = requireNotNull(ledger.state.lastUnrevertedOutsidePlay())
+        assertEquals("p1", target.id)
+        assertTrue(actor.post(LedgerCommand.Revert(target.id)) is DispatchResult.Accepted)
+        assertTrue(actor.post(LedgerCommand.Resume) is DispatchResult.Accepted)
+        assertEquals(SessionPhase.ACTIVE, ledger.state.phase)
+        assertEquals(0, ledger.state.outsidePlayed[Rank.ACE])
+        assertTrue(
+            actor.post(LedgerCommand.AcceptOutsidePlay(RankCounts.of(mapOf(Rank.ACE to 4)), OutsideSeat.LEFT_TOP, "p3"))
+                is DispatchResult.Accepted
+        )
+        assertEquals(4, ledger.state.outsidePlayed[Rank.ACE])
+        actor.shutdown()
+    }
 }
