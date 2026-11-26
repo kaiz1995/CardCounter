@@ -122,7 +122,7 @@ class LegacyPipeline(
             val observed = observation.zones[zone]
             if (observed == null && tableVisible) continue
             val visible = tableVisible && observed != null && isPlayVisible(observed.cardVisible)
-            val sample = if (visible && observed != null) {
+            val sample = if (visible) {
                 ZoneSample(observation.timestampMs, observed.still, observed.detections)
             } else {
                 null
