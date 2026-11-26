@@ -29,6 +29,7 @@ import androidx.core.content.ContextCompat
 import com.example.cardcounter.R
 import com.example.cardcounter.domain.DispatchResult
 import com.example.cardcounter.domain.HandAutoLock
+import com.example.cardcounter.domain.HandConfirmData
 import com.example.cardcounter.domain.HandReading
 import com.example.cardcounter.domain.PauseReason
 import com.example.cardcounter.domain.Rank
@@ -566,7 +567,7 @@ class CaptureProbeService : Service() {
     }
 
     private data class LockSnapshot(
-        val data: HandAutoLock.Result?,
+        val data: HandConfirmData?,
         val latest: HandReading?,
         val probe: HandProbe?,
         val areaCopy: Bitmap?
