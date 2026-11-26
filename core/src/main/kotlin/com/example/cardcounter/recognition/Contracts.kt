@@ -50,8 +50,14 @@ data class ZoneObservation(
     /** 只在需要识别时填；不需要识别的采样为 null。 */
     val detections: List<Detection>?,
     /** 这一区的“出牌”倒计时圆标亮着（轮到这一家），见 TurnBadge。 */
-    val turnBadge: Boolean = false
-)
+    val turnBadge: Boolean = false,
+    /** 这一区被压暗面板等遮挡（手机 ZoneVisibility.OCCLUDED）：按本区牌桌不可见处理，不推进清桌和圆标，必要时交出没交出的一手。 */
+    val occluded: Boolean = false
+) {
+    init {
+        require(!occluded || !cardVisible) { "${zone.name} 被遮挡时 cardVisible 必须为 false" }
+    }
+}
 
 /** 一次采样（手机约 50~100ms 一次）的全部观察。 */
 data class FrameObservation(

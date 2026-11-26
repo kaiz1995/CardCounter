@@ -11,7 +11,6 @@ import com.example.cardcounter.capture.StablePlayGate
 import com.example.cardcounter.capture.ZoneSignalTracker
 import com.example.cardcounter.capture.routeZoneSignals
 import com.example.cardcounter.capture.isPlayVisible
-import com.example.cardcounter.capture.isPublicRankBand
 import com.example.cardcounter.domain.DispatchResult
 import com.example.cardcounter.domain.GameState
 import com.example.cardcounter.domain.RankCounts
@@ -63,8 +62,8 @@ class LegacyPipeline(
     stableSamples: Int = 15,
     clearSamples: Int = 6,
     maxFrames: Int = 8,
-    /** 回放约 97ms 一次采样，取 2 次（约 194ms）；手机 50ms 一次，取 3 次（约 150ms）。 */
-    coveredStillSamples: Int = 2,
+    /** 手机和新观察都是 50ms 一次采样，取 3 次（约 150ms）。 */
+    coveredStillSamples: Int = 3,
     private val finalizeFrameCount: Int = 3,
     private val requireOpeningSignal: Boolean = true,
     private val onAudit: (LegacyAudit) -> Unit = {}
@@ -121,13 +120,15 @@ class LegacyPipeline(
             // 牌桌不可见时手机照样逐区过一遍（只用来交出没交出的一手），回放同样处理，缺省的区也不例外。
             val observed = observation.zones[zone]
             if (observed == null && tableVisible) continue
-            val visible = tableVisible && observed != null && isPlayVisible(observed.cardVisible)
+            // 本区被压暗面板等遮挡：按本区牌桌不可见处理（与手机 zoneTableVisible 一致），不推进清桌和圆标。
+            val zoneTableVisible = tableVisible && observed?.occluded != true
+            val visible = zoneTableVisible && observed != null && isPlayVisible(observed.cardVisible)
             val sample = if (visible) {
                 ZoneSample(observation.timestampMs, observed.still, observed.detections)
             } else {
                 null
             }
-            val finalized = cache.observe(zone, tableVisible, visible, sample, generation)
+            val finalized = cache.observe(zone, zoneTableVisible, visible, sample, generation)
             if (finalized != null) {
                 // 用这一手最后一帧还在桌上的时间：清桌交出要再等 clearSamples 次采样，被盖交出时新牌已经上桌，
                 // 牌桌被挡交出时这一手已经看不到；若用交出时刻，延迟随采样间隔变化，会掉出真值对齐时间窗。
@@ -138,10 +139,10 @@ class LegacyPipeline(
             // 牌桌被遮挡时也要采样，空桌计时和圆标连续计数在里面归零；手机和评测共用 [ZoneSignalTracker] 与 [routeZoneSignals]。
             val signal = signals.sample(
                 zone,
-                badgeShown = tableVisible && observed?.turnBadge == true,
+                badgeShown = zoneTableVisible && observed?.turnBadge == true,
                 cleared = cache.isCleared(zone, generation),
-                zoneEmpty = !visible && !cache.hasUndelivered(zone, generation),
-                tableVisible = tableVisible,
+                zoneEmpty = zoneTableVisible && !visible && !cache.hasUndelivered(zone, generation),
+                tableVisible = zoneTableVisible,
                 nowMs = observation.timestampMs
             )
             if (signal.any) {
@@ -171,7 +172,7 @@ class LegacyPipeline(
     }
 
     private fun isOnTable(observation: FrameObservation, zone: PlayZone): Boolean =
-        observation.tableVisible && (observation.zones[zone]?.let { isPlayVisible(it.cardVisible) } ?: false)
+        observation.tableVisible && (observation.zones[zone]?.let { !it.occluded && isPlayVisible(it.cardVisible) } ?: false)
 
     private fun finalize(
         finalized: RoiPlayEventCache.Finalized<ZoneSample>,
@@ -264,11 +265,10 @@ class LegacyPipeline(
         return PipelineDecision(command, zone, timestampMs)
     }
 
-    /** 只保留点数带内的框（[isPublicRankBand]，为兼容旧模型回放保留），换算到 320 画布像素。 */
+    /** 观察里的框换算回 320 画布像素；新模型手机端不按纵坐标过滤，回放同样不过滤。 */
     private fun toYoloDetections(detections: List<Detection>): List<YoloDetection> {
         val scale = RankModelContract.INPUT_SIZE.toFloat()
         return detections
-            .filter { isPublicRankBand(it.cy) }
             .map { d ->
                 YoloDetection(
                     rank = d.rank,

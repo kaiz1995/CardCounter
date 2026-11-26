@@ -1,0 +1,1280 @@
+{
+ "canvas": [
+  1280,
+  578
+ ],
+ "frames": [
+  {
+   "id": "f01",
+   "source": "g102658-3@410864ms",
+   "label": "空桌",
+   "table_visible": true,
+   "zones": {
+    "TOP": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      690,
+      0,
+      82,
+      70
+     ],
+     "fp": "869ba93d9a46919b"
+    },
+    "LEFT_TOP": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      189,
+      62,
+      152,
+      56
+     ],
+     "fp": "fc487d018595398f"
+    },
+    "LEFT_BOTTOM": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      180,
+      213,
+      181,
+      70
+     ],
+     "fp": "70d4b793e8e1fa25"
+    },
+    "RIGHT_TOP": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      960,
+      62,
+      141,
+      56
+     ],
+     "fp": "9e5c4386cf684d7d"
+    },
+    "RIGHT_BOTTOM": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      960,
+      213,
+      141,
+      70
+     ],
+     "fp": "81da9ee62654d81e"
+    }
+   }
+  },
+  {
+   "id": "f02",
+   "source": "g102658-3@470809ms",
+   "label": "空桌",
+   "table_visible": true,
+   "zones": {
+    "TOP": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      690,
+      0,
+      82,
+      70
+     ],
+     "fp": "d29fc514a568e7b8"
+    },
+    "LEFT_TOP": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      189,
+      62,
+      152,
+      56
+     ],
+     "fp": "7c8f02cbefccd6e8"
+    },
+    "LEFT_BOTTOM": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      180,
+      213,
+      181,
+      70
+     ],
+     "fp": "a3f4941d15966e3b"
+    },
+    "RIGHT_TOP": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      960,
+      62,
+      141,
+      56
+     ],
+     "fp": "f141eb79a7079c60"
+    },
+    "RIGHT_BOTTOM": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      960,
+      213,
+      141,
+      70
+     ],
+     "fp": "832e6af1f494cc05"
+    }
+   }
+  },
+  {
+   "id": "f03",
+   "source": "g102658-3@433151ms",
+   "label": "有牌",
+   "table_visible": true,
+   "zones": {
+    "TOP": {
+     "state": "CARD",
+     "turn": false,
+     "crop": [
+      690,
+      0,
+      82,
+      70
+     ],
+     "fp": "1ed47a960da2935b"
+    },
+    "LEFT_TOP": {
+     "state": "CARD",
+     "turn": false,
+     "crop": [
+      189,
+      62,
+      152,
+      56
+     ],
+     "fp": "d34d51755c8283a6"
+    },
+    "LEFT_BOTTOM": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      180,
+      213,
+      181,
+      70
+     ],
+     "fp": "eb7c50746aa511a5"
+    },
+    "RIGHT_TOP": {
+     "state": "CARD",
+     "turn": false,
+     "crop": [
+      960,
+      62,
+      141,
+      56
+     ],
+     "fp": "3fd3f1d7e43558a2"
+    },
+    "RIGHT_BOTTOM": {
+     "state": "CARD",
+     "turn": false,
+     "crop": [
+      960,
+      213,
+      141,
+      70
+     ],
+     "fp": "51a39cbc7e36738e"
+    }
+   }
+  },
+  {
+   "id": "f04",
+   "source": "g102658-3@499603ms",
+   "label": "有牌",
+   "table_visible": true,
+   "zones": {
+    "TOP": {
+     "state": "CARD",
+     "turn": false,
+     "crop": [
+      690,
+      0,
+      82,
+      70
+     ],
+     "fp": "87eae805cb4cc856"
+    },
+    "LEFT_TOP": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      189,
+      62,
+      152,
+      56
+     ],
+     "fp": "a5157e01c4e57326"
+    },
+    "LEFT_BOTTOM": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      180,
+      213,
+      181,
+      70
+     ],
+     "fp": "5709630cb524ca66"
+    },
+    "RIGHT_TOP": {
+     "state": "CARD",
+     "turn": false,
+     "crop": [
+      960,
+      62,
+      141,
+      56
+     ],
+     "fp": "48d4178a05edeb49"
+    },
+    "RIGHT_BOTTOM": {
+     "state": "CARD",
+     "turn": false,
+     "crop": [
+      960,
+      213,
+      141,
+      70
+     ],
+     "fp": "488baf00ed9ebfd5"
+    }
+   }
+  },
+  {
+   "id": "f05",
+   "source": "g102658-1@177523ms",
+   "label": "长串扩展 LEFT_BOTTOM",
+   "table_visible": true,
+   "zones": {
+    "TOP": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      690,
+      0,
+      82,
+      70
+     ],
+     "fp": "7b298653ad2b34b8"
+    },
+    "LEFT_TOP": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      189,
+      62,
+      152,
+      56
+     ],
+     "fp": "db92660c80bc2f49"
+    },
+    "LEFT_BOTTOM": {
+     "state": "CARD",
+     "turn": false,
+     "crop": [
+      180,
+      213,
+      203,
+      70
+     ],
+     "fp": "c7e20bce3e2322da"
+    },
+    "RIGHT_TOP": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      960,
+      62,
+      141,
+      56
+     ],
+     "fp": "32bfa556262a5f1c"
+    },
+    "RIGHT_BOTTOM": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      960,
+      213,
+      141,
+      70
+     ],
+     "fp": "d4d97f309ae7059f"
+    }
+   }
+  },
+  {
+   "id": "f06",
+   "source": "g102658-1@210417ms",
+   "label": "长串扩展 TOP",
+   "table_visible": true,
+   "zones": {
+    "TOP": {
+     "state": "CARD",
+     "turn": false,
+     "crop": [
+      690,
+      0,
+      132,
+      70
+     ],
+     "fp": "492cf888587233e3"
+    },
+    "LEFT_TOP": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      189,
+      62,
+      152,
+      56
+     ],
+     "fp": "f251b649f9cfee28"
+    },
+    "LEFT_BOTTOM": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      180,
+      213,
+      181,
+      70
+     ],
+     "fp": "5709630cb524ca66"
+    },
+    "RIGHT_TOP": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      960,
+      62,
+      141,
+      56
+     ],
+     "fp": "fdf3459ed10715e6"
+    },
+    "RIGHT_BOTTOM": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      960,
+      213,
+      141,
+      70
+     ],
+     "fp": "1f2bb897d756666e"
+    }
+   }
+  },
+  {
+   "id": "f07",
+   "source": "g143651-4@636683ms",
+   "label": "长串扩展 RIGHT_TOP",
+   "table_visible": true,
+   "zones": {
+    "TOP": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      690,
+      0,
+      82,
+      70
+     ],
+     "fp": "044321044d7d7ea4"
+    },
+    "LEFT_TOP": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      189,
+      62,
+      152,
+      56
+     ],
+     "fp": "016a60d741328e11"
+    },
+    "LEFT_BOTTOM": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      180,
+      213,
+      181,
+      70
+     ],
+     "fp": "eb7c50746aa511a5"
+    },
+    "RIGHT_TOP": {
+     "state": "CARD",
+     "turn": false,
+     "crop": [
+      926,
+      62,
+      175,
+      56
+     ],
+     "fp": "1365857da8ab7438"
+    },
+    "RIGHT_BOTTOM": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      960,
+      213,
+      141,
+      70
+     ],
+     "fp": "0227a4d69361e21c"
+    }
+   }
+  },
+  {
+   "id": "f08",
+   "source": "g102658-5@863431ms",
+   "label": "长串扩展 RIGHT_BOTTOM",
+   "table_visible": true,
+   "zones": {
+    "TOP": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      690,
+      0,
+      82,
+      70
+     ],
+     "fp": "ae665ddd73f2e508"
+    },
+    "LEFT_TOP": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      189,
+      62,
+      152,
+      56
+     ],
+     "fp": "800c7fca26eda863"
+    },
+    "LEFT_BOTTOM": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      180,
+      213,
+      181,
+      70
+     ],
+     "fp": "902355a399635b9c"
+    },
+    "RIGHT_TOP": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      960,
+      62,
+      141,
+      56
+     ],
+     "fp": "bc624d70b69f7dce"
+    },
+    "RIGHT_BOTTOM": {
+     "state": "CARD",
+     "turn": false,
+     "crop": [
+      940,
+      213,
+      161,
+      70
+     ],
+     "fp": "7643b3a4bedd7572"
+    }
+   }
+  },
+  {
+   "id": "f09",
+   "source": "g102658-3@453561ms",
+   "label": "圆标亮 TOP",
+   "table_visible": true,
+   "zones": {
+    "TOP": {
+     "state": "EMPTY",
+     "turn": true,
+     "crop": [
+      690,
+      0,
+      82,
+      70
+     ],
+     "fp": "f0943796604bd749"
+    },
+    "LEFT_TOP": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      189,
+      62,
+      152,
+      56
+     ],
+     "fp": "4679ef71f4de5aec"
+    },
+    "LEFT_BOTTOM": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      180,
+      213,
+      181,
+      70
+     ],
+     "fp": "22c3d57dfc02a88e"
+    },
+    "RIGHT_TOP": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      960,
+      62,
+      141,
+      56
+     ],
+     "fp": "352f80cfba98785e"
+    },
+    "RIGHT_BOTTOM": {
+     "state": "CARD",
+     "turn": false,
+     "crop": [
+      960,
+      213,
+      141,
+      70
+     ],
+     "fp": "aaddc90b0d07dbd9"
+    }
+   }
+  },
+  {
+   "id": "f10",
+   "source": "g102658-3@465662ms",
+   "label": "圆标亮 LEFT_TOP",
+   "table_visible": true,
+   "zones": {
+    "TOP": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      690,
+      0,
+      82,
+      70
+     ],
+     "fp": "7bea445395cf805b"
+    },
+    "LEFT_TOP": {
+     "state": "CARD",
+     "turn": true,
+     "crop": [
+      189,
+      62,
+      152,
+      56
+     ],
+     "fp": "02ce413d8dadd797"
+    },
+    "LEFT_BOTTOM": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      180,
+      213,
+      181,
+      70
+     ],
+     "fp": "0ebc8dadaef32f43"
+    },
+    "RIGHT_TOP": {
+     "state": "CARD",
+     "turn": false,
+     "crop": [
+      939,
+      62,
+      162,
+      56
+     ],
+     "fp": "29b1e2ab032a549c"
+    },
+    "RIGHT_BOTTOM": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      960,
+      213,
+      141,
+      70
+     ],
+     "fp": "10cd9c7ab0022326"
+    }
+   }
+  },
+  {
+   "id": "f11",
+   "source": "g102658-3@476512ms",
+   "label": "圆标亮 LEFT_BOTTOM",
+   "table_visible": true,
+   "zones": {
+    "TOP": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      690,
+      0,
+      82,
+      70
+     ],
+     "fp": "d4c29c385e0d9b01"
+    },
+    "LEFT_TOP": {
+     "state": "CARD",
+     "turn": false,
+     "crop": [
+      189,
+      62,
+      152,
+      56
+     ],
+     "fp": "e93be4bf8c1998ca"
+    },
+    "LEFT_BOTTOM": {
+     "state": "EMPTY",
+     "turn": true,
+     "crop": [
+      180,
+      213,
+      181,
+      70
+     ],
+     "fp": "4ab3ae18d7bf0850"
+    },
+    "RIGHT_TOP": {
+     "state": "CARD",
+     "turn": false,
+     "crop": [
+      960,
+      62,
+      141,
+      56
+     ],
+     "fp": "b7615efca3bfdb6a"
+    },
+    "RIGHT_BOTTOM": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      960,
+      213,
+      141,
+      70
+     ],
+     "fp": "11a410a9fe53380a"
+    }
+   }
+  },
+  {
+   "id": "f12",
+   "source": "g102658-3@469758ms",
+   "label": "圆标亮 RIGHT_TOP",
+   "table_visible": true,
+   "zones": {
+    "TOP": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      690,
+      0,
+      82,
+      70
+     ],
+     "fp": "57ce533b7fe6d3fc"
+    },
+    "LEFT_TOP": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      189,
+      62,
+      152,
+      56
+     ],
+     "fp": "7951e0162cf9da7a"
+    },
+    "LEFT_BOTTOM": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      180,
+      213,
+      181,
+      70
+     ],
+     "fp": "16979d836321e186"
+    },
+    "RIGHT_TOP": {
+     "state": "EMPTY",
+     "turn": true,
+     "crop": [
+      960,
+      62,
+      141,
+      56
+     ],
+     "fp": "55babc8b98c93f12"
+    },
+    "RIGHT_BOTTOM": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      960,
+      213,
+      141,
+      70
+     ],
+     "fp": "6adf711dbf6f6ba4"
+    }
+   }
+  },
+  {
+   "id": "f13",
+   "source": "g102658-3@460902ms",
+   "label": "圆标亮 RIGHT_BOTTOM",
+   "table_visible": true,
+   "zones": {
+    "TOP": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      690,
+      0,
+      82,
+      70
+     ],
+     "fp": "7b05ebff071d2932"
+    },
+    "LEFT_TOP": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      189,
+      62,
+      152,
+      56
+     ],
+     "fp": "25e3b47935775bc5"
+    },
+    "LEFT_BOTTOM": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      180,
+      213,
+      181,
+      70
+     ],
+     "fp": "fff4c18f5cab4e24"
+    },
+    "RIGHT_TOP": {
+     "state": "CARD",
+     "turn": false,
+     "crop": [
+      960,
+      62,
+      141,
+      56
+     ],
+     "fp": "79acb83e5e2ba73f"
+    },
+    "RIGHT_BOTTOM": {
+     "state": "EMPTY",
+     "turn": true,
+     "crop": [
+      960,
+      213,
+      141,
+      70
+     ],
+     "fp": "61bebd80429678fa"
+    }
+   }
+  },
+  {
+   "id": "f14",
+   "source": "g102658-3@512501ms",
+   "label": "牌桌被挡",
+   "table_visible": false,
+   "zones": {
+    "TOP": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      690,
+      0,
+      82,
+      70
+     ],
+     "fp": "26df2f0da6be5240"
+    },
+    "LEFT_TOP": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      189,
+      62,
+      152,
+      56
+     ],
+     "fp": "deb21fb3092286f1"
+    },
+    "LEFT_BOTTOM": {
+     "state": "CARD",
+     "turn": false,
+     "crop": [
+      180,
+      213,
+      181,
+      70
+     ],
+     "fp": "7b786bb07efa3c24"
+    },
+    "RIGHT_TOP": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      960,
+      62,
+      141,
+      56
+     ],
+     "fp": "90d2061e3b11e985"
+    },
+    "RIGHT_BOTTOM": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      960,
+      213,
+      141,
+      70
+     ],
+     "fp": "2ea022a6495e3c77"
+    }
+   }
+  },
+  {
+   "id": "f15",
+   "source": "g075639-9@169513ms",
+   "label": "遮挡",
+   "table_visible": true,
+   "zones": {
+    "TOP": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      690,
+      0,
+      82,
+      70
+     ],
+     "fp": "37b3d556ff3c8cc0"
+    },
+    "LEFT_TOP": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      189,
+      62,
+      152,
+      56
+     ],
+     "fp": "cd309dc111a8789d"
+    },
+    "LEFT_BOTTOM": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      180,
+      213,
+      181,
+      70
+     ],
+     "fp": "2ea53c1523bc958a"
+    },
+    "RIGHT_TOP": {
+     "state": "OCCLUDED",
+     "turn": false,
+     "crop": [
+      960,
+      62,
+      141,
+      56
+     ],
+     "fp": "7f53cedf9be4d948"
+    },
+    "RIGHT_BOTTOM": {
+     "state": "OCCLUDED",
+     "turn": false,
+     "crop": [
+      960,
+      213,
+      141,
+      70
+     ],
+     "fp": "878361c54c7945e6"
+    }
+   }
+  },
+  {
+   "id": "f16",
+   "source": "g075639-9@177618ms",
+   "label": "遮挡",
+   "table_visible": true,
+   "zones": {
+    "TOP": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      690,
+      0,
+      82,
+      70
+     ],
+     "fp": "883a4d2b80292983"
+    },
+    "LEFT_TOP": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      189,
+      62,
+      152,
+      56
+     ],
+     "fp": "ae3099d6021759e7"
+    },
+    "LEFT_BOTTOM": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      180,
+      213,
+      181,
+      70
+     ],
+     "fp": "876bdfb1505111c5"
+    },
+    "RIGHT_TOP": {
+     "state": "OCCLUDED",
+     "turn": false,
+     "crop": [
+      960,
+      62,
+      141,
+      56
+     ],
+     "fp": "7f53cedf9be4d948"
+    },
+    "RIGHT_BOTTOM": {
+     "state": "OCCLUDED",
+     "turn": false,
+     "crop": [
+      960,
+      213,
+      141,
+      70
+     ],
+     "fp": "b04ad535d635bb20"
+    }
+   }
+  },
+  {
+   "id": "f17",
+   "source": "g102658-3@449363ms",
+   "label": "静止对·前一帧",
+   "table_visible": true,
+   "zones": {
+    "TOP": {
+     "state": "CARD",
+     "turn": false,
+     "crop": [
+      690,
+      0,
+      82,
+      70
+     ],
+     "fp": "dfa75dc7431c2eb9"
+    },
+    "LEFT_TOP": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      189,
+      62,
+      152,
+      56
+     ],
+     "fp": "645c1262ef5d2041"
+    },
+    "LEFT_BOTTOM": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      180,
+      213,
+      181,
+      70
+     ],
+     "fp": "5563c14819db0987"
+    },
+    "RIGHT_TOP": {
+     "state": "CARD",
+     "turn": false,
+     "crop": [
+      960,
+      62,
+      141,
+      56
+     ],
+     "fp": "4e0111cfbabc6d47"
+    },
+    "RIGHT_BOTTOM": {
+     "state": "CARD",
+     "turn": false,
+     "crop": [
+      960,
+      213,
+      141,
+      70
+     ],
+     "fp": "e989575e6aaa76d2"
+    }
+   }
+  },
+  {
+   "id": "f18",
+   "source": "g102658-3@449411ms",
+   "label": "静止对",
+   "prev": "f17",
+   "table_visible": true,
+   "zones": {
+    "TOP": {
+     "state": "CARD",
+     "turn": false,
+     "crop": [
+      690,
+      0,
+      82,
+      70
+     ],
+     "fp": "160e248725dd33a1",
+     "still": true
+    },
+    "LEFT_TOP": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      189,
+      62,
+      152,
+      56
+     ],
+     "fp": "5dac79c4b34527e7",
+     "still": true
+    },
+    "LEFT_BOTTOM": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      180,
+      213,
+      181,
+      70
+     ],
+     "fp": "5709630cb524ca66",
+     "still": true
+    },
+    "RIGHT_TOP": {
+     "state": "CARD",
+     "turn": false,
+     "crop": [
+      960,
+      62,
+      141,
+      56
+     ],
+     "fp": "48aa431e6291c0f4",
+     "still": true
+    },
+    "RIGHT_BOTTOM": {
+     "state": "CARD",
+     "turn": false,
+     "crop": [
+      960,
+      213,
+      141,
+      70
+     ],
+     "fp": "49f0acc5a8b58a6f",
+     "still": true
+    }
+   }
+  },
+  {
+   "id": "f19",
+   "source": "g102658-3@516066ms",
+   "label": "运动对·前一帧",
+   "table_visible": true,
+   "zones": {
+    "TOP": {
+     "state": "EMPTY",
+     "turn": true,
+     "crop": [
+      690,
+      0,
+      82,
+      70
+     ],
+     "fp": "58be759b3bb81545"
+    },
+    "LEFT_TOP": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      189,
+      62,
+      152,
+      56
+     ],
+     "fp": "db92660c80bc2f49"
+    },
+    "LEFT_BOTTOM": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      180,
+      213,
+      181,
+      70
+     ],
+     "fp": "d417e9fb7f607596"
+    },
+    "RIGHT_TOP": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      960,
+      62,
+      141,
+      56
+     ],
+     "fp": "f141eb79a7079c60"
+    },
+    "RIGHT_BOTTOM": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      960,
+      213,
+      141,
+      70
+     ],
+     "fp": "d4d97f309ae7059f"
+    }
+   }
+  },
+  {
+   "id": "f20",
+   "source": "g102658-3@516112ms",
+   "label": "运动对",
+   "prev": "f19",
+   "table_visible": true,
+   "zones": {
+    "TOP": {
+     "state": "CARD",
+     "turn": true,
+     "crop": [
+      690,
+      0,
+      82,
+      70
+     ],
+     "fp": "087efacb4038df24",
+     "still": false
+    },
+    "LEFT_TOP": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      189,
+      62,
+      152,
+      56
+     ],
+     "fp": "44e6b5d6277513b4",
+     "still": true
+    },
+    "LEFT_BOTTOM": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      180,
+      213,
+      181,
+      70
+     ],
+     "fp": "eb7c50746aa511a5",
+     "still": true
+    },
+    "RIGHT_TOP": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      960,
+      62,
+      141,
+      56
+     ],
+     "fp": "ced3a53ab5b93ccc",
+     "still": true
+    },
+    "RIGHT_BOTTOM": {
+     "state": "EMPTY",
+     "turn": false,
+     "crop": [
+      960,
+      213,
+      141,
+      70
+     ],
+     "fp": "bc2e4d5917b8105c",
+     "still": true
+    }
+   }
+  }
+ ]
+}

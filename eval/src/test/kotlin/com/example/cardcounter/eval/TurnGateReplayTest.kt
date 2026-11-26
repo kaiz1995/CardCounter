@@ -166,10 +166,10 @@ class TurnGateReplayTest {
 
     @Test
     fun handCoveredDirectlyByTheNextHandAfterAShortStayIsStillCounted() {
-        // 第一手（这里用 2 张 5）只静止 2 次（约 194ms，正好是回放门槛 coveredStillSamples=2）
-        // 没到停稳次数，同一家的下一手（1 张 K，不同主点数）直接盖上：两手都要入账。门槛回退成 3 这条就会失败。
+        // 第一手（这里用 2 张 5）只静止 3 次（约 150ms，正好是手机和回放共用的门槛 coveredStillSamples=3）
+        // 没到停稳次数，同一家的下一手（1 张 K，不同主点数）直接盖上：两手都要入账。门槛调高这条就会失败。
         val result = replayAudits(
-            frames(3, obs(true, 2, rank = Rank.FIVE)) +
+            frames(4, obs(true, 2, rank = Rank.FIVE)) +
                 frames(1, obs(true, 1, still = false)) +
                 frames(2, obs(true, 1)) +
                 frames(3, obs(false, 0)),
@@ -178,6 +178,20 @@ class TurnGateReplayTest {
         assertEquals(listOf(LegacyOutcome.ACCEPTED, LegacyOutcome.ACCEPTED), result.map { it.outcome })
         assertEquals(listOf(2, 1), result.map { it.cards?.total() })
         assertEquals(listOf(FinalizeReason.COVERED, FinalizeReason.CLEARED), result.map { it.reason })
+    }
+
+    @Test
+    fun aHandThatWasOnlyStillTwiceBeforeBeingCoveredIsNotCounted() {
+        // 只静止 2 次（约 100ms，低于手机门槛 coveredStillSamples=3）就被盖上：当滑入动画放弃。门槛调低这条就会失败。
+        val result = replayAudits(
+            frames(3, obs(true, 2, rank = Rank.FIVE)) +
+                frames(1, obs(true, 1, still = false)) +
+                frames(2, obs(true, 1)) +
+                frames(3, obs(false, 0)),
+            stableSamples = 10
+        )
+        assertEquals(listOf(LegacyOutcome.ACCEPTED), result.map { it.outcome })
+        assertEquals(listOf(1), result.map { it.cards?.total() })
     }
 
     @Test
@@ -196,9 +210,9 @@ class TurnGateReplayTest {
 
     @Test
     fun lastHandIsCountedWhenTheTableBecomesHiddenAfterAShortStay() {
-        // 最后一手只静止 2 次（正好是回放门槛 coveredStillSamples=2）牌桌就被结算画面挡住，各区都没有观察：
-        // 这一手要入账。门槛回退成 3 这条就会失败。
-        val result = replayAudits(frames(3, obs(true, 2)) + hidden(3), stableSamples = 10)
+        // 最后一手只静止 3 次（正好是手机和回放共用的门槛 coveredStillSamples=3）牌桌就被结算画面挡住，各区都没有观察：
+        // 这一手要入账。门槛调高这条就会失败。
+        val result = replayAudits(frames(4, obs(true, 2)) + hidden(3), stableSamples = 10)
         assertEquals(listOf(LegacyOutcome.ACCEPTED), result.map { it.outcome })
         assertEquals(listOf(2), result.map { it.cards?.total() })
         assertEquals(listOf(FinalizeReason.TABLE_HIDDEN), result.map { it.reason })
