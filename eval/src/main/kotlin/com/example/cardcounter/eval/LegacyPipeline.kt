@@ -89,7 +89,6 @@ class LegacyPipeline(
 
     /** 当前这一帧的采样时间：账本接受后提交去重门要用和检查时同一个时间。 */
     private var currentNowMs = 0L
-    private val pendingCoveredByZone = mutableMapOf<PlayZone, Boolean>()
     private val pendingFpByZone = mutableMapOf<PlayZone, IntArray?>()
     private val auditLog = mutableListOf<LegacyAudit>()
 
@@ -164,10 +163,9 @@ class LegacyPipeline(
     override fun onDecisionResult(decision: PipelineDecision, result: DispatchResult) {
         val zone = decision.zone ?: return
         val command = decision.command as? LedgerCommand.AcceptOutsidePlay ?: return
-        val covered = pendingCoveredByZone.remove(zone) ?: false
         val fingerprint = pendingFpByZone.remove(zone)
         if (result is DispatchResult.Accepted) {
-            gate.commitAccepted(zone, command.cards, currentNowMs, covered, fingerprint) {
+            gate.commitAccepted(zone, command.cards, currentNowMs, fingerprint) {
                 cache.isCleared(it, generation)
             }
         }
@@ -179,7 +177,6 @@ class LegacyPipeline(
         gate.reset()
         signals.reset()
         openingGate.reset(alreadyInPlay = !requireOpeningSignal)
-        pendingCoveredByZone.clear()
         pendingFpByZone.clear()
         auditLog.clear()
     }
@@ -264,8 +261,7 @@ class LegacyPipeline(
             )
             return null
         }
-        val covered = finalizeReason == FinalizeReason.COVERED
-        val stable = when (val decision = gate.check(zone, cards, nowMs, covered, fingerprint)) {
+        val stable = when (val decision = gate.check(zone, cards, nowMs, fingerprint)) {
             is PlayGateDecision.Accept -> decision.play
             is PlayGateDecision.Suppressed -> {
                 audit(
@@ -277,7 +273,6 @@ class LegacyPipeline(
                 return null
             }
         }
-        pendingCoveredByZone[zone] = covered
         pendingFpByZone[zone] = fingerprint
         audit(LegacyAudit(zone, timestampMs, LegacyOutcome.ACCEPTED, stable.cards, frameCount, finalizeReason))
         val evidenceId = UUID.randomUUID().toString()

@@ -179,7 +179,6 @@ class StablePlayGate {
     private class ZoneState {
         var accepted: RankCounts? = null
         var acceptedAtMs = 0L
-        var acceptedCovered = false
         var acceptedFingerprint: IntArray? = null
         var unlockedSinceAccept = false
         var clearedSinceAccept = false
@@ -191,12 +190,10 @@ class StablePlayGate {
     private val states = PlayZone.entries.associateWith { ZoneState() }
 
     /** 只判断不修改状态；供提交账本前使用。 */
-    @Suppress("UNUSED_PARAMETER")
     fun check(
         zone: PlayZone,
         cards: RankCounts,
         timestampMs: Long,
-        covered: Boolean = false,
         fingerprint: IntArray? = null
     ): PlayGateDecision {
         if (cards.total() == 0) return PlayGateDecision.Suppressed(PlaySuppressionReason.EMPTY)
@@ -204,8 +201,9 @@ class StablePlayGate {
         val previous = state.accepted
         if (previous != null && !state.unlockedSinceAccept) {
             val prevFp = state.acceptedFingerprint
-            val directCoverSwap = state.acceptedCovered &&
-                prevFp != null &&
+            // 不论前一手以 COVERED 还是 STABLE 交出，未清桌直接盖牌同主点数连出（如 g143651-5 TOP 连续三手 NINE:1）
+            // 只要核心区 row 2..11 变动 >= 4 点就放行；dev 全部 672 手同一停稳手内核心区最大变动仅 3 点。
+            val directCoverSwap = prevFp != null &&
                 fingerprint != null &&
                 RoiFingerprint.hasCoreAreaChanged(prevFp, fingerprint)
             if (!directCoverSwap) {
@@ -232,7 +230,6 @@ class StablePlayGate {
         zone: PlayZone,
         cards: RankCounts,
         timestampMs: Long,
-        covered: Boolean = false,
         fingerprint: IntArray? = null,
         isStillCleared: (PlayZone) -> Boolean
     ) {
@@ -240,7 +237,6 @@ class StablePlayGate {
         val current = states.getValue(zone)
         current.accepted = cards
         current.acceptedAtMs = timestampMs
-        current.acceptedCovered = covered
         current.acceptedFingerprint = fingerprint
         current.unlockedSinceAccept = false
         current.clearedSinceAccept = false
@@ -298,7 +294,6 @@ class StablePlayGate {
             states.getValue(zone).apply {
                 accepted = null
                 acceptedAtMs = 0L
-                acceptedCovered = false
                 acceptedFingerprint = null
                 unlockedSinceAccept = false
                 clearedSinceAccept = false
@@ -311,7 +306,6 @@ class StablePlayGate {
         states.values.forEach {
             it.accepted = null
             it.acceptedAtMs = 0L
-            it.acceptedCovered = false
             it.acceptedFingerprint = null
             it.unlockedSinceAccept = false
             it.clearedSinceAccept = false

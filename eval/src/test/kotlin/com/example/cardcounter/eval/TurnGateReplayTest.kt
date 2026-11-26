@@ -527,4 +527,52 @@ class TurnGateReplayTest {
         assertEquals(listOf(LegacyOutcome.ACCEPTED, LegacyOutcome.ACCEPTED), result.map { it.outcome })
         assertEquals(listOf(1, 2), result.map { it.cards?.total() })
     }
+
+    @Test
+    fun stablePlayFollowedByDirectCoverSwapsWithSameRankIsAccepted() {
+        // 同一家 STABLE 满帧交出后未清桌直接盖牌连续出同点数不同花色（如 g143651-5 TOP 连续三手单 9），核心区指纹变化均应放行；
+        // 若后续仅边缘微扰重新停稳，核心区未变仍被拦下。
+        val stride = com.example.cardcounter.capture.RoiFingerprint.COLUMNS
+        val rows = com.example.cardcounter.capture.RoiFingerprint.ROWS
+        val fpSpade9 = IntArray(stride * rows) { 0x303030 }
+        val fpClub9 = fpSpade9.copyOf().also { arr ->
+            for (r in 8..11) for (c in 10 until 14) arr[r * stride + c] = 0x303030 + (120 shl 16)
+        }
+        val fpDiamond9 = fpSpade9.copyOf().also { arr ->
+            for (r in 8..11) for (c in 10 until 18) arr[r * stride + c] = 0x303030 + (120 shl 8)
+        }
+        val fpDiamond9EdgeFlicker = fpDiamond9.copyOf().also { arr ->
+            for (c in 0 until 15) arr[13 * stride + c] = 0x303030 + (120 shl 16)
+        }
+        fun topNine(still: Boolean, fp: IntArray) = ZoneObservation(
+            PlayZone.TOP, true, still,
+            listOf(Detection(Rank.NINE, 0.94f, 0.16f, 0.42f, 0.12f, 0.22f)),
+            fingerprint = fp
+        )
+        val result = replayAudits(
+            // 3 帧 STABLE 交出黑桃9 -> 直接盖梅花9 -> 直接盖方块9 -> 仅底部光效微扰重新停稳
+            frames(4, topNine(true, fpSpade9)) +
+                frames(1, topNine(false, fpClub9)) +
+                frames(4, topNine(true, fpClub9)) +
+                frames(1, topNine(false, fpDiamond9)) +
+                frames(4, topNine(true, fpDiamond9)) +
+                frames(1, topNine(false, fpDiamond9EdgeFlicker)) +
+                frames(4, topNine(true, fpDiamond9EdgeFlicker)) +
+                frames(3, obs(false, 0)),
+            stableSamples = 3
+        )
+        assertEquals(
+            listOf(
+                LegacyOutcome.ACCEPTED,
+                LegacyOutcome.ACCEPTED,
+                LegacyOutcome.ACCEPTED,
+                LegacyOutcome.DUPLICATE_SUPPRESSED
+            ),
+            result.map { it.outcome }
+        )
+        assertEquals(
+            listOf(FinalizeReason.STABLE, FinalizeReason.STABLE, FinalizeReason.STABLE, FinalizeReason.STABLE),
+            result.map { it.reason }
+        )
+    }
 }
