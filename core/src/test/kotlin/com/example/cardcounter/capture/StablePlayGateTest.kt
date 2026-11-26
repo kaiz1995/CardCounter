@@ -163,7 +163,7 @@ class StablePlayGateTest {
                 PlayZone.LEFT_BOTTOM, badgeShown = false, cleared = cache.isCleared(PlayZone.LEFT_BOTTOM, 0L),
                 zoneEmpty = false, tableVisible = true, nowMs = nowMs
             )
-            routeZoneSignals(PlayZone.LEFT_BOTTOM, sig, nowMs, gate, opening, handConfirmed = true) { true }
+            routeZoneSignals(PlayZone.LEFT_BOTTOM, sig, nowMs, gate, opening) { true }
             if (finalized != null) {
                 assertTrue(gate.check(PlayZone.LEFT_BOTTOM, hand, nowMs) is PlayGateDecision.Accept)
                 gate.commitAccepted(PlayZone.LEFT_BOTTOM, hand, nowMs) { cache.isCleared(it, 0L) }
