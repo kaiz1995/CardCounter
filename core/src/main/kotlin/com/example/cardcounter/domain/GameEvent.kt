@@ -54,13 +54,17 @@ sealed interface GameEvent {
 }
 
 enum class PauseReason(val displayName: String) {
-    BASELINE_FAILURE("基线失败"),
-    ZONE_AMBIGUOUS("区位不唯一"),
-    RANK_UNSTABLE("牌面不稳定"),
-    UNKNOWN_SEMANTIC("未知语义"),
-    NEW_GAME_UNCLEAR("新局不明"),
-    CAPTURE_INTERRUPTED("截屏中断"),
-    /** 手牌确认或外面出牌会让某个点数超过库存，原事件不进账本。 */
-    CONSERVATION_FAILURE("守恒失败"),
-    CORRUPTED_SESSION("会话损坏")
+    BASELINE_FAILURE("没看清牌桌，这一局记不准了"),
+    ZONE_AMBIGUOUS("分不清是谁出的牌"),
+    RANK_UNSTABLE("有一手牌一直没认清"),
+    UNKNOWN_SEMANTIC("遇到了没见过的出牌情况"),
+    NEW_GAME_UNCLEAR("分不清是不是新的一局"),
+    CAPTURE_INTERRUPTED("截屏被中断了"),
+
+    /** 手牌或外面出牌会让某个点数超过库存，原事件不进账本。 */
+    CONSERVATION_FAILURE("有一手牌认错了，记的牌数对不上"),
+    CORRUPTED_SESSION("这一局的记录损坏了"),
+
+    /** 出牌阶段开始时没拿到合格的手牌（见 HandAutoLock）；不允许事后补认。 */
+    HAND_NOT_RECOGNIZED("没认清自己的手牌")
 }

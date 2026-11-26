@@ -7,22 +7,36 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
 import android.view.View
+import com.example.cardcounter.capture.OverlayProbeSnapshot
 import com.example.cardcounter.domain.GameState
 import com.example.cardcounter.domain.Rank
 import com.example.cardcounter.domain.RankCounts
+import com.example.cardcounter.domain.SessionPhase
 
-/** 参考原版布局：五个对手累计出牌框 + 底部外面剩余框；手牌没确认时横条醒目标出来。 */
+/**
+ * 全屏只读显示层：
+ * 1) 五个对手累计出牌框；
+ * 2) 底部外面剩余横条（手牌未锁定时不显示数字，只标“手牌识别中”）；
+ * 3) 顶部手牌点数条（只在识别中显示，锁定后显示 2 秒“手牌已确认（共 N 张）”再收起）；
+ * 4) 停记时在 stopBlock 画一块提示，不再给 6 个框套红边。
+ */
 class CounterOverlayView(context: Context) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
         typeface = android.graphics.Typeface.DEFAULT_BOLD
     }
     private var state: GameState? = null
-    private var handUnconfirmed = false
+    private var probe: OverlayProbeSnapshot = OverlayProbeSnapshot()
+    private var showConfirmedBanner = false
 
-    fun render(state: GameState, handUnconfirmed: Boolean) {
+    fun render(
+        state: GameState,
+        probe: OverlayProbeSnapshot = OverlayProbeSnapshot(),
+        showConfirmedBanner: Boolean = false
+    ) {
         this.state = state
-        this.handUnconfirmed = handUnconfirmed
+        this.probe = probe
+        this.showConfirmedBanner = showConfirmedBanner
         invalidate()
     }
 
@@ -39,11 +53,12 @@ class CounterOverlayView(context: Context) : View(context) {
                 canvas,
                 rect,
                 current?.playedBy(seat) ?: RankCounts.zero(),
-                current?.playedCountBy(seat) ?: 0,
-                current?.pauseReason != null
+                current?.playedCountBy(seat) ?: 0
             )
         }
         drawOutsideRemaining(canvas, current)
+        drawHandBar(canvas, current)
+        drawStopBlock(canvas, current)
         canvas.restore()
     }
 
@@ -51,10 +66,9 @@ class CounterOverlayView(context: Context) : View(context) {
         canvas: Canvas,
         rect: OverlayLayout.Rect,
         counts: RankCounts,
-        playedCount: Int,
-        paused: Boolean
+        playedCount: Int
     ) {
-        drawFrame(canvas, rect, paused) {
+        drawFrame(canvas, rect) {
             val lastWidth = 27f
             val cellWidth = (rect.width - lastWidth) / Rank.entries.size
             val headerHeight = 25f
@@ -98,16 +112,20 @@ class CounterOverlayView(context: Context) : View(context) {
 
     private fun drawOutsideRemaining(canvas: Canvas, current: GameState?) {
         val rect = OverlayLayout.outsideRemaining
-        val alert = handUnconfirmed
-        drawFrame(canvas, rect, current?.pauseReason != null || alert) {
+        val handConfirmed = current?.handConfirmed == true
+        val recognizing = !handConfirmed &&
+            !probe.handLocked &&
+            !probe.gameSkipped &&
+            current?.phase == SessionPhase.ACTIVE
+        drawFrame(canvas, rect) {
             val cellWidth = rect.width.toFloat() / Rank.entries.size
             val headerHeight = 36f
-            val remaining = current?.outsideRemaining
+            val remaining = if (handConfirmed) current?.outsideRemaining else null
             Rank.entries.forEachIndexed { index, rank ->
                 val left = rect.x + index * cellWidth
                 drawCell(
                     canvas, left, rect.y.toFloat(), cellWidth, headerHeight,
-                    rank.label, 22f, COLOR_TEXT, if (alert) COLOR_ALERT else COLOR_HEADER
+                    rank.label, 22f, COLOR_TEXT, COLOR_HEADER
                 )
                 drawCell(
                     canvas,
@@ -115,49 +133,145 @@ class CounterOverlayView(context: Context) : View(context) {
                     rect.y + headerHeight,
                     cellWidth,
                     rect.height - headerHeight,
-                    remaining?.get(rank)?.toString() ?: "—",
+                    remaining?.get(rank)?.toString().orEmpty(),
                     23f,
                     COLOR_RED,
                     COLOR_VALUE
                 )
             }
         }
-        if (alert) drawUnconfirmedTag(canvas)
+        if (recognizing) drawRecognizingTag(canvas)
     }
 
-    /** 横条左上方的红色小标签：手牌没确认时，这里的剩余张数还没扣自己的牌。 */
-    private fun drawUnconfirmedTag(canvas: Canvas) {
-        val tag = OverlayLayout.handUnconfirmedTag.asRectF()
+    /** 顶部手牌点数条：只在识别中显示 15 个点数；锁定后显示 2 秒确认提示再收起。 */
+    private fun drawHandBar(canvas: Canvas, current: GameState?) {
+        if (current?.phase != SessionPhase.ACTIVE || probe.gameSkipped) return
+        val rect = OverlayLayout.handBar
+        if (!current.handConfirmed && !probe.handLocked) {
+            drawFrame(canvas, rect, cornerRadius = 6f) {
+                val cellWidth = rect.width.toFloat() / Rank.entries.size
+                val headerHeight = 25f
+                val latest = probe.latestHandCards
+                Rank.entries.forEachIndexed { index, rank ->
+                    val left = rect.x + index * cellWidth
+                    drawCell(
+                        canvas, left, rect.y.toFloat(), cellWidth, headerHeight,
+                        rank.label, 15f, COLOR_TEXT, COLOR_HEADER
+                    )
+                    val count = latest?.get(rank)
+                    drawCell(
+                        canvas,
+                        left,
+                        rect.y + headerHeight,
+                        cellWidth,
+                        rect.height - headerHeight,
+                        count?.toString() ?: "—",
+                        16f,
+                        if (count == null || count == 0) COLOR_ZERO else COLOR_SELF_COUNT,
+                        COLOR_VALUE
+                    )
+                }
+            }
+            return
+        }
+        if (showConfirmedBanner) {
+            val count = current.selfHand?.total() ?: probe.handConfirmedCount ?: 0
+            val bounds = rect.asRectF()
+            paint.style = Paint.Style.FILL
+            paint.color = COLOR_CONFIRMED_BG
+            canvas.drawRoundRect(bounds, 10f, 10f, paint)
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = 2f
+            paint.color = COLOR_CONFIRMED_BORDER
+            canvas.drawRoundRect(bounds, 10f, 10f, paint)
+            paint.style = Paint.Style.FILL
+            paint.color = COLOR_TEXT
+            paint.textSize = 20f
+            val metrics = paint.fontMetrics
+            val baseline = bounds.centerY() - (metrics.bottom + metrics.top) / 2f
+            canvas.drawText("手牌已确认（共 ${count} 张）", bounds.centerX(), baseline, paint)
+        }
+    }
+
+    /** 停记时只在 stopBlock 画一块：标题、一行 PauseReason 文案、一行“长按「开新局」重新开始”。 */
+    private fun drawStopBlock(canvas: Canvas, current: GameState?) {
+        val reason = current?.pauseReason
+        val skipped = probe.gameSkipped && reason == null
+        if (reason == null && !skipped) return
+        val rect = OverlayLayout.stopBlock
+        val bounds = rect.asRectF()
         paint.style = Paint.Style.FILL
-        paint.color = COLOR_ALERT
+        paint.color = COLOR_STOP_BG
+        canvas.drawRoundRect(bounds, 10f, 10f, paint)
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 2f
+        paint.color = COLOR_RED
+        canvas.drawRoundRect(bounds, 10f, 10f, paint)
+
+        val title = if (reason != null) "记牌已停" else "本局未记"
+        val detail = reason?.displayName ?: "中途打开，等下一局"
+        val hint = "长按「开新局」重新开始"
+        val maxTextWidth = rect.width - 10f
+
+        drawFittedLine(canvas, title, bounds.centerX(), rect.y + 15f, maxTextWidth, 13f, COLOR_RED)
+        drawFittedLine(canvas, detail, bounds.centerX(), rect.y + 35f, maxTextWidth, 10.5f, COLOR_TEXT)
+        drawFittedLine(canvas, hint, bounds.centerX(), rect.y + 54f, maxTextWidth, 10f, COLOR_HINT_TEXT)
+    }
+
+    private fun drawFittedLine(
+        canvas: Canvas,
+        text: String,
+        centerX: Float,
+        centerY: Float,
+        maxWidth: Float,
+        preferredSize: Float,
+        color: Int
+    ) {
+        paint.style = Paint.Style.FILL
+        paint.color = color
+        paint.textSize = preferredSize
+        val measured = paint.measureText(text)
+        if (measured > maxWidth && maxWidth > 0f) {
+            paint.textSize = (preferredSize * maxWidth / measured).coerceAtLeast(7.5f)
+        }
+        val metrics = paint.fontMetrics
+        val baseline = centerY - (metrics.bottom + metrics.top) / 2f
+        canvas.drawText(text, centerX, baseline, paint)
+    }
+
+    /** 横条左上方的提示标签：手牌还没锁定时标出“手牌识别中”。 */
+    private fun drawRecognizingTag(canvas: Canvas) {
+        val tag = OverlayLayout.handRecognizingTag.asRectF()
+        paint.style = Paint.Style.FILL
+        paint.color = COLOR_RECOGNIZING_BG
         canvas.drawRoundRect(tag, 8f, 8f, paint)
         paint.style = Paint.Style.FILL
         paint.color = COLOR_TEXT
-        paint.textSize = 16f
+        paint.textSize = 15f
         val metrics = paint.fontMetrics
         val baseline = tag.centerY() - (metrics.bottom + metrics.top) / 2f
-        canvas.drawText("手牌未确认", tag.centerX(), baseline, paint)
+        canvas.drawText("手牌识别中", tag.centerX(), baseline, paint)
     }
 
     private inline fun drawFrame(
         canvas: Canvas,
         rect: OverlayLayout.Rect,
-        highlighted: Boolean,
+        cornerRadius: Float = 12f,
         content: () -> Unit
     ) {
         val bounds = rect.asRectF()
-        val clip = Path().apply { addRoundRect(bounds, 12f, 12f, Path.Direction.CW) }
+        val clip = Path().apply { addRoundRect(bounds, cornerRadius, cornerRadius, Path.Direction.CW) }
         canvas.save()
         canvas.clipPath(clip)
         paint.style = Paint.Style.FILL
         paint.color = COLOR_FRAME
-        canvas.drawRoundRect(bounds, 12f, 12f, paint)
+        canvas.drawRoundRect(bounds, cornerRadius, cornerRadius, paint)
         content()
         canvas.restore()
         paint.style = Paint.Style.STROKE
-        paint.strokeWidth = if (highlighted) 4f else 2f
-        paint.color = if (highlighted) COLOR_RED else Color.BLACK
-        canvas.drawRoundRect(bounds, 12f, 12f, paint)
+        paint.strokeWidth = 2f
+        paint.color = Color.BLACK
+        canvas.drawRoundRect(bounds, cornerRadius, cornerRadius, paint)
     }
 
     private fun drawCell(
@@ -178,6 +292,7 @@ class CounterOverlayView(context: Context) : View(context) {
         paint.strokeWidth = 1f
         paint.color = COLOR_GRID
         canvas.drawRect(left, top, left + width, top + height, paint)
+        if (text.isEmpty()) return
         paint.style = Paint.Style.FILL
         paint.color = textColor
         paint.textSize = textSize
@@ -195,8 +310,13 @@ class CounterOverlayView(context: Context) : View(context) {
         val COLOR_VALUE = Color.rgb(53, 56, 58)
         val COLOR_GRID = Color.rgb(24, 26, 28)
         val COLOR_TEXT = Color.rgb(245, 245, 245)
+        val COLOR_HINT_TEXT = Color.rgb(212, 214, 218)
         val COLOR_ZERO = Color.rgb(111, 114, 117)
         val COLOR_RED = Color.rgb(255, 51, 74)
-        val COLOR_ALERT = Color.rgb(176, 32, 48)
+        val COLOR_SELF_COUNT = Color.rgb(255, 224, 130)
+        val COLOR_RECOGNIZING_BG = Color.rgb(44, 92, 148)
+        val COLOR_CONFIRMED_BG = Color.rgb(26, 108, 62)
+        val COLOR_CONFIRMED_BORDER = Color.rgb(88, 206, 136)
+        val COLOR_STOP_BG = Color.argb(235, 36, 14, 18)
     }
 }

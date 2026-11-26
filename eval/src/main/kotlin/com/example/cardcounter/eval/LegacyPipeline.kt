@@ -65,7 +65,7 @@ class LegacyPipeline(
     /** 手机和新观察都是 50ms 一次采样，取 3 次（约 150ms）。 */
     coveredStillSamples: Int = 3,
     private val finalizeFrameCount: Int = 3,
-    private val requireOpeningSignal: Boolean = true,
+    private val requireOpeningSignal: Boolean = false,
     private val onAudit: (LegacyAudit) -> Unit = {}
 ) : StepwisePlayPipeline {
     private data class ZoneSample(
@@ -158,7 +158,7 @@ class LegacyPipeline(
             )
             if (signal.any) {
                 val retries = routeZoneSignals(
-                    zone, signal, observation.timestampMs, gate, openingGate, ledger().handConfirmed
+                    zone, signal, observation.timestampMs, gate, openingGate
                 ) { other -> isOnTable(observation, other) }
                 for (retry in retries) replaySkipped(retry, ledger())?.let(commit)
             }
@@ -255,7 +255,7 @@ class LegacyPipeline(
         ledger: GameState,
         fingerprint: IntArray?
     ): PipelineDecision? {
-        if (requireOpeningSignal && !openingGate.isReady(ledger.handConfirmed)) {
+        if (requireOpeningSignal && !openingGate.isReady()) {
             // 记下这一手：开局门稍后因圆标打开时，桌上还摆着的会补记。
             openingGate.notePrePlaySkipped(zone, cards, nowMs)
             audit(

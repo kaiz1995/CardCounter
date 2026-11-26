@@ -5,7 +5,6 @@ import com.example.cardcounter.capture.PlaySource
 import com.example.cardcounter.capture.PlayZone
 import com.example.cardcounter.capture.TABLE_GREEN_PROBES
 import com.example.cardcounter.capture.TurnBadge
-import com.example.cardcounter.domain.Rank
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -28,10 +27,14 @@ class OverlayLayoutTest {
         }
     }
 
-    /** 出牌区的可见性判定区与识别裁剪区（OUTSIDE 区两者同为 yoloCrop，SELF 区另保留判断带），面板都不许压。 */
+    /**
+     * 出牌区的可见性判定区与识别裁剪区；长串大牌会向外扩展，扩展后的最大范围也不许压。
+     * OUTSIDE 区扩展方向上的最远边界取自 PlayZone 的 expandLimitRatio，这里按最大范围算。
+     */
     private fun playZoneRects(): List<Pair<String, OverlayLayout.Rect>> = PlayZone.entries.flatMap { zone ->
         val crop = zone.yoloCrop(width, height)
         val cropRect = "${zone.name} 裁剪区" to OverlayLayout.Rect(crop.left, crop.top, crop.width, crop.height)
+        val maxRect = "${zone.name} 长串扩展最大范围" to maxExpandedRect(zone)
         if (zone.source == PlaySource.SELF) {
             val left = zone.left(width)
             val right = zone.right(width)
@@ -41,8 +44,20 @@ class OverlayLayoutTest {
                 cropRect
             )
         } else {
-            listOf(cropRect)
+            listOf(cropRect, maxRect)
         }
+    }
+
+    /** 用“全白列”恒真和恒假各取一次，得到向左/向右扩展到最远边界时裁剪框覆盖的范围。 */
+    private fun maxExpandedRect(zone: PlayZone): OverlayLayout.Rect {
+        val base = zone.yoloCrop(width, height)
+        val expanded = zone.expandedYoloCrop(width, height) { _, _, _ -> true }
+        return OverlayLayout.Rect(
+            minOf(base.left, expanded.left),
+            base.top,
+            maxOf(base.left + base.width, expanded.left + expanded.width) - minOf(base.left, expanded.left),
+            base.height
+        )
     }
 
     private fun areaRect(name: String, area: HandRegions.Area): Pair<String, OverlayLayout.Rect> =
@@ -58,107 +73,6 @@ class OverlayLayoutTest {
         areaRect("手牌亮度指纹区", HandRegions.signatureArea(width, height))
     )
 
-    private fun existingBoxes(): List<Pair<String, OverlayLayout.Rect>> =
-        OverlayLayout.seatPanels.map { (seat, rect) -> "${seat.displayName}出牌框" to rect } + listOf(
-            "外面剩余横条" to OverlayLayout.outsideRemaining,
-            "隐藏按钮" to OverlayLayout.hideButton,
-            "重置按钮" to OverlayLayout.resetButton
-        )
-
-    @Test
-    fun handPanelWindowsStayOnScreen() {
-        OverlayLayout.handPanelRects.forEach { rect ->
-            assertTrue("$rect 超出屏幕", rect.x >= 0 && rect.y >= 0 && rect.right <= width && rect.bottom <= height)
-        }
-    }
-
-    @Test
-    fun handPanelDoesNotCoverPlayZones() {
-        val zones = playZoneRects()
-        OverlayLayout.handPanelRects.forEach { panel ->
-            zones.forEach { (name, rect) ->
-                assertFalse("手牌面板 $panel 压住了 $name $rect", panel.overlaps(rect))
-            }
-        }
-    }
-
-    @Test
-    fun handPanelDoesNotCoverSelfHandRecognitionAreas() {
-        val areas = handAreaRects()
-        OverlayLayout.handPanelRects.forEach { panel ->
-            areas.forEach { (name, rect) ->
-                assertFalse("手牌面板 $panel 压住了 $name $rect", panel.overlaps(rect))
-            }
-        }
-    }
-
-    /** 悬浮窗会被截屏录进去：任何一个框盖住按牌边缘数张数的采样行，张数就会数错。 */
-    @Test
-    fun noBoxOnTheOverlayCoversTheHandCountSamplingRows() {
-        val rows = listOf(
-            areaRect("手牌上排边缘取样行", HandRegions.topEdgeRow),
-            areaRect("手牌下排边缘取样行", HandRegions.bottomEdgeRow),
-            areaRect("手牌下排白色顶边取样行", HandRegions.bottomBorderRows)
-        )
-        everyBoxOnTheOverlay().forEach { (boxName, box) ->
-            rows.forEach { (rowName, row) ->
-                assertFalse(
-                    "悬浮窗的「$boxName」$box 盖住了手牌张数计数区「$rowName」$row，" +
-                        "请挪开这个框，或改采样行（HandRegions.topEdgeRow / bottomEdgeRow / bottomBorderRows）",
-                    box.overlaps(row)
-                )
-            }
-        }
-    }
-
-    @Test
-    fun handPanelDoesNotCoverExistingBoxes() {
-        val boxes = existingBoxes()
-        OverlayLayout.handPanelRects.forEach { panel ->
-            boxes.forEach { (name, rect) ->
-                assertFalse("手牌面板 $panel 压住了 $name $rect", panel.overlaps(rect))
-            }
-        }
-    }
-
-    @Test
-    fun handPanelWindowsDoNotOverlapEachOther() {
-        val rects = OverlayLayout.handPanelRects
-        for (i in rects.indices) for (j in i + 1 until rects.size) {
-            assertFalse("${rects[i]} 和 ${rects[j]} 重叠", rects[i].overlaps(rects[j]))
-        }
-    }
-
-    /** 亮度指纹区（整个下半屏）本来就被“外面剩余”横条和两个按钮盖着，标签沿用同一位置，不再单独比。 */
-    @Test
-    fun unconfirmedTagStaysOnScreenAndAvoidsEverythingItMust() {
-        val tag = OverlayLayout.handUnconfirmedTag
-        assertTrue("$tag 超出屏幕", tag.x >= 0 && tag.y >= 0 && tag.right <= width && tag.bottom <= height)
-        (playZoneRects() + handAreaRects().filter { !it.first.contains("亮度指纹") } + existingBoxes()).forEach { (name, rect) ->
-            assertFalse("未确认标签 $tag 压住了 $name $rect", tag.overlaps(rect))
-        }
-        OverlayLayout.handPanelRects.forEach {
-            assertFalse("未确认标签 $tag 压住了手牌面板 $it", tag.overlaps(it))
-        }
-    }
-
-    @Test
-    fun confirmedChipFitsInsideStatusWindow() {
-        val chip = OverlayLayout.handConfirmedChip
-        val status = OverlayLayout.handStatus
-        assertTrue(chip.x >= status.x && chip.y >= status.y && chip.right <= status.right && chip.bottom <= status.bottom)
-    }
-
-    @Test
-    fun everyRankHasATouchTargetAtLeastMinimum() {
-        val ranks = OverlayLayout.handRanksLeftRanks + OverlayLayout.handRanksRightRanks
-        assertEquals(Rank.entries, ranks)
-        assertTrue(OverlayLayout.handRanksLeft.width / OverlayLayout.handRanksLeftRanks.size >= OverlayLayout.MIN_TOUCH)
-        assertTrue(OverlayLayout.handRanksRight.width / OverlayLayout.handRanksRightRanks.size >= OverlayLayout.MIN_TOUCH)
-        assertTrue(OverlayLayout.handRanksLeft.height >= OverlayLayout.MIN_TOUCH)
-        assertTrue(OverlayLayout.handRanksRight.height >= OverlayLayout.MIN_TOUCH)
-    }
-
     /** 外面五家“出牌”圆标的取色窗（含边界像素）；悬浮窗会被截屏录进去，盖住就认不到圆标。 */
     private fun badgeWindows(): List<Pair<String, OverlayLayout.Rect>> =
         PlayZone.entries.filter { it.source == PlaySource.OUTSIDE }.map { zone ->
@@ -168,57 +82,127 @@ class OverlayLayoutTest {
             )
         }
 
-    /** 悬浮窗上所有会画出来或会接触摸的框：新增框要加到这里。 */
-    private fun everyBoxOnTheOverlay(): List<Pair<String, OverlayLayout.Rect>> = existingBoxes() + listOf(
-        "手牌点数条左段" to OverlayLayout.handRanksLeft,
-        "手牌点数条右段" to OverlayLayout.handRanksRight,
-        "手牌合计/确认窗" to OverlayLayout.handControl,
-        "手牌状态窗" to OverlayLayout.handStatus,
-        "手牌未确认标签" to OverlayLayout.handUnconfirmedTag,
-        "手牌确认小条" to OverlayLayout.handConfirmedChip
-    )
+    /** 亮度指纹区（整个下半屏）本来就被“外面剩余”横条和按钮盖着，不再单独比。 */
+    private fun recognitionRectsWithoutSignature(): List<Pair<String, OverlayLayout.Rect>> =
+        playZoneRects() + handAreaRects().filter { !it.first.contains("亮度指纹") } + badgeWindows()
 
     @Test
-    fun overlayBoxesDoNotCoverAnyTurnBadgeWindow() {
-        val badges = badgeWindows()
-        assertEquals(5, badges.size)
-        everyBoxOnTheOverlay().forEach { (boxName, box) ->
-            badges.forEach { (badgeName, badge) ->
-                assertFalse(
-                    "悬浮窗的「$boxName」$box 压住了「$badgeName」$badge：截屏里会盖住圆标，" +
-                        "这一家永远认不到轮到他。请把这个框挪到圆标取色窗外面（TurnBadge.window 给出范围）",
-                    box.overlaps(badge)
-                )
-            }
+    fun landscapeRectsStayOnScreen() {
+        OverlayLayout.landscapeRects.forEach { (name, rect) ->
+            assertTrue(
+                "「$name」$rect 超出屏幕",
+                rect.x >= 0 && rect.y >= 0 && rect.right <= width && rect.bottom <= height
+            )
         }
     }
 
+    /** 重叠或贴边（间距不足 1 像素）均视为不合格。 */
+    private fun OverlayLayout.Rect.touchesOrOverlaps(other: OverlayLayout.Rect): Boolean =
+        x <= other.right && other.x <= right && y <= other.bottom && other.y <= bottom
+
+    /**
+     * 悬浮窗会被截屏录进去：
+     * - 新增矩形（顶部点数条、识别中标签、停记块、小图标、长按开新局、小图标菜单）不许压任何出牌区（含 SELF 裁剪区和长串扩展）、手牌区（除亮度指纹）、圆标取色窗，且各边至少留 1 像素间距（贴边也不合格）；
+     * - 原有矩形（五个座位框、外面剩余横条）保持原位置，不许压 OUTSIDE 出牌区（含长串扩展）、SELF 判断带、圆标取色窗、手牌边缘行与墨迹区；
+     *   其中 TOP 框底边 y=144 与未使用的 SELF 裁剪区（y=138 起）重合 6px，LEFT_BOTTOM/RIGHT_BOTTOM 框（y=322..374）仅擦过 HandRegions.yoloArea 上沿留白（inkArea 从 y=380 起）。
+     */
     @Test
-    fun controlAndStatusWindowsAreBigEnoughToTouch() {
-        listOf(OverlayLayout.handControl, OverlayLayout.handStatus, OverlayLayout.handConfirmedChip).forEach {
-            assertTrue("$it 太小", it.width >= OverlayLayout.MIN_TOUCH && it.height >= OverlayLayout.MIN_TOUCH)
+    fun landscapeRectsDoNotCoverAnyRecognitionArea() {
+        val allAreas = recognitionRectsWithoutSignature()
+        OverlayLayout.newLandscapeRects.forEach { (boxName, box) ->
+            allAreas.forEach { (areaName, area) ->
+                assertFalse(
+                    "悬浮窗的「$boxName」$box 压住或贴边了「$areaName」$area（要求至少 1 像素间距），请把这个框挪开",
+                    box.touchesOrOverlaps(area)
+                )
+            }
+        }
+        val activeAreasForExisting = allAreas.filter { (areaName, _) ->
+            areaName != "SELF 裁剪区" && areaName != "手牌 YOLO 取图区"
+        }
+        OverlayLayout.existingLandscapeRects.forEach { (boxName, box) ->
+            activeAreasForExisting.forEach { (areaName, area) ->
+                assertFalse(
+                    "悬浮窗的「$boxName」$box 压住了「$areaName」$area，请把这个框挪开",
+                    box.overlaps(area)
+                )
+            }
+        }
+        val yoloArea = areaRect("手牌 YOLO 取图区", HandRegions.yoloArea())
+        assertFalse(
+            "「外面剩余横条」${OverlayLayout.outsideRemaining} 压住了「${yoloArea.first}」${yoloArea.second}",
+            OverlayLayout.outsideRemaining.overlaps(yoloArea.second)
+        )
+    }
+
+    @Test
+    fun landscapeRectsDoNotOverlapEachOther() {
+        val rects = OverlayLayout.landscapeRects
+        for (i in rects.indices) for (j in i + 1 until rects.size) {
+            assertFalse(
+                "「${rects[i].first}」${rects[i].second} 和「${rects[j].first}」${rects[j].second} 重叠或贴边（要求至少 1 像素间距）",
+                rects[i].second.touchesOrOverlaps(rects[j].second)
+            )
         }
     }
 
     @Test
     fun tableGreenProbesDoNotOverlapOverlayOrPlayZones() {
-        val overlayBoxes = everyBoxOnTheOverlay()
+        val overlayBoxes = OverlayLayout.landscapeRects
         val playZones = playZoneRects()
         TABLE_GREEN_PROBES.forEach { (x, y) ->
             val probe = OverlayLayout.Rect(x, y, 1, 1)
             overlayBoxes.forEach { (boxName, box) ->
                 assertFalse(
                     "牌桌绿布探针点 ($x, $y) 落在了悬浮窗「$boxName」$box 内，" +
-                        "请把这个悬浮窗挪开或调整 PlayZone.TABLE_GREEN_PROBES 坐标",
+                        "请把这个悬浮窗挪开或调整 TABLE_GREEN_PROBES 坐标",
                     probe.overlaps(box)
                 )
             }
             playZones.forEach { (zoneName, zoneRect) ->
                 assertFalse(
                     "牌桌绿布探针点 ($x, $y) 落在了出牌区「$zoneName」$zoneRect 内，" +
-                        "请调整 PlayZone.TABLE_GREEN_PROBES 坐标避开出牌区",
+                        "请调整 TABLE_GREEN_PROBES 坐标避开出牌区",
                     probe.overlaps(zoneRect)
                 )
+            }
+        }
+    }
+
+    /**
+     * 新增的横屏矩形不进左侧挖孔（x < CUTOUT_RIGHT）。
+     * 既有的五个座位框和外面剩余横条不进挖孔、圆角测试：位置沿用旧版，真机截图上完整可见；挖孔是左侧中部的小孔，不是整条左边。
+     */
+    @Test
+    fun newLandscapeRectsStayOutOfCutout() {
+        OverlayLayout.newLandscapeRects.forEach { (name, rect) ->
+            assertTrue("「$name」$rect 进了左侧挖孔（x 要 >= ${OverlayLayout.CUTOUT_RIGHT}）", rect.x >= OverlayLayout.CUTOUT_RIGHT)
+        }
+    }
+
+    /**
+     * 新增的横屏矩形四个角都不进屏幕四角的圆角（设计坐标里是椭圆）。
+     * 既有的五个座位框和外面剩余横条不进挖孔、圆角测试：位置沿用旧版，真机截图上完整可见；挖孔是左侧中部的小孔，不是整条左边。
+     */
+    @Test
+    fun newLandscapeRectsStayOutOfRoundedCorners() {
+        val rx = OverlayLayout.CORNER_RX.toDouble()
+        val ry = OverlayLayout.CORNER_RY.toDouble()
+        OverlayLayout.newLandscapeRects.forEach { (name, rect) ->
+            val points = listOf(
+                rect.x to rect.y,
+                rect.right to rect.y,
+                rect.x to rect.bottom,
+                rect.right to rect.bottom
+            )
+            points.forEach { (px, py) ->
+                val cx = if (px < width / 2) rx else width - rx
+                val cy = if (py < height / 2) ry else height - ry
+                val inCornerBox = (px < rx || px > width - rx) && (py < ry || py > height - ry)
+                if (inCornerBox) {
+                    val e = ((px - cx) / rx) * ((px - cx) / rx) + ((py - cy) / ry) * ((py - cy) / ry)
+                    assertTrue("「$name」$rect 的角 ($px, $py) 落进了屏幕圆角", e <= 1.0)
+                }
             }
         }
     }
