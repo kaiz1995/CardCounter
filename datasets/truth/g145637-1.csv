@@ -1,0 +1,3 @@
+game_id,event_seq,zone,appear_ms,stable_ms,clear_ms,quantity,cards,tag,review,notes
+g145637-1,1,TOP,6206,6306,7709,1,FOUR:1,NORMAL,AUTO,clip片段; geom=1(w=45); model=2 geom=1 trim
+g145637-1,2,SELF,11920,11920,12813,3,TWO:3,NORMAL,AUTO,clip片段; geom=3(w=112)
