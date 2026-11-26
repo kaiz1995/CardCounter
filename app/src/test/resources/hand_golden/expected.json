@@ -366,7 +366,12 @@
       },
       "merged_frames": 1,
       "merged_fell_back": false,
+      "voted_rows": [
+        16,
+        17
+      ],
       "voted_position": 33,
+      "structure_valid": true,
       "auto_lock_streak": 1,
       "auto_lock_qualified": null
     },
@@ -715,7 +720,12 @@
       },
       "merged_frames": 2,
       "merged_fell_back": false,
+      "voted_rows": [
+        16,
+        17
+      ],
       "voted_position": 33,
+      "structure_valid": true,
       "auto_lock_streak": 2,
       "auto_lock_qualified": null
     },
@@ -1064,7 +1074,12 @@
       },
       "merged_frames": 3,
       "merged_fell_back": false,
+      "voted_rows": [
+        16,
+        17
+      ],
       "voted_position": 33,
+      "structure_valid": true,
       "auto_lock_streak": 3,
       "auto_lock_qualified": null
     },
@@ -1413,7 +1428,12 @@
       },
       "merged_frames": 4,
       "merged_fell_back": false,
+      "voted_rows": [
+        16,
+        17
+      ],
       "voted_position": 33,
+      "structure_valid": true,
       "auto_lock_streak": 4,
       "auto_lock_qualified": {
         "cards": {
@@ -1827,7 +1847,12 @@
       },
       "merged_frames": 1,
       "merged_fell_back": false,
+      "voted_rows": [
+        19,
+        19
+      ],
       "voted_position": 38,
+      "structure_valid": true,
       "auto_lock_streak": 1,
       "auto_lock_qualified": {
         "cards": {
@@ -2239,7 +2264,12 @@
       },
       "merged_frames": 1,
       "merged_fell_back": false,
+      "voted_rows": [
+        19,
+        19
+      ],
       "voted_position": 38,
+      "structure_valid": false,
       "auto_lock_streak": 1,
       "auto_lock_qualified": {
         "cards": {
@@ -2270,9 +2300,9 @@
       "scene": 4,
       "pos_rows": [
         16,
-        16
+        17
       ],
-      "pos_count": 32,
+      "pos_count": 33,
       "detections": [
         {
           "class": 3,
@@ -2602,7 +2632,12 @@
       },
       "merged_frames": 1,
       "merged_fell_back": false,
-      "voted_position": 32,
+      "voted_rows": [
+        16,
+        17
+      ],
+      "voted_position": 33,
+      "structure_valid": true,
       "auto_lock_streak": 1,
       "auto_lock_qualified": {
         "cards": {
@@ -2633,9 +2668,9 @@
       "scene": 5,
       "pos_rows": [
         17,
-        16
+        17
       ],
-      "pos_count": null,
+      "pos_count": 34,
       "detections": [
         {
           "class": 3,
@@ -2965,7 +3000,12 @@
       },
       "merged_frames": 1,
       "merged_fell_back": false,
-      "voted_position": null,
+      "voted_rows": [
+        17,
+        17
+      ],
+      "voted_position": 34,
+      "structure_valid": false,
       "auto_lock_streak": 1,
       "auto_lock_qualified": {
         "cards": {
@@ -2996,9 +3036,9 @@
       "scene": 6,
       "pos_rows": [
         17,
-        null
+        17
       ],
-      "pos_count": null,
+      "pos_count": 34,
       "detections": [
         {
           "class": 3,
@@ -3343,7 +3383,12 @@
       },
       "merged_frames": 1,
       "merged_fell_back": false,
-      "voted_position": null,
+      "voted_rows": [
+        17,
+        17
+      ],
+      "voted_position": 34,
+      "structure_valid": true,
       "auto_lock_streak": 1,
       "auto_lock_qualified": {
         "cards": {
@@ -3374,9 +3419,9 @@
       "scene": 7,
       "pos_rows": [
         16,
-        16
+        17
       ],
-      "pos_count": 32,
+      "pos_count": 33,
       "detections": [
         {
           "class": 3,
@@ -3690,7 +3735,12 @@
       },
       "merged_frames": 1,
       "merged_fell_back": false,
-      "voted_position": 32,
+      "voted_rows": [
+        16,
+        17
+      ],
+      "voted_position": 33,
+      "structure_valid": false,
       "auto_lock_streak": 1,
       "auto_lock_qualified": {
         "cards": {
@@ -3715,15 +3765,15 @@
     {
       "id": "h11",
       "source": "g145252-1@15000ms",
-      "label": "g145252-1 clip 32张带贡牌",
+      "label": "g145252-1 clip 32张带贡牌(上下排同宽16+16)",
       "table_visible": true,
       "sig_change_percent": 12.941176,
       "scene": 8,
       "pos_rows": [
         16,
-        null
+        16
       ],
-      "pos_count": null,
+      "pos_count": 32,
       "detections": [
         {
           "class": 3,
@@ -4050,7 +4100,12 @@
       },
       "merged_frames": 1,
       "merged_fell_back": false,
-      "voted_position": null,
+      "voted_rows": [
+        16,
+        16
+      ],
+      "voted_position": 32,
+      "structure_valid": true,
       "auto_lock_streak": 1,
       "auto_lock_qualified": {
         "cards": {
@@ -4422,7 +4477,1148 @@
       },
       "merged_frames": 1,
       "merged_fell_back": false,
+      "voted_rows": [
+        17,
+        17
+      ],
       "voted_position": 34,
+      "structure_valid": true,
+      "auto_lock_streak": 1,
+      "auto_lock_qualified": {
+        "cards": {
+          "BIG_JOKER": 1,
+          "SMALL_JOKER": 1,
+          "TWO": 2,
+          "ACE": 3,
+          "KING": 4,
+          "QUEEN": 3,
+          "JACK": 4,
+          "NINE": 2,
+          "EIGHT": 1,
+          "SEVEN": 3,
+          "SIX": 3,
+          "FIVE": 4,
+          "FOUR": 1,
+          "THREE": 1
+        },
+        "hand_count": 33
+      }
+    },
+    {
+      "id": "h13",
+      "source": "g135222-1@19250ms",
+      "label": "g135222-1 clip 34张(上下排同宽17+17)",
+      "table_visible": true,
+      "sig_change_percent": 16.989379,
+      "scene": 10,
+      "pos_rows": [
+        17,
+        17
+      ],
+      "pos_count": 34,
+      "detections": [
+        {
+          "class": 3,
+          "rank": "ACE",
+          "conf": 0.770951,
+          "cx": 125.6766,
+          "cy": 221.9933,
+          "w": 8.3359,
+          "h": 10.749
+        },
+        {
+          "class": 3,
+          "rank": "ACE",
+          "conf": 0.887913,
+          "cx": 141.8279,
+          "cy": 221.8035,
+          "w": 9.1992,
+          "h": 10.8199
+        },
+        {
+          "class": 4,
+          "rank": "KING",
+          "conf": 0.643338,
+          "cx": 160.0198,
+          "cy": 221.7932,
+          "w": 10.1053,
+          "h": 11.05
+        },
+        {
+          "class": 4,
+          "rank": "KING",
+          "conf": 0.535993,
+          "cx": 175.9892,
+          "cy": 221.6436,
+          "w": 9.3079,
+          "h": 11.0535
+        },
+        {
+          "class": 4,
+          "rank": "KING",
+          "conf": 0.590265,
+          "cx": 191.7693,
+          "cy": 221.7052,
+          "w": 8.9734,
+          "h": 10.8829
+        },
+        {
+          "class": 0,
+          "rank": "BIG_JOKER",
+          "conf": 0.913279,
+          "cx": 21.8816,
+          "cy": 223.4283,
+          "w": 5.9137,
+          "h": 13.818
+        },
+        {
+          "class": 0,
+          "rank": "BIG_JOKER",
+          "conf": 0.896224,
+          "cx": 37.3799,
+          "cy": 223.3098,
+          "w": 5.8983,
+          "h": 13.4301
+        },
+        {
+          "class": 0,
+          "rank": "BIG_JOKER",
+          "conf": 0.908013,
+          "cx": 52.9882,
+          "cy": 223.4026,
+          "w": 5.7528,
+          "h": 13.6784
+        },
+        {
+          "class": 1,
+          "rank": "SMALL_JOKER",
+          "conf": 0.594949,
+          "cx": 71.0,
+          "cy": 223.2178,
+          "w": 6.0007,
+          "h": 12.8588
+        },
+        {
+          "class": 2,
+          "rank": "TWO",
+          "conf": 0.919915,
+          "cx": 91.7727,
+          "cy": 222.3559,
+          "w": 7.0519,
+          "h": 10.8437
+        },
+        {
+          "class": 2,
+          "rank": "TWO",
+          "conf": 0.905465,
+          "cx": 107.5832,
+          "cy": 222.3712,
+          "w": 6.7744,
+          "h": 11.1394
+        },
+        {
+          "class": 5,
+          "rank": "QUEEN",
+          "conf": 0.940987,
+          "cx": 209.6186,
+          "cy": 222.8591,
+          "w": 7.4553,
+          "h": 12.6846
+        },
+        {
+          "class": 5,
+          "rank": "QUEEN",
+          "conf": 0.957318,
+          "cx": 225.3636,
+          "cy": 222.8884,
+          "w": 7.4137,
+          "h": 12.8405
+        },
+        {
+          "class": 5,
+          "rank": "QUEEN",
+          "conf": 0.843596,
+          "cx": 240.992,
+          "cy": 222.332,
+          "w": 7.2441,
+          "h": 11.8877
+        },
+        {
+          "class": 6,
+          "rank": "JACK",
+          "conf": 0.856363,
+          "cx": 258.9441,
+          "cy": 222.1204,
+          "w": 7.3102,
+          "h": 11.1033
+        },
+        {
+          "class": 7,
+          "rank": "TEN",
+          "conf": 0.858477,
+          "cx": 277.173,
+          "cy": 222.6285,
+          "w": 9.4951,
+          "h": 11.4681
+        },
+        {
+          "class": 7,
+          "rank": "TEN",
+          "conf": 0.85469,
+          "cx": 292.5585,
+          "cy": 222.5745,
+          "w": 9.5047,
+          "h": 10.949
+        },
+        {
+          "class": 8,
+          "rank": "NINE",
+          "conf": 0.872663,
+          "cx": 26.0559,
+          "cy": 244.2759,
+          "w": 7.6165,
+          "h": 10.9326
+        },
+        {
+          "class": 8,
+          "rank": "NINE",
+          "conf": 0.819341,
+          "cx": 41.8401,
+          "cy": 244.2226,
+          "w": 6.9935,
+          "h": 10.737
+        },
+        {
+          "class": 8,
+          "rank": "NINE",
+          "conf": 0.836908,
+          "cx": 57.3668,
+          "cy": 244.4026,
+          "w": 6.8089,
+          "h": 10.9166
+        },
+        {
+          "class": 9,
+          "rank": "EIGHT",
+          "conf": 0.95014,
+          "cx": 75.338,
+          "cy": 244.6703,
+          "w": 7.6842,
+          "h": 11.0838
+        },
+        {
+          "class": 9,
+          "rank": "EIGHT",
+          "conf": 0.950169,
+          "cx": 91.1386,
+          "cy": 244.6659,
+          "w": 7.197,
+          "h": 10.5703
+        },
+        {
+          "class": 9,
+          "rank": "EIGHT",
+          "conf": 0.922532,
+          "cx": 106.5236,
+          "cy": 244.6575,
+          "w": 7.1235,
+          "h": 10.7074
+        },
+        {
+          "class": 9,
+          "rank": "EIGHT",
+          "conf": 0.849846,
+          "cx": 122.0952,
+          "cy": 244.5205,
+          "w": 7.4174,
+          "h": 10.632
+        },
+        {
+          "class": 9,
+          "rank": "EIGHT",
+          "conf": 0.889427,
+          "cx": 137.7145,
+          "cy": 244.5647,
+          "w": 7.2224,
+          "h": 10.8119
+        },
+        {
+          "class": 10,
+          "rank": "SEVEN",
+          "conf": 0.574174,
+          "cx": 155.7471,
+          "cy": 244.347,
+          "w": 6.8121,
+          "h": 10.4638
+        },
+        {
+          "class": 10,
+          "rank": "SEVEN",
+          "conf": 0.63254,
+          "cx": 171.7215,
+          "cy": 244.1184,
+          "w": 6.7249,
+          "h": 10.3469
+        },
+        {
+          "class": 11,
+          "rank": "SIX",
+          "conf": 0.936543,
+          "cx": 189.5352,
+          "cy": 244.294,
+          "w": 7.1816,
+          "h": 11.124
+        },
+        {
+          "class": 12,
+          "rank": "FIVE",
+          "conf": 0.688929,
+          "cx": 207.4843,
+          "cy": 242.8371,
+          "w": 7.0408,
+          "h": 10.0762
+        },
+        {
+          "class": 12,
+          "rank": "FIVE",
+          "conf": 0.629874,
+          "cx": 223.3813,
+          "cy": 242.1847,
+          "w": 6.8978,
+          "h": 10.1381
+        },
+        {
+          "class": 12,
+          "rank": "FIVE",
+          "conf": 0.860021,
+          "cx": 238.8801,
+          "cy": 242.4968,
+          "w": 6.7081,
+          "h": 10.9366
+        },
+        {
+          "class": 12,
+          "rank": "FIVE",
+          "conf": 0.897031,
+          "cx": 254.3561,
+          "cy": 242.9089,
+          "w": 7.001,
+          "h": 10.9621
+        },
+        {
+          "class": 13,
+          "rank": "FOUR",
+          "conf": 0.802321,
+          "cx": 272.2847,
+          "cy": 244.4113,
+          "w": 7.5237,
+          "h": 10.7771
+        },
+        {
+          "class": 14,
+          "rank": "THREE",
+          "conf": 0.813257,
+          "cx": 290.6561,
+          "cy": 244.67,
+          "w": 6.4749,
+          "h": 10.4725
+        }
+      ],
+      "single": {
+        "BIG_JOKER": 3,
+        "SMALL_JOKER": 1,
+        "TWO": 2,
+        "ACE": 2,
+        "KING": 3,
+        "QUEEN": 3,
+        "JACK": 1,
+        "TEN": 2,
+        "NINE": 3,
+        "EIGHT": 5,
+        "SEVEN": 2,
+        "SIX": 1,
+        "FIVE": 4,
+        "FOUR": 1,
+        "THREE": 1
+      },
+      "merged": {
+        "BIG_JOKER": 3,
+        "SMALL_JOKER": 1,
+        "TWO": 2,
+        "ACE": 2,
+        "KING": 3,
+        "QUEEN": 3,
+        "JACK": 1,
+        "TEN": 2,
+        "NINE": 3,
+        "EIGHT": 5,
+        "SEVEN": 2,
+        "SIX": 1,
+        "FIVE": 4,
+        "FOUR": 1,
+        "THREE": 1
+      },
+      "merged_frames": 1,
+      "merged_fell_back": false,
+      "voted_rows": [
+        17,
+        17
+      ],
+      "voted_position": 34,
+      "structure_valid": true,
+      "auto_lock_streak": 1,
+      "auto_lock_qualified": {
+        "cards": {
+          "BIG_JOKER": 1,
+          "SMALL_JOKER": 1,
+          "TWO": 2,
+          "ACE": 3,
+          "KING": 4,
+          "QUEEN": 3,
+          "JACK": 4,
+          "NINE": 2,
+          "EIGHT": 1,
+          "SEVEN": 3,
+          "SIX": 3,
+          "FIVE": 4,
+          "FOUR": 1,
+          "THREE": 1
+        },
+        "hand_count": 33
+      }
+    },
+    {
+      "id": "h14",
+      "source": "g145608-1@11750ms",
+      "label": "g145608-1 clip 34张(17+17且大王弹起)",
+      "table_visible": true,
+      "sig_change_percent": 8.876634,
+      "scene": 11,
+      "pos_rows": [
+        17,
+        17
+      ],
+      "pos_count": 34,
+      "detections": [
+        {
+          "class": 0,
+          "rank": "BIG_JOKER",
+          "conf": 0.655545,
+          "cx": 20.5101,
+          "cy": 218.4613,
+          "w": 6.3991,
+          "h": 14.7476
+        },
+        {
+          "class": 0,
+          "rank": "BIG_JOKER",
+          "conf": 0.904802,
+          "cx": 36.3228,
+          "cy": 221.5906,
+          "w": 6.0152,
+          "h": 15.7295
+        },
+        {
+          "class": 3,
+          "rank": "ACE",
+          "conf": 0.876594,
+          "cx": 109.6496,
+          "cy": 221.9283,
+          "w": 10.3803,
+          "h": 10.9232
+        },
+        {
+          "class": 3,
+          "rank": "ACE",
+          "conf": 0.873142,
+          "cx": 124.647,
+          "cy": 221.8228,
+          "w": 8.3537,
+          "h": 10.7412
+        },
+        {
+          "class": 4,
+          "rank": "KING",
+          "conf": 0.531054,
+          "cx": 143.6904,
+          "cy": 221.8739,
+          "w": 9.3752,
+          "h": 10.9445
+        },
+        {
+          "class": 4,
+          "rank": "KING",
+          "conf": 0.774396,
+          "cx": 159.2631,
+          "cy": 221.6911,
+          "w": 9.0512,
+          "h": 10.6621
+        },
+        {
+          "class": 4,
+          "rank": "KING",
+          "conf": 0.772624,
+          "cx": 174.5205,
+          "cy": 221.7091,
+          "w": 9.2117,
+          "h": 10.7182
+        },
+        {
+          "class": 4,
+          "rank": "KING",
+          "conf": 0.730408,
+          "cx": 190.1436,
+          "cy": 221.7841,
+          "w": 9.5812,
+          "h": 10.6826
+        },
+        {
+          "class": 1,
+          "rank": "SMALL_JOKER",
+          "conf": 0.77947,
+          "cx": 54.5083,
+          "cy": 222.7122,
+          "w": 5.026,
+          "h": 13.8524
+        },
+        {
+          "class": 2,
+          "rank": "TWO",
+          "conf": 0.894704,
+          "cx": 75.0673,
+          "cy": 222.4337,
+          "w": 6.8613,
+          "h": 10.9541
+        },
+        {
+          "class": 2,
+          "rank": "TWO",
+          "conf": 0.859177,
+          "cx": 90.8347,
+          "cy": 222.2597,
+          "w": 6.6745,
+          "h": 11.0613
+        },
+        {
+          "class": 5,
+          "rank": "QUEEN",
+          "conf": 0.908736,
+          "cx": 208.282,
+          "cy": 223.2124,
+          "w": 7.7343,
+          "h": 13.0756
+        },
+        {
+          "class": 6,
+          "rank": "JACK",
+          "conf": 0.826245,
+          "cx": 225.8973,
+          "cy": 222.4915,
+          "w": 6.5451,
+          "h": 11.319
+        },
+        {
+          "class": 6,
+          "rank": "JACK",
+          "conf": 0.79513,
+          "cx": 241.998,
+          "cy": 222.4714,
+          "w": 7.0795,
+          "h": 11.226
+        },
+        {
+          "class": 7,
+          "rank": "TEN",
+          "conf": 0.833609,
+          "cx": 260.432,
+          "cy": 222.5011,
+          "w": 8.9222,
+          "h": 11.2505
+        },
+        {
+          "class": 7,
+          "rank": "TEN",
+          "conf": 0.912568,
+          "cx": 276.1648,
+          "cy": 222.428,
+          "w": 8.6333,
+          "h": 11.1787
+        },
+        {
+          "class": 8,
+          "rank": "NINE",
+          "conf": 0.869424,
+          "cx": 293.3382,
+          "cy": 222.3402,
+          "w": 7.0282,
+          "h": 10.8937
+        },
+        {
+          "class": 8,
+          "rank": "NINE",
+          "conf": 0.860241,
+          "cx": 25.8548,
+          "cy": 243.9892,
+          "w": 8.1766,
+          "h": 11.5471
+        },
+        {
+          "class": 9,
+          "rank": "EIGHT",
+          "conf": 0.907079,
+          "cx": 44.3357,
+          "cy": 244.3789,
+          "w": 7.6465,
+          "h": 11.1717
+        },
+        {
+          "class": 9,
+          "rank": "EIGHT",
+          "conf": 0.917258,
+          "cx": 59.9104,
+          "cy": 244.4742,
+          "w": 7.3045,
+          "h": 10.7805
+        },
+        {
+          "class": 9,
+          "rank": "EIGHT",
+          "conf": 0.952204,
+          "cx": 75.6131,
+          "cy": 244.5264,
+          "w": 7.1003,
+          "h": 10.6949
+        },
+        {
+          "class": 10,
+          "rank": "SEVEN",
+          "conf": 0.760184,
+          "cx": 93.7543,
+          "cy": 244.3214,
+          "w": 7.2685,
+          "h": 10.3353
+        },
+        {
+          "class": 10,
+          "rank": "SEVEN",
+          "conf": 0.534078,
+          "cx": 109.3871,
+          "cy": 244.2526,
+          "w": 7.1337,
+          "h": 10.3951
+        },
+        {
+          "class": 10,
+          "rank": "SEVEN",
+          "conf": 0.754019,
+          "cx": 125.0096,
+          "cy": 244.2917,
+          "w": 7.2772,
+          "h": 10.5984
+        },
+        {
+          "class": 11,
+          "rank": "SIX",
+          "conf": 0.934357,
+          "cx": 142.8015,
+          "cy": 244.4776,
+          "w": 7.1537,
+          "h": 10.9505
+        },
+        {
+          "class": 11,
+          "rank": "SIX",
+          "conf": 0.914258,
+          "cx": 158.6509,
+          "cy": 244.3558,
+          "w": 7.2401,
+          "h": 10.7375
+        },
+        {
+          "class": 11,
+          "rank": "SIX",
+          "conf": 0.908955,
+          "cx": 174.2022,
+          "cy": 244.4171,
+          "w": 7.0131,
+          "h": 10.8994
+        },
+        {
+          "class": 12,
+          "rank": "FIVE",
+          "conf": 0.480911,
+          "cx": 191.6929,
+          "cy": 244.4692,
+          "w": 7.4071,
+          "h": 10.5291
+        },
+        {
+          "class": 12,
+          "rank": "FIVE",
+          "conf": 0.801124,
+          "cx": 207.5059,
+          "cy": 244.627,
+          "w": 7.0265,
+          "h": 10.3597
+        },
+        {
+          "class": 12,
+          "rank": "FIVE",
+          "conf": 0.912693,
+          "cx": 223.3236,
+          "cy": 244.5732,
+          "w": 6.7281,
+          "h": 10.4353
+        },
+        {
+          "class": 13,
+          "rank": "FOUR",
+          "conf": 0.809904,
+          "cx": 241.0275,
+          "cy": 244.2549,
+          "w": 7.0493,
+          "h": 10.5474
+        },
+        {
+          "class": 13,
+          "rank": "FOUR",
+          "conf": 0.45766,
+          "cx": 256.5676,
+          "cy": 244.0604,
+          "w": 6.9799,
+          "h": 10.3033
+        },
+        {
+          "class": 13,
+          "rank": "FOUR",
+          "conf": 0.700245,
+          "cx": 272.3397,
+          "cy": 244.0834,
+          "w": 7.3889,
+          "h": 10.2581
+        },
+        {
+          "class": 14,
+          "rank": "THREE",
+          "conf": 0.910711,
+          "cx": 290.6573,
+          "cy": 244.4535,
+          "w": 6.7483,
+          "h": 10.8462
+        }
+      ],
+      "single": {
+        "BIG_JOKER": 2,
+        "SMALL_JOKER": 1,
+        "TWO": 2,
+        "ACE": 2,
+        "KING": 4,
+        "QUEEN": 1,
+        "JACK": 2,
+        "TEN": 2,
+        "NINE": 2,
+        "EIGHT": 3,
+        "SEVEN": 3,
+        "SIX": 3,
+        "FIVE": 3,
+        "FOUR": 3,
+        "THREE": 1
+      },
+      "merged": {
+        "BIG_JOKER": 2,
+        "SMALL_JOKER": 1,
+        "TWO": 2,
+        "ACE": 2,
+        "KING": 4,
+        "QUEEN": 1,
+        "JACK": 2,
+        "TEN": 2,
+        "NINE": 2,
+        "EIGHT": 3,
+        "SEVEN": 3,
+        "SIX": 3,
+        "FIVE": 3,
+        "FOUR": 3,
+        "THREE": 1
+      },
+      "merged_frames": 1,
+      "merged_fell_back": false,
+      "voted_rows": [
+        17,
+        17
+      ],
+      "voted_position": 34,
+      "structure_valid": true,
+      "auto_lock_streak": 1,
+      "auto_lock_qualified": {
+        "cards": {
+          "BIG_JOKER": 1,
+          "SMALL_JOKER": 1,
+          "TWO": 2,
+          "ACE": 3,
+          "KING": 4,
+          "QUEEN": 3,
+          "JACK": 4,
+          "NINE": 2,
+          "EIGHT": 1,
+          "SEVEN": 3,
+          "SIX": 3,
+          "FIVE": 4,
+          "FOUR": 1,
+          "THREE": 1
+        },
+        "hand_count": 33
+      }
+    },
+    {
+      "id": "h15",
+      "source": "g075639-10@196250ms",
+      "label": "g075639-10 Q认成9被独立防线拦住",
+      "table_visible": true,
+      "sig_change_percent": 11.748366,
+      "scene": 12,
+      "pos_rows": [
+        16,
+        17
+      ],
+      "pos_count": 33,
+      "detections": [
+        {
+          "class": 3,
+          "rank": "ACE",
+          "conf": 0.8863,
+          "cx": 166.7528,
+          "cy": 221.8873,
+          "w": 10.4796,
+          "h": 10.81
+        },
+        {
+          "class": 3,
+          "rank": "ACE",
+          "conf": 0.917588,
+          "cx": 182.0838,
+          "cy": 221.6882,
+          "w": 10.6315,
+          "h": 10.7605
+        },
+        {
+          "class": 3,
+          "rank": "ACE",
+          "conf": 0.898007,
+          "cx": 197.5127,
+          "cy": 221.7019,
+          "w": 10.4581,
+          "h": 10.8249
+        },
+        {
+          "class": 3,
+          "rank": "ACE",
+          "conf": 0.912169,
+          "cx": 213.3961,
+          "cy": 221.7022,
+          "w": 10.7484,
+          "h": 11.0871
+        },
+        {
+          "class": 4,
+          "rank": "KING",
+          "conf": 0.592388,
+          "cx": 231.6308,
+          "cy": 221.78,
+          "w": 9.6878,
+          "h": 11.193
+        },
+        {
+          "class": 4,
+          "rank": "KING",
+          "conf": 0.741762,
+          "cx": 247.2094,
+          "cy": 221.7509,
+          "w": 9.0174,
+          "h": 10.8497
+        },
+        {
+          "class": 4,
+          "rank": "KING",
+          "conf": 0.783298,
+          "cx": 262.5807,
+          "cy": 221.7316,
+          "w": 9.2858,
+          "h": 10.5865
+        },
+        {
+          "class": 0,
+          "rank": "BIG_JOKER",
+          "conf": 0.87896,
+          "cx": 33.77,
+          "cy": 223.2776,
+          "w": 6.3773,
+          "h": 13.6126
+        },
+        {
+          "class": 2,
+          "rank": "TWO",
+          "conf": 0.93751,
+          "cx": 54.5839,
+          "cy": 222.26,
+          "w": 6.7559,
+          "h": 10.8098
+        },
+        {
+          "class": 2,
+          "rank": "TWO",
+          "conf": 0.903404,
+          "cx": 70.1936,
+          "cy": 222.3993,
+          "w": 6.7129,
+          "h": 10.5867
+        },
+        {
+          "class": 2,
+          "rank": "TWO",
+          "conf": 0.92469,
+          "cx": 85.4776,
+          "cy": 222.2214,
+          "w": 6.7143,
+          "h": 10.2787
+        },
+        {
+          "class": 2,
+          "rank": "TWO",
+          "conf": 0.905383,
+          "cx": 101.2013,
+          "cy": 222.3412,
+          "w": 6.6869,
+          "h": 10.6185
+        },
+        {
+          "class": 2,
+          "rank": "TWO",
+          "conf": 0.91,
+          "cx": 116.4811,
+          "cy": 222.4243,
+          "w": 6.7028,
+          "h": 10.4541
+        },
+        {
+          "class": 2,
+          "rank": "TWO",
+          "conf": 0.901405,
+          "cx": 132.1207,
+          "cy": 222.5151,
+          "w": 6.6066,
+          "h": 10.4764
+        },
+        {
+          "class": 2,
+          "rank": "TWO",
+          "conf": 0.915433,
+          "cx": 147.6231,
+          "cy": 222.4893,
+          "w": 6.5339,
+          "h": 10.9217
+        },
+        {
+          "class": 5,
+          "rank": "QUEEN",
+          "conf": 0.907881,
+          "cx": 280.9327,
+          "cy": 223.1217,
+          "w": 7.4809,
+          "h": 12.9279
+        },
+        {
+          "class": 5,
+          "rank": "QUEEN",
+          "conf": 0.74173,
+          "cx": 23.6564,
+          "cy": 244.2794,
+          "w": 8.2522,
+          "h": 12.0289
+        },
+        {
+          "class": 8,
+          "rank": "NINE",
+          "conf": 0.569199,
+          "cx": 39.8139,
+          "cy": 244.5133,
+          "w": 7.2502,
+          "h": 11.3319
+        },
+        {
+          "class": 8,
+          "rank": "NINE",
+          "conf": 0.67288,
+          "cx": 55.2259,
+          "cy": 244.4398,
+          "w": 7.3204,
+          "h": 10.8937
+        },
+        {
+          "class": 6,
+          "rank": "JACK",
+          "conf": 0.895035,
+          "cx": 73.0074,
+          "cy": 244.3914,
+          "w": 7.5112,
+          "h": 10.6877
+        },
+        {
+          "class": 6,
+          "rank": "JACK",
+          "conf": 0.863461,
+          "cx": 88.805,
+          "cy": 244.512,
+          "w": 7.8622,
+          "h": 10.9156
+        },
+        {
+          "class": 7,
+          "rank": "TEN",
+          "conf": 0.869494,
+          "cx": 107.3188,
+          "cy": 244.5804,
+          "w": 9.1495,
+          "h": 10.8632
+        },
+        {
+          "class": 8,
+          "rank": "NINE",
+          "conf": 0.930994,
+          "cx": 124.5554,
+          "cy": 244.6594,
+          "w": 7.3584,
+          "h": 10.7822
+        },
+        {
+          "class": 8,
+          "rank": "NINE",
+          "conf": 0.903338,
+          "cx": 140.3958,
+          "cy": 244.5848,
+          "w": 7.2692,
+          "h": 10.4667
+        },
+        {
+          "class": 8,
+          "rank": "NINE",
+          "conf": 0.902333,
+          "cx": 155.9206,
+          "cy": 244.63,
+          "w": 7.0369,
+          "h": 10.7527
+        },
+        {
+          "class": 9,
+          "rank": "EIGHT",
+          "conf": 0.967147,
+          "cx": 174.0789,
+          "cy": 244.5872,
+          "w": 7.3181,
+          "h": 11.0564
+        },
+        {
+          "class": 10,
+          "rank": "SEVEN",
+          "conf": 0.482105,
+          "cx": 192.4638,
+          "cy": 244.2125,
+          "w": 7.2992,
+          "h": 10.573
+        },
+        {
+          "class": 10,
+          "rank": "SEVEN",
+          "conf": 0.374335,
+          "cx": 208.2553,
+          "cy": 244.0409,
+          "w": 7.5062,
+          "h": 10.0504
+        },
+        {
+          "class": 12,
+          "rank": "FIVE",
+          "conf": 0.91539,
+          "cx": 225.7504,
+          "cy": 244.4936,
+          "w": 6.8692,
+          "h": 10.6396
+        },
+        {
+          "class": 12,
+          "rank": "FIVE",
+          "conf": 0.920964,
+          "cx": 241.2968,
+          "cy": 244.4477,
+          "w": 6.688,
+          "h": 10.6097
+        },
+        {
+          "class": 12,
+          "rank": "FIVE",
+          "conf": 0.904584,
+          "cx": 257.0054,
+          "cy": 244.3513,
+          "w": 6.3518,
+          "h": 10.5403
+        },
+        {
+          "class": 13,
+          "rank": "FOUR",
+          "conf": 0.73292,
+          "cx": 274.8526,
+          "cy": 244.2798,
+          "w": 7.1802,
+          "h": 10.2945
+        },
+        {
+          "class": 14,
+          "rank": "THREE",
+          "conf": 0.89668,
+          "cx": 293.2697,
+          "cy": 244.4491,
+          "w": 6.7066,
+          "h": 10.4144
+        }
+      ],
+      "single": {
+        "BIG_JOKER": 1,
+        "TWO": 7,
+        "ACE": 4,
+        "KING": 3,
+        "QUEEN": 2,
+        "JACK": 2,
+        "TEN": 1,
+        "NINE": 5,
+        "EIGHT": 1,
+        "SEVEN": 2,
+        "FIVE": 3,
+        "FOUR": 1,
+        "THREE": 1
+      },
+      "merged": {
+        "BIG_JOKER": 1,
+        "TWO": 7,
+        "ACE": 4,
+        "KING": 3,
+        "QUEEN": 2,
+        "JACK": 2,
+        "TEN": 1,
+        "NINE": 5,
+        "EIGHT": 1,
+        "SEVEN": 2,
+        "FIVE": 3,
+        "FOUR": 1,
+        "THREE": 1
+      },
+      "merged_frames": 1,
+      "merged_fell_back": false,
+      "voted_rows": [
+        16,
+        17
+      ],
+      "voted_position": 33,
+      "structure_valid": false,
       "auto_lock_streak": 1,
       "auto_lock_qualified": {
         "cards": {

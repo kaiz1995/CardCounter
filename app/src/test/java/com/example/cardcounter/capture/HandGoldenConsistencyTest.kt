@@ -4,6 +4,7 @@ import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
 import com.example.cardcounter.domain.HandAutoLock
+import com.example.cardcounter.domain.HandLockGuard
 import com.example.cardcounter.domain.HandReading
 import com.example.cardcounter.domain.Rank
 import com.example.cardcounter.domain.RankCounts
@@ -207,8 +208,9 @@ class HandGoldenConsistencyTest {
                     }
 
                     val merge = merger.add(scene, detections)
-                    val votedPos = voter.add(scene, posCount)
-                    val reading = HandReading(merge.merged, votedPos)
+                    val validRows = posDetector.validRowCounts(rows)
+                    val votedRows = voter.add(scene, validRows)
+                    val reading = HandLockGuard.buildReading(merge.merged, merge.slotDetections, votedRows)
                     autoLock.observe(reading)
                     checkpointLock.observe(reading)
 
@@ -216,8 +218,14 @@ class HandGoldenConsistencyTest {
                     assertEquals("$id merged", jsonCounts(want.getJSONObject("merged")), merge.merged)
                     assertEquals("$id merged_frames", want.getInt("merged_frames"), merge.frames)
                     assertEquals("$id merged_fell_back", want.getBoolean("merged_fell_back"), merge.fellBack)
+                    val wantVotedRows = if (want.isNull("voted_rows")) null else {
+                        val arr = want.getJSONArray("voted_rows")
+                        arr.getInt(0) to arr.getInt(1)
+                    }
+                    assertEquals("$id voted_rows", wantVotedRows, votedRows)
                     val wantVoted = if (want.isNull("voted_position")) null else want.getInt("voted_position")
-                    assertEquals("$id voted_position", wantVoted, votedPos)
+                    assertEquals("$id voted_position", wantVoted, reading.positionCount)
+                    assertEquals("$id structure_valid", want.getBoolean("structure_valid"), reading.structureValid)
                     assertEquals("$id auto_lock latest", reading, autoLock.latest())
 
                     if (i == 3) {

@@ -30,6 +30,7 @@ import com.example.cardcounter.R
 import com.example.cardcounter.domain.DispatchResult
 import com.example.cardcounter.domain.HandAutoLock
 import com.example.cardcounter.domain.HandConfirmData
+import com.example.cardcounter.domain.HandLockGuard
 import com.example.cardcounter.domain.HandReading
 import com.example.cardcounter.domain.PauseReason
 import com.example.cardcounter.domain.Rank
@@ -300,7 +301,8 @@ class CaptureProbeService : Service() {
                             try {
                                 if (gameSkipped || revision != handRevision || handLocked || !handProbeOnTable) return@post
                                 val rowCounts = handCardPositionDetector.rowCounts(luma)
-                                val positionCount = handCardPositionDetector.detect(rowCounts)
+                                val validRows = handCardPositionDetector.validRowCounts(rowCounts)
+                                val positionCount = validRows?.let { it.first + it.second }
                                 val yoloCards = yoloFrame?.let(::detectYoloCards)
                                 // 模型已加载但这一帧出错或 0 个框：本帧不进合并、不刷新结果，也不拿模板顶替。
                                 val usable = yoloCards?.takeIf { it.detections.isNotEmpty() }
@@ -315,9 +317,15 @@ class CaptureProbeService : Service() {
                                     return@post
                                 }
                                 // 数出来的张数和点数一样多帧投票：同一停稳画面里取众数，不用最新单帧。
-                                val votedPosition = positionVoter.add(scene, positionCount)
+                                val votedRows = positionVoter.add(scene, validRows)
+                                val votedPosition = votedRows?.let { it.first + it.second }
+                                val reading = if (merge != null) {
+                                    HandLockGuard.buildReading(cards, merge.slotDetections, votedRows)
+                                } else {
+                                    HandReading(cards, votedPosition)
+                                }
                                 handAreaKept = publishHandProbe(
-                                    revision, cards, votedPosition,
+                                    revision, reading,
                                     HandProbe(area, rowCounts, merge?.merged, merge?.slotDetections.orEmpty(), templateCards)
                                 )
                                 if (!handAreaKept) return@post
@@ -326,7 +334,7 @@ class CaptureProbeService : Service() {
                                     "HAND_CANDIDATE total=${cards.total()} single=${merge?.single?.total()} " +
                                         "merged=${merge?.merged?.total()} frames=${merge?.frames} " +
                                         "positionCount=$positionCount voted=$votedPosition rows=${rowCounts.first}/${rowCounts.second} " +
-                                        "yolo=$yoloCards template=$templateCards cards=$cards"
+                                        "structureValid=${reading.structureValid} yolo=$yoloCards template=$templateCards cards=$cards"
                                 )
                                 if (merge != null) {
                                     if (merge.fellBack) {
@@ -614,9 +622,9 @@ class CaptureProbeService : Service() {
      * 新局重置也拿这把锁，上一局的结果就写不进新局。写回了返回 true（截图归 handProbe 管）。
      */
     @Synchronized
-    private fun publishHandProbe(revision: Long, cards: RankCounts, positionCount: Int?, probe: HandProbe): Boolean {
+    private fun publishHandProbe(revision: Long, reading: HandReading, probe: HandProbe): Boolean {
         if (destroyed || revision != handRevision || handLocked || sessionLedger.state.handConfirmed) return false
-        handAutoLock.observe(HandReading(cards, positionCount))
+        handAutoLock.observe(reading)
         replaceHandProbe(probe)
         val latestCards = handAutoLock.latest()?.cards
         OverlayProbeState.update { it.copy(latestHandCards = latestCards) }

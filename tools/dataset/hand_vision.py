@@ -50,7 +50,7 @@ EDGE_MIN_X = 150
 EDGE_MAX_X = 1130
 TOP_EDGE_ROWS = (420, 451)
 BOTTOM_EDGE_ROWS = (456, 469)
-BOTTOM_BORDER_ROWS = (452, 457)
+BOTTOM_BORDER_ROWS = (452, 459)
 
 # HandCardPositionDetector.kt
 POS_EDGE_THRESHOLD = 40.0
@@ -59,12 +59,15 @@ POS_MIN_EDGE_GAP = 28
 POS_TOP_CARD_WIDTH = 90
 POS_TOP_CARD_PITCH = 44.7
 POS_BOTTOM_CARD_WIDTH = 90
-POS_BOTTOM_CARD_PITCH = 46.4
+POS_BOTTOM_CARD_PITCH = 46.0
 POS_SINGLE_GAP_MIN = 38
 POS_SINGLE_GAP_MAX = 55
 POS_TINY_GAP = 10
-POS_AMBIGUOUS_MARGIN = 0.15
+POS_AMBIGUOUS_MARGIN = 0.18
 POS_BORDER_STEP = 15.0
+POS_EQUAL_TOP_LUMA = 180.0
+POS_EQUAL_PEAK_LUMA = 220.0
+POS_EQUAL_REBOUND = 3.5
 POS_BORDER_INSET_NEAR = 2
 POS_BORDER_INSET_FAR = 12
 
@@ -74,6 +77,7 @@ HAND_MERGE_ROW_TOLERANCE = 8.0
 
 # HandAutoLock.kt
 HAND_LOCK_STABLE_FRAMES = 4
+HAND_ROW_SPLIT_Y = 229.0
 
 # Rank.kt 4副牌 198张库存（按 Rank 顺序）
 INVENTORY_BY_RANK: dict[str, int] = {
@@ -250,19 +254,24 @@ def _edge_positions(luma: np.ndarray, row_range: tuple[int, int]) -> list[int]:
     return selected
 
 
-def _border_step(luma: np.ndarray, from_x: int, until_x: int) -> float:
+def _has_top_border_at(luma: np.ndarray, from_x: int, until_x: int) -> bool:
     x_min = EDGE_MIN_X - 1
     x_max = EDGE_MAX_X + 1
     x0 = max(x_min, min(x_max, from_x))
     x1 = max(x0, min(x_max, until_x))
     if x1 <= x0:
-        return 0.0
-    above = float(luma[BOTTOM_BORDER_ROWS[0], x0:x1].mean())
-    brightest = max(
-        float(luma[y, x0:x1].mean())
-        for y in range(BOTTOM_BORDER_ROWS[0] + 2, BOTTOM_BORDER_ROWS[1])
-    )
-    return brightest - above
+        return False
+    y_top = BOTTOM_BORDER_ROWS[0]
+    y_end = BOTTOM_BORDER_ROWS[1]
+    y452 = float(luma[y_top, x0:x1].mean())
+    old_brightest = max(float(luma[y, x0:x1].mean()) for y in range(y_top + 2, y_top + 5))
+    if old_brightest - y452 >= POS_BORDER_STEP:
+        return True
+    if y452 < POS_EQUAL_TOP_LUMA:
+        return False
+    dip = min(float(luma[y_top + 1, x0:x1].mean()), float(luma[y_top + 2, x0:x1].mean()))
+    peak = max(float(luma[y, x0:x1].mean()) for y in range(y_top + 3, y_end))
+    return peak >= POS_EQUAL_PEAK_LUMA and peak - dip >= POS_EQUAL_REBOUND
 
 
 def _has_own_top_border(luma: np.ndarray, bottom_edges: list[int]) -> bool:
@@ -271,8 +280,8 @@ def _has_own_top_border(luma: np.ndarray, bottom_edges: list[int]) -> bool:
     left = min(bottom_edges)
     right = max(bottom_edges)
     return (
-        _border_step(luma, left + POS_BORDER_INSET_NEAR, left + POS_BORDER_INSET_FAR) >= POS_BORDER_STEP
-        and _border_step(luma, right - POS_BORDER_INSET_FAR, right - POS_BORDER_INSET_NEAR) >= POS_BORDER_STEP
+        _has_top_border_at(luma, left + POS_BORDER_INSET_NEAR, left + POS_BORDER_INSET_FAR)
+        and _has_top_border_at(luma, right - POS_BORDER_INSET_FAR, right - POS_BORDER_INSET_NEAR)
     )
 
 
@@ -315,6 +324,15 @@ def _row_count_bottom(selected: list[int], card_width: int, card_pitch: float) -
     return count if count > 0 else None
 
 
+def valid_row_counts(rows: tuple[int | None, int | None]) -> tuple[int, int] | None:
+    top_c, bot_c = rows
+    if top_c is None or bot_c is None or top_c <= 0 or bot_c <= 0:
+        return None
+    if 0 <= bot_c - top_c <= 1:
+        return (top_c, bot_c)
+    return None
+
+
 def detect_hand_positions(bgr: np.ndarray) -> tuple[tuple[int | None, int | None], int | None]:
     """HandCardPositionDetector.rowCounts + detect：返回 ((top, bottom), total)。"""
     luma = _luma_snapshot(bgr)
@@ -326,12 +344,8 @@ def detect_hand_positions(bgr: np.ndarray) -> tuple[tuple[int | None, int | None
         if _has_own_top_border(luma, bottom_edges)
         else None
     )
-    if top_count is None or bottom_count is None or top_count <= 0 or bottom_count <= 0:
-        total = None
-    elif 0 <= bottom_count - top_count <= 1:
-        total = top_count + bottom_count
-    else:
-        total = None
+    valid = valid_row_counts((top_count, bottom_count))
+    total = (valid[0] + valid[1]) if valid is not None else None
     return (top_count, bottom_count), total
 
 
@@ -418,8 +432,8 @@ class HandPositionVoter:
 
     def __init__(self) -> None:
         self.scene: int | None = None
-        self.votes: dict[int, int] = {}
-        self.last_seen: dict[int, int] = {}
+        self.votes: dict[tuple[int, int], int] = {}
+        self.last_seen: dict[tuple[int, int], int] = {}
         self.tick = 0
 
     def reset(self) -> None:
@@ -428,30 +442,61 @@ class HandPositionVoter:
         self.last_seen.clear()
         self.tick = 0
 
-    def add(self, scene: int, count: int | None) -> int | None:
+    def add(self, scene: int, rows: tuple[int, int] | None) -> tuple[int, int] | None:
         if self.scene != scene:
             self.reset()
             self.scene = scene
-        if count is not None:
-            self.votes[count] = self.votes.get(count, 0) + 1
+        if rows is not None:
+            self.votes[rows] = self.votes.get(rows, 0) + 1
             self.tick += 1
-            self.last_seen[count] = self.tick
+            self.last_seen[rows] = self.tick
         if not self.votes:
             return None
         return max(self.votes.keys(), key=lambda k: (self.votes[k], self.last_seen[k]))
+
+
+def is_structure_valid(
+    detections: list[tuple[int, float, float, float, float, float]],
+    voted_rows: tuple[int, int] | None,
+) -> bool:
+    """对应 core/.../domain/HandLockGuard.isStructureValid。"""
+    if voted_rows is None or not detections:
+        return False
+    expected_top, expected_bottom = voted_rows
+    top = sorted([d for d in detections if d[3] < HAND_ROW_SPLIT_Y], key=lambda d: d[2])
+    bottom = sorted([d for d in detections if d[3] >= HAND_ROW_SPLIT_Y], key=lambda d: d[2])
+    if len(top) != expected_top or len(bottom) != expected_bottom:
+        return False
+    ordered = top + bottom
+    return all(ordered[i][0] <= ordered[i + 1][0] for i in range(len(ordered) - 1))
 
 
 @dataclass(frozen=True)
 class HandReading:
     cards: tuple[tuple[str, int], ...]  # 按 RANK_ORDER 的不可变表示，便于相等比较
     position_count: int | None
+    structure_valid: bool = True
 
     @classmethod
-    def from_dict(cls, cards: dict[str, int], position_count: int | None) -> "HandReading":
-        return cls(tuple((r, cards.get(r, 0)) for r in ds.RANK_ORDER), position_count)
+    def from_dict(
+        cls,
+        cards: dict[str, int],
+        position_count: int | None,
+        structure_valid: bool = True,
+    ) -> "HandReading":
+        return cls(tuple((r, cards.get(r, 0)) for r in ds.RANK_ORDER), position_count, structure_valid)
 
     def as_dict(self) -> dict[str, int]:
         return dict(self.cards)
+
+
+def build_hand_reading(
+    cards: dict[str, int],
+    detections: list[tuple[int, float, float, float, float, float]],
+    voted_rows: tuple[int, int] | None,
+) -> HandReading:
+    pos_total = (voted_rows[0] + voted_rows[1]) if voted_rows is not None else None
+    return HandReading.from_dict(cards, pos_total, is_structure_valid(detections, voted_rows))
 
 
 class HandAutoLock:
@@ -470,12 +515,22 @@ class HandAutoLock:
             return
         self.streak = self.streak + 1 if reading == self.latest else 1
         self.latest = reading
-        if self.streak < self.stable_frames or not self._is_qualified(reading):
+        if self.streak < self.stable_frames:
+            return
+        cards_dict = reading.as_dict()
+        if not self._is_qualified(reading):
+            if (
+                self.qualified is not None
+                and reading.position_count is not None
+                and counts_total(cards_dict) == reading.position_count
+                and not fits_within(cards_dict, self.qualified[0])
+            ):
+                self.qualified = None
+                self.qualified_at_ms = None
             return
         pos = reading.position_count
         if pos is None:
             return
-        cards_dict = reading.as_dict()
         if self.qualified is not None:
             curr_cards, _ = self.qualified
             if cards_dict != curr_cards and fits_within(cards_dict, curr_cards):
@@ -497,7 +552,7 @@ class HandAutoLock:
     @staticmethod
     def _is_qualified(reading: HandReading) -> bool:
         pos = reading.position_count
-        if pos is None or pos <= 0:
+        if pos is None or pos <= 0 or not reading.structure_valid:
             return False
         cards_dict = reading.as_dict()
         return counts_total(cards_dict) == pos and fits_within(cards_dict, INVENTORY_BY_RANK)

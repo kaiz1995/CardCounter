@@ -9,35 +9,35 @@ class HandPositionVoterTest {
     @Test
     fun usesTheMostFrequentCountNotTheLatestFrame() {
         val voter = HandPositionVoter()
-        assertEquals(33, voter.add(1, 33))
-        assertEquals(33, voter.add(1, 33))
-        assertEquals(33, voter.add(1, 34))
-        assertEquals(33, voter.add(1, 32))
+        assertEquals(16 to 17, voter.add(1, 16 to 17))
+        assertEquals(16 to 17, voter.add(1, 16 to 17))
+        assertEquals(16 to 17, voter.add(1, 17 to 17))
+        assertEquals(16 to 17, voter.add(1, 16 to 16))
     }
 
     @Test
     fun tieGoesToTheMostRecentCount() {
         val voter = HandPositionVoter()
-        voter.add(1, 33)
-        assertEquals(34, voter.add(1, 34))
-        assertEquals(33, voter.add(1, 33))
+        voter.add(1, 16 to 17)
+        assertEquals(17 to 17, voter.add(1, 17 to 17))
+        assertEquals(16 to 17, voter.add(1, 16 to 17))
     }
 
     @Test
     fun framesWithoutACountDoNotVote() {
         val voter = HandPositionVoter()
         assertNull(voter.add(1, null))
-        assertEquals(35, voter.add(1, 35))
-        assertEquals(35, voter.add(1, null))
+        assertEquals(17 to 18, voter.add(1, 17 to 18))
+        assertEquals(17 to 18, voter.add(1, null))
     }
 
     /** 画面变了：之前的票全部作废。 */
     @Test
     fun sceneChangeClearsTheVotes() {
         val voter = HandPositionVoter()
-        voter.add(1, 33)
-        voter.add(1, 33)
-        assertEquals(30, voter.add(2, 30))
-        assertNull(HandPositionVoter().also { it.add(1, 33) }.also { it.reset() }.add(1, null))
+        voter.add(1, 16 to 17)
+        voter.add(1, 16 to 17)
+        assertEquals(15 to 15, voter.add(2, 15 to 15))
+        assertNull(HandPositionVoter().also { it.add(1, 16 to 17) }.also { it.reset() }.add(1, null))
     }
 }

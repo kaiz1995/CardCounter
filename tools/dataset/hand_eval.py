@@ -79,16 +79,21 @@ def classify_failure(
         return "MID_GAME_SKIPPED", "开局段触发 MidGameOpenDetector 跳过"
 
     if not gate_opened:
-        if game["split"] == "clip":
-            if end_qualified is None:
-                if not probes:
-                    return "NOT_STABLE", "clip 片段未进入稳定探测（桌不可见或稳定帧不足）"
-                return _diagnose_unqualified(truth_counts, truth_total, probes, last_reading, prefix="clip 未形成合格手牌: ")
-            q_cards, q_pos = end_qualified
-            if q_cards == truth_counts and q_pos == truth_total:
-                return "CLIP_NO_GATE_EXACT", "clip 片段无出牌阶段（开局门未开），片尾拟锁定完全正确"
-            return _diagnose_mismatch(truth_counts, truth_total, q_cards, q_pos, probes, prefix="clip 片尾拟锁定有误: ")
-        return "GATE_NOT_OPENED", "开局段直到结束均未触发外家出牌圆标"
+        if end_qualified is None:
+            if not probes:
+                return "NO_PLAY_PHASE_NOT_STABLE", "片段不含出牌阶段（开局门未开），未进入稳定探测（桌不可见或稳定帧不足）"
+            return _diagnose_unqualified(
+                truth_counts,
+                truth_total,
+                probes,
+                last_reading,
+                prefix="片段不含出牌阶段（开局门未开），未形成拟锁定: ",
+                no_play_phase=True,
+            )
+        q_cards, q_pos = end_qualified
+        if q_cards == truth_counts and q_pos == truth_total:
+            return "NO_PLAY_PHASE_EXACT", "片段不含出牌阶段（开局门未开），片尾拟锁定完全正确"
+        return _diagnose_mismatch(truth_counts, truth_total, q_cards, q_pos, probes, prefix="片段不含出牌阶段（开局门未开），片尾拟锁定有误: ")
 
     if locked_cards is None:
         if not probes:
@@ -107,29 +112,37 @@ def _diagnose_unqualified(
     probes: list[dict],
     last_reading: dict | None,
     prefix: str = "",
+    no_play_phase: bool = False,
 ) -> tuple[str, str]:
     voted_vals = [p["votedPosition"] for p in probes if p["votedPosition"] is not None]
     merged_totals = [p["mergedTotal"] for p in probes if p["mergedTotal"] is not None]
     streaks = [p["streak"] for p in probes]
+    cat_prefix = "NO_PLAY_PHASE_" if no_play_phase else ""
 
     if not voted_vals:
-        return "POS_COUNT_FAILED", f"{prefix}张数检测全部为 null（探测 {len(probes)} 次，rows={[p['posRows'] for p in probes[-3:]]}）"
+        return f"{cat_prefix}POS_COUNT_FAILED", f"{prefix}张数检测全部为 null（探测 {len(probes)} 次，rows={[p['posRows'] for p in probes[-3:]]}）"
 
+    last_p = probes[-1]
     last_voted = voted_vals[-1]
     last_merged = merged_totals[-1] if merged_totals else None
+    if last_voted == last_merged and last_p.get("structureValid") is False:
+        return (
+            f"{cat_prefix}GUARD_BLOCKED",
+            f"{prefix}总张数={last_merged} 凑平，但独立防线拦住（posRows={last_p['posRows']}, votedRows={last_p.get('votedRows')}）",
+        )
     if last_voted != truth_total and last_merged == truth_total:
-        return "POS_COUNT_ERROR", f"{prefix}模型张数={last_merged} 正确，但张数检测={last_voted}!=真值{truth_total}"
+        return f"{cat_prefix}POS_COUNT_ERROR", f"{prefix}模型张数={last_merged} 正确，但张数检测={last_voted}!=真值{truth_total}"
     if last_voted == truth_total and last_merged != truth_total:
-        return "MODEL_ERROR", f"{prefix}张数检测={last_voted} 正确，但模型合并总数={last_merged}!=真值{truth_total}"
+        return f"{cat_prefix}MODEL_ERROR", f"{prefix}张数检测={last_voted} 正确，但模型合并总数={last_merged}!=真值{truth_total}"
     if last_voted != truth_total and last_merged != truth_total:
-        return "BOTH_OR_ANIMATION", f"{prefix}张数检测={last_voted}, 模型合并={last_merged}, 真值={truth_total}"
+        return f"{cat_prefix}BOTH_OR_ANIMATION", f"{prefix}张数检测={last_voted}, 模型合并={last_merged}, 真值={truth_total}"
 
     qual_streaks = [
         p["streak"] for p in probes
-        if p["votedPosition"] == p["mergedTotal"] and p["mergedTotal"] is not None
+        if p["votedPosition"] == p["mergedTotal"] and p["mergedTotal"] is not None and p.get("structureValid", True)
     ]
     max_q_streak = max(qual_streaks, default=0)
-    return "NOT_STABLE", f"{prefix}连续稳定次数不足 {hv.HAND_LOCK_STABLE_FRAMES}（max_qualified_streak={max_q_streak}, max_streak={max(streaks, default=0)}）"
+    return f"{cat_prefix}NOT_STABLE", f"{prefix}连续稳定次数不足 {hv.HAND_LOCK_STABLE_FRAMES}（max_qualified_streak={max_q_streak}, max_streak={max(streaks, default=0)}）"
 
 
 def _diagnose_mismatch(
@@ -314,20 +327,26 @@ class HandGameRunner:
             self.skipped_zero_box_frames += 1
             return
         merge = self.hand_merger.add(scene, dets)
-        voted_pos = self.position_voter.add(scene, pos_count)
-        reading = hv.HandReading.from_dict(merge.merged, voted_pos)
+        valid_rows = hv.valid_row_counts(pos_rows)
+        voted_rows = self.position_voter.add(scene, valid_rows)
+        reading = hv.build_hand_reading(merge.merged, merge.slot_detections, voted_rows)
+        voted_pos = reading.position_count
         self.hand_auto_lock.observe(reading, ts_ms=ts_ms)
         self.last_reading_dict = {
             "cards": hv.counts_to_str(merge.merged),
             "mergedTotal": hv.counts_total(merge.merged),
             "votedPosition": voted_pos,
+            "votedRows": list(voted_rows) if voted_rows else None,
+            "structureValid": reading.structure_valid,
         }
         self.probes.append({
             "ts_ms": ts_ms,
             "scene": scene,
             "posRows": list(pos_rows),
             "posCount": pos_count,
+            "votedRows": list(voted_rows) if voted_rows else None,
             "votedPosition": voted_pos,
+            "structureValid": reading.structure_valid,
             "singleTotal": hv.counts_total(merge.single),
             "mergedTotal": hv.counts_total(merge.merged),
             "mergedStr": hv.counts_to_str(merge.merged),
@@ -526,18 +545,23 @@ def write_summary(reports: list[dict], out_dir: Path, version: str) -> None:
         n = len(items)
         if n == 0:
             return {"total": 0}
-        opened = sum(1 for r in items if r["gateOpened"])
-        locked = sum(1 for r in items if r["locked"])
-        locked_exact = sum(1 for r in items if r["lockedAndExact"])
-        qualified_any = sum(1 for r in items if r["locked"] or r["endQualified"])
-        exact_any = sum(1 for r in items if r["evalExact"])
+        with_gate = [r for r in items if r["gateOpened"]]
+        no_gate = [r for r in items if not r["gateOpened"]]
+        opened = len(with_gate)
+        locked = sum(1 for r in with_gate if r["locked"])
+        locked_exact = sum(1 for r in with_gate if r["lockedAndExact"])
+        wrong_lock = locked - locked_exact
+        no_gate_qualified = sum(1 for r in no_gate if r["endQualified"])
+        no_gate_exact = sum(1 for r in no_gate if r["evalExact"])
         return {
             "total": n,
             "gateOpened": opened,
             "locked": locked,
             "lockedAndExact": locked_exact,
-            "qualifiedOrLocked": qualified_any,
-            "exactOrPseudoExact": exact_any,
+            "wrongLock": wrong_lock,
+            "noPlayPhase": len(no_gate),
+            "noPlayPhaseQualified": no_gate_qualified,
+            "noPlayPhaseExact": no_gate_exact,
         }
 
     cat_counts: dict[str, int] = {}
@@ -557,14 +581,14 @@ def write_summary(reports: list[dict], out_dir: Path, version: str) -> None:
     )
 
     lines: list[str] = []
-    lines.append("# 手牌识别手机同口径评测总表 (v0)")
+    lines.append("# 手牌识别手机同口径评测总表")
     lines.append("")
     lines.append(f"- 视觉规则版本：`{version}`")
     lines.append(f"- 评测范围：dev ({sum(1 for r in reports if r['split']=='dev')}) + tuning ({sum(1 for r in reports if r['split']=='tuning')}) + clip ({len(clips)}) = 共 {len(reports)} 局（blind 局已硬排除）")
     lines.append("")
-    lines.append("## 汇总指标（按子集与整体）")
-    lines.append("| 子集 | 局数 | 开局门打开 | 真锁定成功 | 真锁定且全对 | 含未开门拟锁定(合格/全对) |")
-    lines.append("|---|---|---|---|---|---|")
+    lines.append("## 汇总指标（含出牌阶段 vs 片段不含出牌阶段单列）")
+    lines.append("| 子集 | 总局数 | 含出牌阶段 | 真锁定成功(锁定率) | 真锁定全对 | 错锁 | 片段不含出牌阶段 | 拟锁定合格 / 全对 |")
+    lines.append("|---|---|---|---|---|---|---|---|")
     for label, blk in (
         ("dev + tuning", summary_json["dev_tuning"]),
         ("clip", summary_json["clip"]),
@@ -573,11 +597,15 @@ def write_summary(reports: list[dict], out_dir: Path, version: str) -> None:
         n = blk["total"]
         if not n:
             continue
+        go = blk["gateOpened"]
+        lock_pct = f"{blk['locked']*100/go:.1f}%" if go else "-"
+        exact_pct = f"{blk['lockedAndExact']*100/go:.1f}%" if go else "-"
+        np_n = blk["noPlayPhase"]
+        np_pct = f"{blk['noPlayPhaseExact']*100/np_n:.1f}%" if np_n else "-"
         lines.append(
-            f"| {label} | {n} | {blk['gateOpened']}/{n} ({blk['gateOpened']*100/n:.1f}%) | "
-            f"{blk['locked']}/{n} ({blk['locked']*100/n:.1f}%) | "
-            f"{blk['lockedAndExact']}/{n} ({blk['lockedAndExact']*100/n:.1f}%) | "
-            f"{blk['qualifiedOrLocked']}/{n} / {blk['exactOrPseudoExact']}/{n} ({blk['exactOrPseudoExact']*100/n:.1f}%) |"
+            f"| {label} | {n} | {go} | {blk['locked']}/{go} ({lock_pct}) | "
+            f"{blk['lockedAndExact']}/{go} ({exact_pct}) | {blk['wrongLock']} | "
+            f"{np_n} | {blk['noPlayPhaseQualified']}/{np_n} / {blk['noPlayPhaseExact']}/{np_n} ({np_pct}) |"
         )
     lines.append("")
     all_b = summary_json["all"]
@@ -585,9 +613,13 @@ def write_summary(reports: list[dict], out_dir: Path, version: str) -> None:
         go = all_b["gateOpened"]
         lk = all_b["locked"]
         le = all_b["lockedAndExact"]
-        lines.append(f"- 已进入出牌阶段（开局门打开）的 {go} 局中：锁定率 {lk}/{go} ({lk*100/go:.1f}%)，锁定全对率 {le}/{lk} ({le*100/lk:.1f}%)，占已开门局 {le}/{go} ({le*100/go:.1f}%)。")
-        lines.append("- 注：`g075639-1..10` 为半局短片段（在首出前或刚首出即截断，未经历外家出牌圆标）；`g214558-1`、`g145608-1` 为 clip 片段结束前未亮外家圆标。")
-        lines.append("")
+        wl = all_b["wrongLock"]
+        lines.append(f"- **含出牌阶段（开局门打开）的 {go} 局**：锁定率 {lk}/{go} ({lk*100/go:.1f}%)，锁定全对 {le}/{go} ({le*100/go:.1f}%)，错锁 {wl}。")
+    if all_b["noPlayPhase"]:
+        np_n = all_b["noPlayPhase"]
+        np_e = all_b["noPlayPhaseExact"]
+        lines.append(f"- **片段不含出牌阶段（开局门未开）的 {np_n} 局**（不计入锁定率，仅核对片尾拟锁定结果）：拟锁定全对 {np_e}/{np_n} ({np_e*100/np_n:.1f}%)。")
+    lines.append("")
     lines.append("## 结果分类统计")
     lines.append("| 类别 | 局数 |")
     lines.append("|---|---|")

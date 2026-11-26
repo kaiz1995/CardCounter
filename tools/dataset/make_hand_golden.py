@@ -41,8 +41,11 @@ PICKS = [
     ("h08", "g143651-2", 214250, "g143651-2 连续同scene下一帧"),
     ("h09", "g075639-9", 165250, "g075639-9 下排未检出(pos=None, model=34)"),
     ("h10", "g075639-9", 159500, "g075639-9 换牌过渡期"),
-    ("h11", "g145252-1", 15000, "g145252-1 clip 32张带贡牌"),
+    ("h11", "g145252-1", 15000, "g145252-1 clip 32张带贡牌(上下排同宽16+16)"),
     ("h12", "g102658-2", 283250, "g102658-2 34张带贡牌与低把握牌"),
+    ("h13", "g135222-1", 19250, "g135222-1 clip 34张(上下排同宽17+17)"),
+    ("h14", "g145608-1", 11750, "g145608-1 clip 34张(17+17且大王弹起)"),
+    ("h15", "g075639-10", 196250, "g075639-10 Q认成9被独立防线拦住"),
 ]
 
 
@@ -146,8 +149,10 @@ def main() -> None:
         pos_rows, pos_count = hv.detect_hand_positions(masked)
         table_vis = pv.is_table_visible(pv.Screen(masked))
         merge = merger.add(scene, dets_mask)
-        voted_pos = voter.add(scene, pos_count)
-        reading = hv.HandReading.from_dict(merge.merged, voted_pos)
+        valid_rows = hv.valid_row_counts(pos_rows)
+        voted_rows = voter.add(scene, valid_rows)
+        reading = hv.build_hand_reading(merge.merged, merge.slot_detections, voted_rows)
+        voted_pos = reading.position_count
         auto_lock.observe(reading, ts_ms=target_ts)
 
         expected_frames.append({
@@ -175,7 +180,9 @@ def main() -> None:
             "merged": {r: merge.merged[r] for r in ds.RANK_ORDER if merge.merged[r] > 0},
             "merged_frames": merge.frames,
             "merged_fell_back": merge.fell_back,
+            "voted_rows": [voted_rows[0], voted_rows[1]] if voted_rows is not None else None,
             "voted_position": voted_pos,
+            "structure_valid": reading.structure_valid,
             "auto_lock_streak": auto_lock.streak,
             "auto_lock_qualified": (
                 {
