@@ -215,6 +215,8 @@ class CaptureProbeService : Service() {
             projection!!.registerCallback(object : MediaProjection.Callback() {
                 override fun onStop() {
                     Log.w(TAG, "CAPTURE_STOPPED_BY_SYSTEM")
+                    // 用户从系统下拉栏停止投屏后已经没法记牌，悬浮窗和常驻通知一起收掉，不留停在旧数字上的记牌框。
+                    OverlayService.stop(this@CaptureProbeService)
                     stopSelf()
                 }
             }, callbackHandler)
