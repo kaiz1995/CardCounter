@@ -2,6 +2,7 @@ package com.example.cardcounter.capture
 
 import com.example.cardcounter.domain.Rank
 import com.example.cardcounter.domain.RankCounts
+import com.example.cardcounter.domain.SessionPhase
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -265,5 +266,55 @@ class ZoneGateGuardTest {
         assertFalse(fresh.primeExistingTable)
         assertTrue(fresh.checkMidOpen)
         assertFalse(fresh.alreadyInPlay)
+    }
+
+    @Test
+    fun alreadyLockedCoversNewGameResumedConfirmedResumedUnconfirmedAndPaused() {
+        // 新局（未确认且 ACTIVE）：需要跑手牌识别 -> false
+        assertFalse(
+            isHandAlreadyLocked(
+                SessionTrackingReset.onManualNewGame(),
+                handConfirmed = false,
+                phase = SessionPhase.ACTIVE
+            )
+        )
+        assertFalse(
+            isHandAlreadyLocked(
+                SessionTrackingReset.onCaptureStart(resumed = false),
+                handConfirmed = false,
+                phase = SessionPhase.ACTIVE
+            )
+        )
+        // 接着记且已确认：不再跑手牌识别 -> true
+        assertTrue(
+            isHandAlreadyLocked(
+                SessionTrackingReset.onCaptureStart(resumed = true),
+                handConfirmed = true,
+                phase = SessionPhase.ACTIVE
+            )
+        )
+        // 接着记且未确认：也不再空跑手牌识别 -> true
+        assertTrue(
+            isHandAlreadyLocked(
+                SessionTrackingReset.onCaptureStart(resumed = true),
+                handConfirmed = false,
+                phase = SessionPhase.ACTIVE
+            )
+        )
+        // 已停记：不再跑手牌识别 -> true
+        assertTrue(
+            isHandAlreadyLocked(
+                SessionTrackingReset.onCaptureStart(resumed = false),
+                handConfirmed = false,
+                phase = SessionPhase.PAUSED
+            )
+        )
+        assertTrue(
+            isHandAlreadyLocked(
+                SessionTrackingReset.onManualNewGame(),
+                handConfirmed = false,
+                phase = SessionPhase.PAUSED
+            )
+        )
     }
 }

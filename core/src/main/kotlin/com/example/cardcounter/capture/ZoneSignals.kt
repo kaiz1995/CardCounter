@@ -1,5 +1,7 @@
 package com.example.cardcounter.capture
 
+import com.example.cardcounter.domain.SessionPhase
+
 /**
  * 一个出牌区一次采样得到的“轮到他/清桌”信号：
  * - [clearedRose] 本区清桌刚刚从“没清”变成“清了”（上升沿）；空桌期间不会每个采样都为 true；
@@ -98,3 +100,13 @@ data class SessionTrackingReset(
         )
     }
 }
+
+/**
+ * 判断进入本局时手牌是否已视为锁定（无需继续跑手牌识别）：
+ * 接着上一局记（[SessionTrackingReset.alreadyInPlay]）、本局手牌已确认、或账本非 [SessionPhase.ACTIVE]（例如已停记）时返回 true。
+ */
+fun isHandAlreadyLocked(
+    reset: SessionTrackingReset,
+    handConfirmed: Boolean,
+    phase: SessionPhase
+): Boolean = reset.alreadyInPlay || handConfirmed || phase != SessionPhase.ACTIVE

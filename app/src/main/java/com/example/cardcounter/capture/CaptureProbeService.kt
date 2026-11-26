@@ -1019,7 +1019,8 @@ class CaptureProbeService : Service() {
         } else {
             0L
         }
-        val alreadyLocked = reset.alreadyInPlay && sessionLedger.state.handConfirmed
+        val ledgerState = sessionLedger.state
+        val alreadyLocked = isHandAlreadyLocked(reset, ledgerState.handConfirmed, ledgerState.phase)
         resetHandProbe(alreadyLocked)
         lastHandSignature = null
         lastHandSampleAt = 0L
