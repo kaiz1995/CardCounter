@@ -683,8 +683,25 @@ class CaptureProbeService : Service() {
         val detections: List<YoloDetection>
     )
 
+    private fun isCardWhiteColumn(image: Image, canonicalX: Int, top: Int, bottom: Int): Boolean {
+        var whitePixels = 0
+        for (y in top until bottom) {
+            val rgb = pixelRgb(image, canonicalX, y)
+            val red = (rgb shr 16) and 0xff
+            val green = (rgb shr 8) and 0xff
+            val blue = rgb and 0xff
+            if (red >= PLAY_WHITE_LIMIT && green >= PLAY_WHITE_LIMIT && blue >= PLAY_WHITE_LIMIT) {
+                whitePixels++
+                if (whitePixels >= CARD_WHITE_COLUMN_MIN_PIXELS) return true
+            }
+        }
+        return false
+    }
+
     private fun publicPlayBitmap(image: Image, zone: PlayZone): Bitmap {
-        val crop = zone.yoloCrop(1_280, 578)
+        val crop = zone.expandedYoloCrop(1_280, 578) { x, top, bottom ->
+            isCardWhiteColumn(image, x, top, bottom)
+        }
         val left = crop.left
         val top = crop.top
         val width = crop.width
@@ -815,6 +832,7 @@ class CaptureProbeService : Service() {
         private const val RANK_PROBE_INTERVAL_MS = 250L
         private const val PLAY_VISIBILITY_STEP = 8
         private const val PLAY_WHITE_LIMIT = 190
+        private const val CARD_WHITE_COLUMN_MIN_PIXELS = 8
         private const val ROI_SAMPLE_INTERVAL_MS = 50L
         private const val FINALIZE_FRAME_COUNT = 3
         private const val RESTART_TABLE_GRACE_MS = 2_000L
