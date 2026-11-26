@@ -3,6 +3,7 @@ package com.example.cardcounter.ui
 import com.example.cardcounter.capture.HandRegions
 import com.example.cardcounter.capture.PlaySource
 import com.example.cardcounter.capture.PlayZone
+import com.example.cardcounter.capture.TABLE_GREEN_PROBES
 import com.example.cardcounter.capture.TurnBadge
 import com.example.cardcounter.domain.Rank
 import org.junit.Assert.assertEquals
@@ -190,6 +191,29 @@ class OverlayLayoutTest {
     fun controlAndStatusWindowsAreBigEnoughToTouch() {
         listOf(OverlayLayout.handControl, OverlayLayout.handStatus, OverlayLayout.handConfirmedChip).forEach {
             assertTrue("$it 太小", it.width >= OverlayLayout.MIN_TOUCH && it.height >= OverlayLayout.MIN_TOUCH)
+        }
+    }
+
+    @Test
+    fun tableGreenProbesDoNotOverlapOverlayOrPlayZones() {
+        val overlayBoxes = everyBoxOnTheOverlay()
+        val playZones = playZoneRects()
+        TABLE_GREEN_PROBES.forEach { (x, y) ->
+            val probe = OverlayLayout.Rect(x, y, 1, 1)
+            overlayBoxes.forEach { (boxName, box) ->
+                assertFalse(
+                    "牌桌绿布探针点 ($x, $y) 落在了悬浮窗「$boxName」$box 内，" +
+                        "请把这个悬浮窗挪开或调整 PlayZone.TABLE_GREEN_PROBES 坐标",
+                    probe.overlaps(box)
+                )
+            }
+            playZones.forEach { (zoneName, zoneRect) ->
+                assertFalse(
+                    "牌桌绿布探针点 ($x, $y) 落在了出牌区「$zoneName」$zoneRect 内，" +
+                        "请调整 PlayZone.TABLE_GREEN_PROBES 坐标避开出牌区",
+                    probe.overlaps(zoneRect)
+                )
+            }
         }
     }
 }

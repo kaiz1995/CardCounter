@@ -144,6 +144,18 @@ class StablePlayGateTest {
     }
 
     @Test
+    fun tableVisibleToleratesPartialAnimationOcclusion() {
+        assertTrue(isTableVisible { _, _ -> true })
+
+        val threeGreen = TABLE_GREEN_PROBES.take(TABLE_GREEN_MIN_HITS).toSet()
+        assertTrue(isTableVisible { x, y -> (x to y) in threeGreen })
+
+        val twoGreen = TABLE_GREEN_PROBES.take(TABLE_GREEN_MIN_HITS - 1).toSet()
+        assertFalse(isTableVisible { x, y -> (x to y) in twoGreen })
+        assertFalse(isTableVisible { _, _ -> false })
+    }
+
+    @Test
     fun rejectsPublicDetectionAtBottomCropEdge() {
         assertTrue(isPublicRankBand(centerY = 0.50f))
         assertFalse(isPublicRankBand(centerY = 0.97f))

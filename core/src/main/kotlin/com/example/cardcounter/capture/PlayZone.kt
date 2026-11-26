@@ -184,6 +184,22 @@ fun hasVisibleCardArea(whiteSamples: Int, totalSamples: Int): Boolean =
 fun isTableGreen(red: Int, green: Int, blue: Int): Boolean =
     green >= 70 && green - red >= 30 && green - blue >= 10
 
+/** 7 个探针点分布在牌桌四周安全绿布上，避开中央特效动画、所有悬浮窗和出牌区，至少命中 3 个即视为牌桌可见。 */
+val TABLE_GREEN_PROBES: List<Pair<Int, Int>> = listOf(
+    30 to 250,
+    30 to 420,
+    150 to 420,
+    460 to 75,
+    830 to 130,
+    1120 to 420,
+    1200 to 420
+)
+
+const val TABLE_GREEN_MIN_HITS: Int = 3
+
+fun isTableVisible(isGreenAt: (x: Int, y: Int) -> Boolean): Boolean =
+    TABLE_GREEN_PROBES.count { (x, y) -> isGreenAt(x, y) } >= TABLE_GREEN_MIN_HITS
+
 /** 只用于旧模型回放（eval 的 LegacyPipeline）；新模型的框只框点数，手机端不再按纵坐标过滤。 */
 fun isPublicRankBand(centerY: Float): Boolean = centerY < 0.85f
 

@@ -767,11 +767,10 @@ class CaptureProbeService : Service() {
         hasVisibleCardArea(white, samples)
     }
 
-    private fun gameTableVisible(image: Image): Boolean =
-        listOf(500 to 200, 800 to 200).all { (x, y) ->
-            val color = rgb(image, x, y)
-            isTableGreen(color[0], color[1], color[2])
-        }
+    private fun gameTableVisible(image: Image): Boolean = isTableVisible { x, y ->
+        val rgb = pixelRgb(image, x, y)
+        isTableGreen((rgb shr 16) and 0xff, (rgb shr 8) and 0xff, rgb and 0xff)
+    }
 
     /**
      * 重置本局的识别跟踪。
