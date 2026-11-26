@@ -169,14 +169,14 @@ class StablePlayGateTest {
     fun checkDoesNotMutateGateUntilCommitAcceptedIsCalled() {
         val gate = StablePlayGate()
         // 账本拒绝（未调 commitAccepted）：再次检查同一手牌依然放行，不被吞掉。
-        val first = gate.check(PlayZone.TOP, fives)
+        val first = gate.check(PlayZone.TOP, fives, 0L)
         assertTrue(first is PlayGateDecision.Accept)
-        val retry = gate.check(PlayZone.TOP, fives)
+        val retry = gate.check(PlayZone.TOP, fives, 0L)
         assertTrue(retry is PlayGateDecision.Accept)
 
         // 账本接受后提交门控：再交同一手才拦成 EXACT_DUPLICATE。
-        gate.commitAccepted(PlayZone.TOP, fives)
-        val duplicate = gate.check(PlayZone.TOP, fives)
+        gate.commitAccepted(PlayZone.TOP, fives, 0L)
+        val duplicate = gate.check(PlayZone.TOP, fives, 0L)
         assertEquals(PlayGateDecision.Suppressed(PlaySuppressionReason.EXACT_DUPLICATE), duplicate)
     }
 
@@ -192,20 +192,20 @@ class StablePlayGateTest {
         // 没轮到、没清桌时：画面闪一下补全认出 3 张 4 或漏成 1 张 4，不能再扣一次。
         assertEquals(
             PlayGateDecision.Suppressed(PlaySuppressionReason.SUBSET_OR_SUPERSET),
-            gate.check(PlayZone.LEFT_BOTTOM, threeFours)
+            gate.check(PlayZone.LEFT_BOTTOM, threeFours, 0L)
         )
         assertEquals(
             PlayGateDecision.Suppressed(PlaySuppressionReason.SUBSET_OR_SUPERSET),
-            gate.check(PlayZone.LEFT_BOTTOM, oneFour)
+            gate.check(PlayZone.LEFT_BOTTOM, oneFour, 0L)
         )
         assertEquals(
             PlayGateDecision.Suppressed(PlaySuppressionReason.SUBSET_OR_SUPERSET),
-            gate.check(PlayZone.LEFT_BOTTOM, threeFoursWithJoker)
+            gate.check(PlayZone.LEFT_BOTTOM, threeFoursWithJoker, 0L)
         )
 
         // 主点数不同时放行（例如别人直接用 5 压上）。
         val five = RankCounts.of(mapOf(Rank.FIVE to 2))
-        assertTrue(gate.check(PlayZone.LEFT_BOTTOM, five) is PlayGateDecision.Accept)
+        assertTrue(gate.check(PlayZone.LEFT_BOTTOM, five, 0L) is PlayGateDecision.Accept)
     }
 
     @Test
@@ -216,31 +216,38 @@ class StablePlayGateTest {
         assertEquals(StablePlay(PlayZone.TOP, fourTwo), gate.accept(PlayZone.TOP, fourTwo))
 
         // 仅其他座位入账但本区牌尚未清走：防止桌面未收走的旧牌因闪烁重扣，仍不解锁。
-        gate.commitAccepted(PlayZone.RIGHT_TOP, RankCounts.of(mapOf(Rank.KING to 1)))
+        gate.commitAccepted(PlayZone.RIGHT_TOP, RankCounts.of(mapOf(Rank.KING to 1)), 0L)
         assertEquals(
             PlayGateDecision.Suppressed(PlaySuppressionReason.EXACT_DUPLICATE),
-            gate.check(PlayZone.TOP, fourTwo)
+            gate.check(PlayZone.TOP, fourTwo, 0L)
         )
 
-        // 本区清桌后即可解锁（即使圆标漏判，也不吞下一手同牌或同主牌）。
+        // 本区之后才清桌：只记清桌，不凭之前的他座入账解锁（旧牌被特效遮挡闪空一下不能解锁）。
         gate.noteZoneCleared(PlayZone.TOP)
-        assertTrue(gate.check(PlayZone.TOP, fourTwo) is PlayGateDecision.Accept)
-        assertTrue(gate.check(PlayZone.TOP, fourThree) is PlayGateDecision.Accept)
+        assertEquals(
+            PlayGateDecision.Suppressed(PlaySuppressionReason.EXACT_DUPLICATE),
+            gate.check(PlayZone.TOP, fourTwo, 0L)
+        )
+
+        // 清桌之后别家再入账：解锁，同牌或同主牌都算新的一手。
+        gate.commitAccepted(PlayZone.LEFT_TOP, RankCounts.of(mapOf(Rank.ACE to 1)), 0L)
+        assertTrue(gate.check(PlayZone.TOP, fourTwo, 0L) is PlayGateDecision.Accept)
+        assertTrue(gate.check(PlayZone.TOP, fourThree, 0L) is PlayGateDecision.Accept)
 
         // 另一种顺序：先清桌、后别家入账，同样解锁。
-        gate.commitAccepted(PlayZone.TOP, fourTwo)
+        gate.commitAccepted(PlayZone.TOP, fourTwo, 0L)
         gate.noteZoneCleared(PlayZone.TOP)
         assertEquals(
             PlayGateDecision.Suppressed(PlaySuppressionReason.EXACT_DUPLICATE),
-            gate.check(PlayZone.TOP, fourTwo)
+            gate.check(PlayZone.TOP, fourTwo, 0L)
         )
-        gate.commitAccepted(PlayZone.LEFT_TOP, RankCounts.of(mapOf(Rank.ACE to 1)))
-        assertTrue(gate.check(PlayZone.TOP, fourTwo) is PlayGateDecision.Accept)
+        gate.commitAccepted(PlayZone.RIGHT_BOTTOM, RankCounts.of(mapOf(Rank.ACE to 1)), 0L)
+        assertTrue(gate.check(PlayZone.TOP, fourTwo, 0L) is PlayGateDecision.Accept)
 
         // 本区独立经历 >= 1.5s 长清桌（即使没有别家入账）：也解锁。
-        gate.commitAccepted(PlayZone.TOP, fourTwo)
+        gate.commitAccepted(PlayZone.TOP, fourTwo, 0L)
         gate.noteLongClear(PlayZone.TOP)
-        assertTrue(gate.check(PlayZone.TOP, fourTwo) is PlayGateDecision.Accept)
+        assertTrue(gate.check(PlayZone.TOP, fourTwo, 0L) is PlayGateDecision.Accept)
     }
 
     @Test
@@ -329,7 +336,7 @@ class StablePlayGateTest {
 
         gate.reset(alreadyInPlay = false)
         assertFalse(gate.isReady(handConfirmed = false))
-        gate.onOutsideTurnBadge(true)
+        gate.onOutsideTurn(turned = true, nowMs = 0L, isOnTable = { false })
         assertTrue(gate.isReady(handConfirmed = false))
     }
 }

@@ -36,14 +36,22 @@ data class HandPanelStatus(
 )
 
 /**
+ * 一次确认没成的提示（被拒、草稿刚刷新等）。只对当时的草稿版本有效：草稿一变（后台识别刷新或用户改动）就作废，
+ * 不会盖住新草稿自己的原因。
+ */
+data class RejectNote(val text: String, val draftVersion: Long) {
+    fun visibleFor(draft: HandDraft): String? = text.takeIf { draft.version == draftVersion }
+}
+
+/**
  * 面板状态的唯一出处。
  * 优先级：中途打开不记 > 停记 > 已确认 > 编辑中。
- * [rejectReason] 是上一次确认被拒的原因，手牌保持未确认，用户改动后由调用方清掉。
+ * 编辑中的提示：草稿自己不能确认的原因（[HandDraft.blockReason]）优先，其次是 [rejectNote]（仍对当前草稿版本有效时），最后是草稿的提醒。
  */
 fun handPanelStatus(
     state: GameState,
     draft: HandDraft,
-    rejectReason: String?,
+    rejectNote: RejectNote?,
     skipped: Boolean
 ): HandPanelStatus {
     val confirmedHand = state.selfHand
@@ -91,7 +99,27 @@ fun handPanelStatus(
             mismatch = draft.mismatch,
             canEdit = true,
             canConfirm = draft.canConfirm,
-            message = rejectReason ?: draft.blockReason ?: draft.warning
+            message = draft.blockReason ?: rejectNote?.visibleFor(draft) ?: draft.warning
         )
     }
+}
+
+/** 停记面板上的按钮。 */
+enum class PausedAction {
+    /** 只恢复记牌，不撤销。 */
+    RESUME,
+
+    /** 先撤销最近一手外面出牌再恢复。 */
+    REVERT_AND_RESUME
+}
+
+/**
+ * 停记时面板上要放的按钮，从上到下的顺序。永远有 [PausedAction.RESUME]：确认手牌引起的停记，
+ * 外面刚记的出牌是对的，只能继续、不能撤；有可撤的外面出牌时再多一个 [PausedAction.REVERT_AND_RESUME]。
+ * 不是停记状态返回空列表。
+ */
+fun pausedActions(status: HandPanelStatus): List<PausedAction> = when {
+    status.mode != HandPanelMode.PAUSED -> emptyList()
+    status.canRevertLastOutsidePlay -> listOf(PausedAction.REVERT_AND_RESUME, PausedAction.RESUME)
+    else -> listOf(PausedAction.RESUME)
 }

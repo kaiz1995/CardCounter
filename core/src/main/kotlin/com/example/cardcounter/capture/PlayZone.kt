@@ -74,32 +74,34 @@ sealed interface PlayGateDecision {
 }
 
 /**
- * 去重门：每区记“上一次入账的牌”和“入账后是否已解锁下一手”。
+ * 去重门：每区记“上一次入账的牌”“入账时间”和“入账后是否已解锁下一手”。
  * 1. 先调用 [check] 判断是否放行（不修改状态）；只有账本真正 Accepted 后才调用 [commitAccepted] 更新状态，
- *    避免账本拒绝（Rejected/Paused）后门控状态失真吞掉后续合法出牌。
+ *    避免账本拒绝（Rejected/Paused）后门控状态失真吞掉后续合法出牌。check / commitAccepted 都带时间戳（毫秒，同一时钟）。
  * 2. 未解锁（没轮到过这一家、没真正长清桌、也没经清桌+他座出牌）时：
- *    - 与上一手完全相同：判 [PlaySuppressionReason.EXACT_DUPLICATE]；
- *    - 与上一手主点数相同且互为子集或超集（例如漏掉边缘牌重认补全）：判 [PlaySuppressionReason.SUBSET_OR_SUPERSET]；
+ *    - 与上一手完全相同：判 [PlaySuppressionReason.EXACT_DUPLICATE]，不限时间；
+ *    - 与上一手主点数相同且互为子集或超集（例如漏掉边缘牌重认补全）：只在上次入账后 [SUBSET_WINDOW_MS] 内
+ *      判 [PlaySuppressionReason.SUBSET_OR_SUPERSET]。超出时间窗就不再是“同一手补全重认”，
+ *      而是挂王没人要、旧牌没收走就盖牌续出同主点数的新一手，必须放行；
  *    - 只有主点数不同的全新牌（例如挂王后直接盖牌）才放行。
  * 3. 解锁条件（共用同一解锁状态）：
  *    - 本区“出牌”圆标确认轮到这一家（[noteTurn]）；
  *    - 本区经历过一次真实的长清桌（连续空桌 >= 1.5s，[noteLongClear]）；
- *    - 别的座位有新的出牌入账，且本区自上次入账后已经清空过（[noteZoneCleared] + [commitAccepted]），
- *      防止未清桌的旧牌因动画闪烁重新停稳而重扣。
+ *    - 本区已经清桌（[noteZoneCleared]）之后，别的座位有新的出牌入账（[commitAccepted]）。
+ *      顺序不能反：本区还没清桌时别的座位入账不算，否则旧牌被特效遮挡闪空一下就会解锁，旧牌重现被重扣。
  * 清桌不清“上一次入账的牌”；只有 [reset]（新局）全清，[noteReverted] 仅清理被撤销座位的记录。
  */
 class StablePlayGate {
     private class ZoneState {
         var accepted: RankCounts? = null
+        var acceptedAtMs = 0L
         var unlockedSinceAccept = false
         var clearedSinceAccept = false
-        var otherSeatAcceptedSinceAccept = false
     }
 
     private val states = PlayZone.entries.associateWith { ZoneState() }
 
     /** 只判断不修改状态；供提交账本前使用。 */
-    fun check(zone: PlayZone, cards: RankCounts): PlayGateDecision {
+    fun check(zone: PlayZone, cards: RankCounts, timestampMs: Long): PlayGateDecision {
         if (cards.total() == 0) return PlayGateDecision.Suppressed(PlaySuppressionReason.EMPTY)
         val state = states.getValue(zone)
         val previous = state.accepted
@@ -107,7 +109,9 @@ class StablePlayGate {
             if (previous == cards) {
                 return PlayGateDecision.Suppressed(PlaySuppressionReason.EXACT_DUPLICATE)
             }
-            if (isSameMainRankSubsetOrSuperset(previous, cards)) {
+            if (timestampMs - state.acceptedAtMs <= SUBSET_WINDOW_MS &&
+                isSameMainRankSubsetOrSuperset(previous, cards)
+            ) {
                 return PlayGateDecision.Suppressed(PlaySuppressionReason.SUBSET_OR_SUPERSET)
             }
         }
@@ -115,33 +119,33 @@ class StablePlayGate {
     }
 
     /** 账本真正接受（Accepted）之后再更新门控状态，同时给已清桌的其他座位解锁。 */
-    fun commitAccepted(zone: PlayZone, cards: RankCounts) {
+    fun commitAccepted(zone: PlayZone, cards: RankCounts, timestampMs: Long) {
         if (cards.total() == 0) return
         val current = states.getValue(zone)
         current.accepted = cards
+        current.acceptedAtMs = timestampMs
         current.unlockedSinceAccept = false
         current.clearedSinceAccept = false
-        current.otherSeatAcceptedSinceAccept = false
         if (zone.source == PlaySource.OUTSIDE) {
             states.forEach { (otherZone, otherState) ->
-                if (otherZone != zone && otherZone.source == PlaySource.OUTSIDE && otherState.accepted != null) {
-                    otherState.otherSeatAcceptedSinceAccept = true
-                    if (otherState.clearedSinceAccept) {
-                        otherState.unlockedSinceAccept = true
-                    }
+                if (otherZone != zone && otherZone.source == PlaySource.OUTSIDE &&
+                    otherState.accepted != null && otherState.clearedSinceAccept
+                ) {
+                    otherState.unlockedSinceAccept = true
                 }
             }
         }
     }
 
     /** 便捷方法：检查并立即提交（单测及不区分 Rejected 的简单调用）。 */
-    fun accept(zone: PlayZone, cards: RankCounts): StablePlay? = when (val decision = check(zone, cards)) {
-        is PlayGateDecision.Accept -> {
-            commitAccepted(zone, cards)
-            decision.play
+    fun accept(zone: PlayZone, cards: RankCounts, timestampMs: Long = 0L): StablePlay? =
+        when (val decision = check(zone, cards, timestampMs)) {
+            is PlayGateDecision.Accept -> {
+                commitAccepted(zone, cards, timestampMs)
+                decision.play
+            }
+            is PlayGateDecision.Suppressed -> null
         }
-        is PlayGateDecision.Suppressed -> null
-    }
 
     /** 这一区的玩家轮到过了（见 [TurnTracker]）：之后再出一样的牌也算新的一手。 */
     fun noteTurn(zone: PlayZone) {
@@ -155,14 +159,14 @@ class StablePlayGate {
         state.unlockedSinceAccept = true
     }
 
-    /** 本区经历过常规清桌（牌已从桌面收走）：若期间已有其他座位入账，则立即解锁本区。 */
+    /**
+     * 本区经历过常规清桌（牌已从桌面收走）：只记下已清桌，不解锁。
+     * 之后别的座位入账（[commitAccepted]）才会解锁本区；清桌之前的他座入账不算。
+     */
     fun noteZoneCleared(zone: PlayZone) {
         val state = states.getValue(zone)
         if (state.accepted == null) return
         state.clearedSinceAccept = true
-        if (state.otherSeatAcceptedSinceAccept) {
-            state.unlockedSinceAccept = true
-        }
     }
 
     /** 人工撤销某座位的一手出牌后，清空该区上次入账记忆，避免错误记忆继续拦截后续出牌。 */
@@ -170,9 +174,9 @@ class StablePlayGate {
         PlayZone.entries.filter { it.seat == seat }.forEach { zone ->
             states.getValue(zone).apply {
                 accepted = null
+                acceptedAtMs = 0L
                 unlockedSinceAccept = false
                 clearedSinceAccept = false
-                otherSeatAcceptedSinceAccept = false
             }
         }
     }
@@ -180,10 +184,40 @@ class StablePlayGate {
     fun reset() {
         states.values.forEach {
             it.accepted = null
+            it.acceptedAtMs = 0L
             it.unlockedSinceAccept = false
             it.clearedSinceAccept = false
-            it.otherSeatAcceptedSinceAccept = false
         }
+    }
+
+    companion object {
+        /**
+         * 子集/超集拦截只在上次入账后这么久内生效：用来拦同一手牌画面闪一下后补全或漏牌的重认
+         * （重新停稳要 15 次采样约 0.75 秒，加识别耗时，1.5 秒内）。超出就放行：旧牌没收走、
+         * 挂王没人要时直接盖上同主点数（或纯配牌）的新一手，不能被永久当成重认拦掉。
+         */
+        const val SUBSET_WINDOW_MS = 1_500L
+    }
+}
+
+/**
+ * 清桌上升沿：[RoiPlayEventCache.isCleared] 在整段空桌期间一直是 true，只在由 false 变 true 的那一次告诉去重门，
+ * 空桌期间不要每个采样都投递（旧的投递会排在新一手入账之后，把新一手的清桌标志误置）。手机和电脑评测共用。
+ */
+class ZoneClearEdge {
+    private val last = BooleanArray(PlayZone.entries.size)
+
+    /** [cleared] 是这一区这一次采样的清桌状态；返回 true 表示刚刚从没清桌变成清桌。 */
+    @Synchronized
+    fun rose(zone: PlayZone, cleared: Boolean): Boolean {
+        val before = last[zone.ordinal]
+        last[zone.ordinal] = cleared
+        return cleared && !before
+    }
+
+    @Synchronized
+    fun reset() {
+        last.fill(false)
     }
 }
 
@@ -349,24 +383,71 @@ fun shouldSkipOpenedGame(handConfirmed: Boolean, outsidePlayedCount: Int, visibl
 
 /**
  * 开局换牌期（发牌、交贡、还贡、买三买四、宣点）门控：
- * 直到（1）手牌已确认，或（2）见过至少一次任意 OUTSIDE 区的“出牌”倒计时圆标，
- * 才认为已进入正式出牌阶段。不采信 SELF 圆标，因为宣点阶段中央红底“宣”按钮位于 SELF 圆标位会误触发。
+ * 直到（1）手牌已确认，或（2）任意 OUTSIDE 区的“出牌”圆标被 [TurnTracker] 连续帧确认轮到他（[onOutsideTurn]），
+ * 才认为已进入正式出牌阶段。不能只看单帧圆标颜色：换牌期特效闪一帧红黄像素就会永久放行；
+ * 也不采信 SELF 圆标，因为宣点阶段中央红底“宣”按钮位于 SELF 圆标位会误触发。
+ *
+ * 首出的牌如果在门控打开前被丢掉（[notePrePlaySkipped]，常见于首出圆标漏判、下家圆标先亮），
+ * 门控由圆标打开时会把仍摆在桌上、门控打开前 [RETRY_WINDOW_MS] 内交出的那几手交还给调用方补记，
+ * 补记仍走去重门和规则校验。因确认手牌打开门控时不补记：确认手牌常发生在换牌期，桌上可能是交贡展示牌。
+ * 本区清桌（[noteZoneCleared]）后，这一区被丢的牌不再补记。
  */
 class OpeningPlayGate {
-    @Volatile
-    private var enteredPlayPhase = false
+    /** 门控打开前被丢掉的一手：出牌区、点数和丢掉的时间（毫秒，与调用方其余时间同一时钟）。 */
+    data class SkippedPlay(val zone: PlayZone, val cards: RankCounts, val atMs: Long)
 
+    private var enteredPlayPhase = false
+    private val skipped = HashMap<PlayZone, SkippedPlay>()
+
+    /** [alreadyInPlay]：接着上一局记，本局已经在出牌阶段。新局重置为 false，换牌期重新拦。 */
+    @Synchronized
     fun reset(alreadyInPlay: Boolean) {
         enteredPlayPhase = alreadyInPlay
+        skipped.clear()
     }
 
-    fun onOutsideTurnBadge(shown: Boolean) {
-        if (shown) enteredPlayPhase = true
+    /**
+     * 某个 OUTSIDE 区的“出牌”圆标被连续帧确认（[TurnUpdate.turned]）。
+     * 这一次刚好把门控打开时，返回要补记的那几手（按丢掉的先后）；其余情况返回空列表。
+     * [isOnTable]：这一区牌现在还摆在桌上。
+     */
+    @Synchronized
+    fun onOutsideTurn(turned: Boolean, nowMs: Long, isOnTable: (PlayZone) -> Boolean): List<SkippedPlay> {
+        if (!turned || enteredPlayPhase) return emptyList()
+        enteredPlayPhase = true
+        val retries = skipped.values
+            .filter { nowMs - it.atMs <= RETRY_WINDOW_MS && isOnTable(it.zone) }
+            .sortedBy { it.atMs }
+        skipped.clear()
+        return retries
     }
 
+    @Synchronized
     fun isReady(handConfirmed: Boolean): Boolean {
-        if (handConfirmed) enteredPlayPhase = true
+        if (handConfirmed && !enteredPlayPhase) {
+            enteredPlayPhase = true
+            // 因确认手牌打开：换牌期桌上可能是交贡展示牌，丢掉的不补记。
+            skipped.clear()
+        }
         return enteredPlayPhase
+    }
+
+    /** 门控还没打开时丢掉了这一区的一手；同一区只记最近一手。 */
+    @Synchronized
+    fun notePrePlaySkipped(zone: PlayZone, cards: RankCounts, atMs: Long) {
+        if (enteredPlayPhase) return
+        skipped[zone] = SkippedPlay(zone, cards, atMs)
+    }
+
+    /** 这一区清桌了：牌已经收走，丢掉的那手不再补记。 */
+    @Synchronized
+    fun noteZoneCleared(zone: PlayZone) {
+        skipped.remove(zone)
+    }
+
+    companion object {
+        /** 补记只认门控打开前这么久内交出的手。 */
+        const val RETRY_WINDOW_MS = 8_000L
     }
 }
 

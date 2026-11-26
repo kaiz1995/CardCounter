@@ -16,6 +16,7 @@ class OnnxRankDetector(context: Context) : Closeable {
     private val environment: OrtEnvironment = OrtEnvironment.getEnvironment()
     private val session: OrtSession
     private val inputName: String
+    private val guard = SessionGuard()
 
     init {
         val modelBytes = context.assets.open(MODEL_ASSET).use { it.readBytes() }
@@ -33,8 +34,10 @@ class OnnxRankDetector(context: Context) : Closeable {
      * 输入是已经摆好的画布：出牌区是 320×320（letterbox），手牌是 870×870 手牌画布。
      * 不是 320 见方时用 [ScreenScale.resizeLinear] 缩，和训练端的双线性逐像素一致（不用系统的 createScaledBitmap）。
      */
-    @Synchronized
-    fun detect(bitmap: Bitmap): List<YoloDetection> {
+    fun detect(bitmap: Bitmap): List<YoloDetection> =
+        guard.runIfOpen(emptyList<YoloDetection>()) { detectLocked(bitmap) }
+
+    private fun detectLocked(bitmap: Bitmap): List<YoloDetection> {
         val size = RankModelContract.INPUT_SIZE
         val source = IntArray(bitmap.width * bitmap.height)
         bitmap.getPixels(source, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
@@ -59,8 +62,9 @@ class OnnxRankDetector(context: Context) : Closeable {
         }
     }
 
+    /** 等进行中的这一次推理跑完再关会话；关了之后 [detect] 直接返回空列表。 */
     override fun close() {
-        session.close()
+        guard.close { session.close() }
     }
 
     companion object {

@@ -10,6 +10,8 @@ import android.view.MotionEvent
 import android.view.View
 import com.example.cardcounter.domain.HandPanelMode
 import com.example.cardcounter.domain.HandPanelStatus
+import com.example.cardcounter.domain.PausedAction
+import com.example.cardcounter.domain.pausedActions
 import com.example.cardcounter.domain.Rank
 
 /**
@@ -32,7 +34,7 @@ class HandPanelView(
         fun toggleAddMode()
         fun confirm()
         fun toggleExpanded()
-        fun undoAndResume()
+        fun resume(revertLast: Boolean)
     }
 
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -86,7 +88,14 @@ class HandPanelView(
                     1 -> if (current.canEdit) actions.toggleAddMode()
                     2 -> if (current.canConfirm) actions.confirm()
                 }
-                HandPanelMode.PAUSED -> if (y >= PAUSE_BUTTON_TOP) actions.undoAndResume()
+                HandPanelMode.PAUSED -> {
+                    val buttons = pausedActions(current)
+                    val top = rect.height - PAUSE_BUTTON_HEIGHT * buttons.size
+                    if (buttons.isNotEmpty() && y >= top) {
+                        val index = ((y - top) / PAUSE_BUTTON_HEIGHT).toInt().coerceIn(0, buttons.size - 1)
+                        actions.resume(revertLast = buttons[index] == PausedAction.REVERT_AND_RESUME)
+                    }
+                }
                 else -> Unit
             }
             Kind.STATUS -> if (current.mode == HandPanelMode.CONFIRMED) actions.toggleExpanded()
@@ -157,24 +166,30 @@ class HandPanelView(
 
     private fun drawPausedControl(canvas: Canvas, s: HandPanelStatus) {
         val w = rect.width.toFloat()
-        val h = rect.height.toFloat()
-        fillBox(canvas, 0f, 0f, w, PAUSE_BUTTON_TOP, COLOR_FRAME)
-        val explanation = if (s.canRevertLastOutsidePlay) {
-            "记牌暂停：刚记的这一手和已知牌数对不上。点「撤销这一手」会去掉刚记的那一手并继续记牌"
+        val buttons = pausedActions(s)
+        val top = rect.height - PAUSE_BUTTON_HEIGHT * buttons.size
+        fillBox(canvas, 0f, 0f, w, top, COLOR_FRAME)
+        val explanation = if (buttons.size > 1) {
+            "记牌暂停：和库存对不上。可撤销最近一手，或直接继续"
         } else {
-            "记牌暂停：没有可撤销的外面出牌。点「继续记牌」会恢复记牌，或长按「重置」开新局"
+            "记牌暂停：没有可撤销的外面出牌，点继续记牌恢复"
         }
         paint.textSize = 14f
-        var y = 6f
-        wrap(explanation, w - 12f).take(5).forEach { line ->
+        var y = 3f
+        wrap(explanation, w - 12f).take(PAUSE_MAX_LINES).forEach { line ->
             drawLabel(canvas, line, w / 2f, y + PAUSE_LINE_HEIGHT / 2f, 14f, COLOR_EDITED)
             y += PAUSE_LINE_HEIGHT
         }
-        fillBox(canvas, 0f, PAUSE_BUTTON_TOP, w, h - PAUSE_BUTTON_TOP, COLOR_OK)
-        val title = if (s.canRevertLastOutsidePlay) "撤销这一手" else "继续记牌"
-        val subtitle = if (s.canRevertLastOutsidePlay) "去掉刚记的一手并继续" else "恢复继续记牌"
-        drawLabel(canvas, title, w / 2f, PAUSE_BUTTON_TOP + 24f, 21f, COLOR_TEXT)
-        drawLabel(canvas, subtitle, w / 2f, PAUSE_BUTTON_TOP + 50f, 13f, COLOR_TEXT)
+        buttons.forEachIndexed { index, action ->
+            val boxTop = top + PAUSE_BUTTON_HEIGHT * index
+            fillBox(canvas, 0f, boxTop, w, PAUSE_BUTTON_HEIGHT, if (index == 0) COLOR_OK else COLOR_HEADER)
+            val (title, subtitle) = when (action) {
+                PausedAction.REVERT_AND_RESUME -> "撤销这一手" to "去掉刚记的一手并继续"
+                PausedAction.RESUME -> "继续记牌" to "不撤销，直接继续"
+            }
+            drawLabel(canvas, title, w / 2f, boxTop + 22f, 21f, COLOR_TEXT)
+            drawLabel(canvas, subtitle, w / 2f, boxTop + 46f, 13f, COLOR_TEXT)
+        }
     }
 
     private fun drawStatus(canvas: Canvas, s: HandPanelStatus) {
@@ -253,8 +268,9 @@ class HandPanelView(
         const val ROW_HEIGHT = 60f
         const val HEADER_HEIGHT = 24f
         const val LINE_HEIGHT = 22f
-        const val PAUSE_BUTTON_TOP = 112f
-        const val PAUSE_LINE_HEIGHT = 19f
+        const val PAUSE_BUTTON_HEIGHT = 60f
+        const val PAUSE_LINE_HEIGHT = 18f
+        const val PAUSE_MAX_LINES = 3
         val COLOR_FRAME = Color.rgb(9, 10, 11)
         val COLOR_HEADER = Color.rgb(59, 62, 64)
         val COLOR_VALUE = Color.rgb(53, 56, 58)

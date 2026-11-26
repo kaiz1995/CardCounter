@@ -26,6 +26,7 @@ import com.example.cardcounter.capture.CaptureProbeService
 import com.example.cardcounter.capture.HandPanelState
 import com.example.cardcounter.domain.HandPanelMode
 import com.example.cardcounter.domain.Rank
+import com.example.cardcounter.domain.resumePlan
 import com.example.cardcounter.persistence.SessionRepository
 import com.example.cardcounter.storage.LedgerCommand
 import com.example.cardcounter.storage.SessionActor
@@ -160,7 +161,7 @@ class OverlayService : Service(), HandPanelView.Actions {
 
     override fun adjust(rank: Rank, delta: Int) {
         HandPanelState.draft.adjust(rank, delta)
-        HandPanelState.rejectReason = null
+        HandPanelState.rejectNote = null
         renderAll()
     }
 
@@ -178,19 +179,21 @@ class OverlayService : Service(), HandPanelView.Actions {
         renderAll()
     }
 
-    override fun undoAndResume() {
-        if (CaptureProbeService.revertLastAndResume(this)) return
-        // 截屏服务没在运行时，由独立单写者安全兜底执行撤销并恢复。
+    override fun resume(revertLast: Boolean) {
+        if (CaptureProbeService.resume(this, revertLast)) return
+        // 截屏服务没在运行时，由独立单写者安全兜底执行；和服务里一样，只有账本正处于停记才做。
         val repository = SessionRepository.get(this)
-        val actor = SessionActor(repository)
-        try {
-            repository.state.lastUnrevertedOutsidePlay()?.let { lastPlay ->
-                actor.post(LedgerCommand.Revert(lastPlay.id))
+        val plan = resumePlan(repository.state, revertLast)
+        if (plan != null) {
+            val actor = SessionActor(repository)
+            try {
+                plan.revertTarget?.let { actor.post(LedgerCommand.Revert(it.id)) }
+                actor.post(LedgerCommand.Resume)
+            } finally {
+                actor.shutdown()
             }
-            actor.post(LedgerCommand.Resume)
-        } finally {
-            actor.shutdown()
         }
+        HandPanelState.rejectNote = null
         renderAll()
     }
 

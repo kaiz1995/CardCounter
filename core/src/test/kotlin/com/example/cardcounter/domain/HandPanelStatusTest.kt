@@ -19,7 +19,7 @@ class HandPanelStatusTest {
     @Test
     fun editingShowsDraftAndMarksHandUnconfirmed() {
         val draft = HandDraft().refresh(counts(Rank.ACE to 2), 2)
-        val status = handPanelStatus(newState(), draft, rejectReason = null, skipped = false)
+        val status = handPanelStatus(newState(), draft, rejectNote = null, skipped = false)
 
         assertEquals(HandPanelMode.EDITING, status.mode)
         assertTrue(status.handUnconfirmed)
@@ -34,7 +34,7 @@ class HandPanelStatusTest {
     @Test
     fun editingMismatchBlocksConfirmAndExplainsWhy() {
         val draft = HandDraft().refresh(counts(Rank.ACE to 2), 3)
-        val status = handPanelStatus(newState(), draft, rejectReason = null, skipped = false)
+        val status = handPanelStatus(newState(), draft, rejectNote = null, skipped = false)
 
         assertFalse(status.canConfirm)
         assertTrue(status.mismatch)
@@ -45,7 +45,7 @@ class HandPanelStatusTest {
     @Test
     fun editedMismatchStaysConfirmableAndShowsWarning() {
         val draft = HandDraft().refresh(counts(Rank.ACE to 2), 3).adjust(Rank.KING, +2)
-        val status = handPanelStatus(newState(), draft, rejectReason = null, skipped = false)
+        val status = handPanelStatus(newState(), draft, rejectNote = null, skipped = false)
 
         assertTrue(status.canConfirm)
         assertTrue(status.mismatch)
@@ -64,7 +64,7 @@ class HandPanelStatusTest {
     @Test
     fun rejectReasonStaysVisibleAndHandStaysEditable() {
         val draft = HandDraft().refresh(counts(Rank.ACE to 2), 2)
-        val status = handPanelStatus(newState(), draft, rejectReason = "本局手牌已确认，不能修改", skipped = false)
+        val status = handPanelStatus(newState(), draft, rejectNote = RejectNote("本局手牌已确认，不能修改", draft.version), skipped = false)
 
         assertEquals(HandPanelMode.EDITING, status.mode)
         assertTrue(status.canEdit)
@@ -75,7 +75,7 @@ class HandPanelStatusTest {
     fun confirmedHandIsReadOnlyAndShowsTheConfirmedCards() {
         val hand = counts(Rank.ACE to 2, Rank.KING to 1)
         val draft = HandDraft().refresh(counts(Rank.QUEEN to 9), 9)
-        val status = handPanelStatus(confirmed(hand), draft, rejectReason = null, skipped = false)
+        val status = handPanelStatus(confirmed(hand), draft, rejectNote = null, skipped = false)
 
         assertEquals(HandPanelMode.CONFIRMED, status.mode)
         assertFalse(status.handUnconfirmed)
@@ -90,7 +90,7 @@ class HandPanelStatusTest {
         val paused = (GameReducer.apply(newState(), GameEvent.SessionPaused(PauseReason.CONSERVATION_FAILURE))
             as DispatchResult.Accepted).state
         val draft = HandDraft().refresh(counts(Rank.ACE to 2), 2)
-        val status = handPanelStatus(paused, draft, rejectReason = null, skipped = false)
+        val status = handPanelStatus(paused, draft, rejectNote = null, skipped = false)
 
         assertEquals(HandPanelMode.PAUSED, status.mode)
         assertFalse(status.canEdit)
@@ -103,13 +103,13 @@ class HandPanelStatusTest {
             as DispatchResult.Accepted).state
         val pausedWithPlay = (GameReducer.apply(withPlay, GameEvent.SessionPaused(PauseReason.CONSERVATION_FAILURE))
             as DispatchResult.Accepted).state
-        assertTrue(handPanelStatus(pausedWithPlay, draft, rejectReason = null, skipped = false).canRevertLastOutsidePlay)
+        assertTrue(handPanelStatus(pausedWithPlay, draft, rejectNote = null, skipped = false).canRevertLastOutsidePlay)
     }
 
     @Test
     fun openedMidGameIsSkippedEvenIfHandLooksFine() {
         val draft = HandDraft().refresh(counts(Rank.ACE to 2), 2)
-        val status = handPanelStatus(newState(), draft, rejectReason = null, skipped = true)
+        val status = handPanelStatus(newState(), draft, rejectNote = null, skipped = true)
 
         assertEquals(HandPanelMode.SKIPPED, status.mode)
         assertFalse(status.canEdit)

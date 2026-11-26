@@ -3,6 +3,7 @@ package com.example.cardcounter.capture
 import com.example.cardcounter.domain.GameState
 import com.example.cardcounter.domain.HandDraftHolder
 import com.example.cardcounter.domain.HandPanelStatus
+import com.example.cardcounter.domain.RejectNote
 import com.example.cardcounter.domain.handPanelStatus
 
 /**
@@ -12,9 +13,9 @@ import com.example.cardcounter.domain.handPanelStatus
 object HandPanelState {
     val draft = HandDraftHolder()
 
-    /** 上一次确认被拒的原因；手牌保持未确认，用户再改动、确认成功或新局时清掉。 */
+    /** 上一次确认没成的提示（被拒、草稿刚刷新）：只对记下它的草稿版本有效，草稿一变就作废；新局时清掉。 */
     @Volatile
-    var rejectReason: String? = null
+    var rejectNote: RejectNote? = null
 
     /** 中途打开，本局不记。 */
     @Volatile
@@ -31,12 +32,12 @@ object HandPanelState {
 
     /** [snapshot] 由调用方一次取好：悬浮窗要让显示的状态和“确认时认的版本”是同一版草稿。 */
     fun status(state: GameState, snapshot: com.example.cardcounter.domain.HandDraft = draft.snapshot()): HandPanelStatus =
-        handPanelStatus(state, snapshot, rejectReason, skipped)
+        handPanelStatus(state, snapshot, rejectNote, skipped)
 
     /** 新局：草稿（含改过的标记）、被拒原因、中途打开标记全部清空。 */
     fun reset() {
         draft.clear()
-        rejectReason = null
+        rejectNote = null
         skipped = false
         changed()
     }
