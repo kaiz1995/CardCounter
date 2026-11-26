@@ -20,7 +20,10 @@ class HandCardPositionDetectorTest {
         "102658_550" to (18 to 19),
         "102658_555" to (19 to 19),
         "102658_560" to (19 to 20),
-        "102658_600" to (17 to 17)
+        "102658_600" to (17 to 17),
+        // 真机（Honor 2664×1236）按手机取样缩到 1280×578；224800 上排原来按整排跨度数成 17（16.73），总数显示 34。
+        "w12_222900" to (16 to 17),
+        "w12_224800" to (16 to 17)
     )
 
     @Test
@@ -38,6 +41,55 @@ class HandCardPositionDetectorTest {
     fun countsTheThirtyFourCardHandWithTributeCard() {
         assertEquals(17 to 17, detector.rowCounts(luma("133745")))
         assertEquals(34, detector.detect(luma("133745")))
+    }
+
+    /** 回归：真机这一手上排 16 张，整排跨度除固定间距算成 16.73 数成 17，“数出来”显示 34、确认按钮按不了。 */
+    @Test
+    fun topRowSpacingErrorsDoNotAddUpToAnExtraCard() {
+        assertEquals(16 to 17, detector.rowCounts(luma("w12_224800")))
+        assertEquals(33, detector.detect(luma("w12_224800")))
+    }
+
+    /**
+     * 回归：黑花色牌面图案在离牌左边 +24~+27px 处会有比真牌边还强的边。
+     * 落在最后一张牌的牌面里时，不能被当成又一张牌（16 张数成 17，和下排 17 张凑成 34 也能过总数校验）。
+     */
+    @Test
+    fun fakeEdgeInsideTheLastCardIsNotAnExtraCard() {
+        val lefts = (0 until 16).map { 200 + 44 * it }
+        val right = lefts.last() + 90
+        listOf(24, 27, 40, 60).forEach { d ->
+            assertEquals("真左边被压掉 +$d", 16, detector.topRowCount(lefts.dropLast(1) + (lefts.last() + d) + right))
+            assertEquals("真左边还在 +$d", 16, detector.topRowCount(lefts + (lefts.last() + d) + right))
+        }
+    }
+
+    /**
+     * 回归：中段一条假边同时压掉两条相邻真边，把三张牌切成两段（实测 224800：78px + 59px）。
+     * 两段分别取整时，跨度里多一处不同点数间距就会 2 + 2 = 4 张；合并后再取整是 3 张。
+     */
+    @Test
+    fun fakeEdgeSuppressingTwoRealEdgesDoesNotSplitThreeCardsIntoFour() {
+        listOf(
+            listOf(51, 43, 51) to 24,
+            listOf(52, 44, 52) to 27,
+            listOf(51, 51, 51) to 30,
+            listOf(43, 43, 43) to 20
+        ).forEach { (spans, offset) ->
+            val lefts = (listOf(44, 44) + spans + listOf(44, 44)).runningFold(200) { x, gap -> x + gap }
+            val fake = lefts[2] + spans[0] + offset
+            val edges = lefts.filterIndexed { i, _ -> i != 3 && i != 4 } + fake + (lefts.last() + 90)
+            assertEquals("$spans 假边 +$offset", lefts.size, detector.topRowCount(edges))
+        }
+    }
+
+    /** 正常漏掉一条牌边时，那一段约 84~100px，仍算 2 张。 */
+    @Test
+    fun aMissedEdgeStillCountsBothCards() {
+        listOf(84, 88, 92, 100).forEach { gap ->
+            val lefts = listOf(200, 244, 288, 288 + gap, 332 + gap, 376 + gap)
+            assertEquals("漏边段 $gap", 7, detector.topRowCount(lefts + (lefts.last() + 90)))
+        }
     }
 
     /** 两排张数差不在 0..1、某排没数出来或数出 0 张，都当没数出来，不能把错的张数交出去。 */

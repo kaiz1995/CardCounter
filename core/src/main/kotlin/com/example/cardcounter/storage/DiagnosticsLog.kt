@@ -17,7 +17,7 @@ data class ObservationRecord(
     val rankTotal: Int?,
     /** 决策结果，词表见 [DiagnosticsLog.Decision]。 */
     val decision: String,
-    /** 拒绝/暂停/重试原因，可空。 */
+    /** 拒绝/暂停/重试原因；STABLE 记录里是这一手的交出原因（见 FinalizeReason），可空。 */
     val reason: String? = null,
     val capturedAtMillis: Long
 )

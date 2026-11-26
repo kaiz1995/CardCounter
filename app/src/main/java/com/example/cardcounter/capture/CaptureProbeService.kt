@@ -623,7 +623,10 @@ class CaptureProbeService : Service() {
         return HandFrames(area, canvas)
     }
 
-    /** 截屏回调仅缓存小 ROI；牌面连续停稳后才推理，清桌是未停稳的兜底。 */
+    /**
+     * 截屏回调仅缓存小 ROI；牌面连续停稳后才推理。没停稳的一手在被新牌直接盖上、牌桌被挡住、
+     * 清桌时也会交出推理（交出规则见 RoiPlayEventCache）。
+     */
     private fun captureRoiEvents(image: Image) {
         if (gameSkipped) return
         val raster = image.toRaster()
@@ -687,7 +690,10 @@ class CaptureProbeService : Service() {
                 null
             }
             roiEventCache.observe(zone, zoneTableVisible, visible, frame, generation)?.let { finalized ->
-                Log.i(TAG, "ROI_FINALIZED zone=${finalized.zone} frames=${finalized.frames.size}")
+                Log.i(
+                    TAG,
+                    "ROI_FINALIZED zone=${finalized.zone} frames=${finalized.frames.size} reason=${finalized.reason}"
+                )
                 rankHandler.post { finalizeRoiEvent(finalized, now) }
             }
             // “出牌”圆标和清桌计时放在交出之后看：清桌这次采样兜底交出的入账先 post，一定排在这次的信号前面。
@@ -785,7 +791,10 @@ class CaptureProbeService : Service() {
                 Log.i(TAG, "PRE_PLAY_SKIPPED zone=${finalized.zone} cards=$cards")
                 return
             }
-            admitPlay(finalized.zone, cards, voteOutcome.mergedFromDisagreement, sampleTimeMs) { reason ->
+            admitPlay(
+                finalized.zone, cards, voteOutcome.mergedFromDisagreement, sampleTimeMs,
+                finalizeReason = finalized.reason.name
+            ) { reason ->
                 saveEvidence(finalized, voted, reason, cards, candidates)
             }
         } finally {
@@ -802,6 +811,7 @@ class CaptureProbeService : Service() {
         cards: RankCounts,
         merged: Boolean,
         sampleTimeMs: Long,
+        finalizeReason: String? = null,
         evidence: (String) -> Unit
     ) {
         val stable = when (val gateDecision = stablePlayGate.check(zone, cards, sampleTimeMs)) {
@@ -838,7 +848,8 @@ class CaptureProbeService : Service() {
             null, zone,
             quantity = stable.cards.total(),
             rankTotal = stable.cards.total(),
-            decision = DiagnosticsLog.Decision.STABLE
+            decision = DiagnosticsLog.Decision.STABLE,
+            reason = finalizeReason
         )
         // 单写者派发：evidenceId 兼作账本事件 id，重试不会重复扣牌。
         val command = stable.toLedgerCommand()
@@ -961,13 +972,29 @@ class CaptureProbeService : Service() {
         val detections: List<YoloDetection>
     )
 
-    /** 出牌区模型输入：整屏区域平均缩到 1280×578 画布后取这一区，等比缩放居中、整数像素偏移、四周填 114 灰（[ScreenScale.playZoneInput]）。 */
+    private fun isCardWhiteColumn(image: Image, canonicalX: Int, top: Int, bottom: Int): Boolean {
+        var whitePixels = 0
+        for (y in top until bottom) {
+            val rgb = pixelRgb(image, canonicalX, y)
+            val red = (rgb shr 16) and 0xff
+            val green = (rgb shr 8) and 0xff
+            val blue = rgb and 0xff
+            if (red >= PLAY_WHITE_LIMIT && green >= PLAY_WHITE_LIMIT && blue >= PLAY_WHITE_LIMIT) {
+                whitePixels++
+                if (whitePixels >= CARD_WHITE_COLUMN_MIN_PIXELS) return true
+            }
+        }
+        return false
+    }
+
+    /** 出牌区模型输入：按牌面白色范围自适应扩展裁剪框，整屏区域平均缩到 1280×578 画布后取这一区，等比缩放居中、整数像素偏移、四周填 114 灰（[ScreenScale.playZoneInput]）。 */
     private fun publicPlayBitmap(image: Image, zone: PlayZone): Bitmap {
-        val crop = zone.yoloCrop(ScreenScale.CANVAS_WIDTH, ScreenScale.CANVAS_HEIGHT)
+        val crop = zone.expandedYoloCrop(ScreenScale.CANVAS_WIDTH, ScreenScale.CANVAS_HEIGHT) { x, top, bottom ->
+            isCardWhiteColumn(image, x, top, bottom)
+        }
         val pixels = ScreenScale.playZoneInput(image.toRaster(), crop.left, crop.top, crop.width, crop.height)
         return Bitmap.createBitmap(pixels, ScreenScale.MODEL_SIZE, ScreenScale.MODEL_SIZE, Bitmap.Config.ARGB_8888)
     }
-
     /**
      * 重置本局的识别跟踪，三个开关见 [SessionTrackingReset]：
      * 忽略桌上上一局残留的牌、牌桌第一次出现时判断是不是中途打开、本局是否已进入正式出牌阶段，是三回事，各管各的。
@@ -1032,6 +1059,8 @@ class CaptureProbeService : Service() {
         private const val HAND_SIGNATURE_COLUMNS = 12
         private const val HAND_SIGNATURE_ROWS = 8
         private const val RANK_PROBE_INTERVAL_MS = 250L
+        private const val PLAY_WHITE_LIMIT = 190
+        private const val CARD_WHITE_COLUMN_MIN_PIXELS = 8
         private const val ROI_SAMPLE_INTERVAL_MS = 50L
         private const val FINALIZE_FRAME_COUNT = 3
         private const val RESTART_TABLE_GRACE_MS = 2_000L
