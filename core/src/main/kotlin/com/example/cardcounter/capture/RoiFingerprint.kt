@@ -16,10 +16,10 @@ object RoiFingerprint {
      */
     const val CHANNEL_DELTA = 60
     private const val CHANGED_RATIO = 0.03f
-    private const val CORE_ROW_START = 2
+    private const val CORE_ROW_START = 4
     private const val CORE_ROW_END_EXCLUSIVE = 12
-    /** 中间核心区（row 2..11，400 点）变化点数 >= 4（1%）：dev 45 次含 COVERED 假重认全为 0/400，真直接盖牌连出为 5..125。 */
-    private const val CORE_CHANGE_MIN_POINTS = 4
+    /** 默认核心区变化阈值（row 4..11，320 点）；STABLE 与 COVERED 由 StablePlayGate 传入各自门限。 */
+    const val DEFAULT_CORE_CHANGE_MIN_POINTS = 4
 
     /** [pixel] 返回 1280x578 画布坐标 (x, y) 处的 0xRRGGBB。 */
     fun of(zone: PlayZone, pixel: (x: Int, y: Int) -> Int): IntArray {
@@ -42,9 +42,13 @@ object RoiFingerprint {
     }
 
     /**
-     * 比较中间核心区（row 2..11，避开顶边头像缘 row 0..1 与底部光效文字 row 12..15）是否发生真实换牌级变动。
+     * 比较中间核心区（row 4..11，避开顶边头像与邻座圆标压顶 row 0..3、底部光效文字 row 12..15）是否达到换牌级变动。
      */
-    fun hasCoreAreaChanged(previous: IntArray, current: IntArray): Boolean {
+    fun hasCoreAreaChanged(
+        previous: IntArray,
+        current: IntArray,
+        minPoints: Int = DEFAULT_CORE_CHANGE_MIN_POINTS
+    ): Boolean {
         if (previous.size != COLUMNS * ROWS || current.size != COLUMNS * ROWS) return false
         var changed = 0
         for (row in CORE_ROW_START until CORE_ROW_END_EXCLUSIVE) {
@@ -53,7 +57,7 @@ object RoiFingerprint {
                 val index = rowOffset + col
                 if (pixelChanged(previous[index], current[index])) {
                     changed++
-                    if (changed >= CORE_CHANGE_MIN_POINTS) return true
+                    if (changed >= minPoints) return true
                 }
             }
         }

@@ -561,39 +561,57 @@ class StablePlayGateTest {
         val bottomFlickerFp = baseFp.copyOf().also { arr ->
             for (r in 12..15) for (c in 0 until 20) arr[r * RoiFingerprint.COLUMNS + c] = 0x303030 + (100 shl 16)
         }
-        val newCardCoreFp = baseFp.copyOf().also { arr ->
-            for (r in 9..10) for (c in 0 until 4) arr[r * RoiFingerprint.COLUMNS + c] = 0x303030 + (100 shl 16)
+        // 模拟邻座“出牌”圆标或“6张”特效粒子压入顶部 row 0..3（例如 g102658-3 LEFT_BOTTOM #53 与 g102658-2 LEFT_BOTTOM #66）。
+        val topBadgeAndParticleFp = baseFp.copyOf().also { arr ->
+            for (c in 0 until 9) arr[0 * RoiFingerprint.COLUMNS + c] = 0x303030 + (100 shl 16)
+            for (c in 0 until 7) arr[1 * RoiFingerprint.COLUMNS + c] = 0x303030 + (100 shl 16)
+            for (c in 0 until 3) arr[2 * RoiFingerprint.COLUMNS + c] = 0x303030 + (100 shl 16)
+            for (c in 0 until 3) arr[3 * RoiFingerprint.COLUMNS + c] = 0x303030 + (100 shl 16)
         }
+        val coveredNewCardCoreFp = baseFp.copyOf().also { arr ->
+            for (r in 9..10) for (c in 0 until 3) if (r == 9 || c < 2) arr[r * RoiFingerprint.COLUMNS + c] = 0x303030 + (100 shl 16)
+        } // 5 点变化（对齐 g102658-4 LEFT_TOP SIX:2 COVERED->COVERED 最小真实连出）
+        val stableSevenPointJitterFp = baseFp.copyOf().also { arr ->
+            for (c in 0 until 7) arr[9 * RoiFingerprint.COLUMNS + c] = 0x303030 + (100 shl 16)
+        }
+        val stableTenPointSwapFp = baseFp.copyOf().also { arr ->
+            for (r in 8..11) for (c in 0 until 3) if (r != 11 || c == 0) arr[r * RoiFingerprint.COLUMNS + c] = 0x303030 + (100 shl 16)
+        } // 10 点变化（对齐 g143651-5 TOP 黑桃9->梅花9 STABLE->STABLE 最小真实连出）
         val twoSixes = RankCounts.of(mapOf(Rank.SIX to 2))
         val oneKing = RankCounts.of(mapOf(Rank.KING to 1))
         val twoKings = RankCounts.of(mapOf(Rank.KING to 2))
 
-        // 1) 若重交仅底部“少于10张”光效变化，核心区未变，仍被 EXACT/SUBSET 拦截。
+        // 1) COVERED 交出后：底部光效与顶部 row 0..3 圆标/粒子压顶均不触发放行，仍被 EXACT/SUBSET 拦截。
         val gate1 = StablePlayGate()
         assertTrue(gate1.check(PlayZone.TOP, twoSixes, 1_000L, fingerprint = baseFp) is PlayGateDecision.Accept)
-        gate1.commitAccepted(PlayZone.TOP, twoSixes, 1_000L, fingerprint = baseFp) { false }
+        gate1.commitAccepted(PlayZone.TOP, twoSixes, 1_000L, fingerprint = baseFp, finalizeReason = FinalizeReason.COVERED) { false }
         assertEquals(
             PlayGateDecision.Suppressed(PlaySuppressionReason.EXACT_DUPLICATE),
             gate1.check(PlayZone.TOP, twoSixes, 1_300L, fingerprint = bottomFlickerFp)
         )
-        // 2) 若核心区 (row 2..11) 确实发生变化，直接盖牌同点连出（EXACT 和 SUBSET）均应放行。
-        assertTrue(gate1.check(PlayZone.TOP, twoSixes, 1_500L, fingerprint = newCardCoreFp) is PlayGateDecision.Accept)
+        assertEquals(
+            PlayGateDecision.Suppressed(PlaySuppressionReason.EXACT_DUPLICATE),
+            gate1.check(PlayZone.TOP, twoSixes, 1_400L, fingerprint = topBadgeAndParticleFp)
+        )
+        // 2) COVERED 后核心区 row 4..11 变动 5 点（>= 4 点）直接盖牌同点连出（EXACT 和 SUBSET）放行。
+        assertTrue(gate1.check(PlayZone.TOP, twoSixes, 1_500L, fingerprint = coveredNewCardCoreFp) is PlayGateDecision.Accept)
 
         val gate2 = StablePlayGate()
         assertTrue(gate2.check(PlayZone.TOP, oneKing, 1_000L, fingerprint = baseFp) is PlayGateDecision.Accept)
-        gate2.commitAccepted(PlayZone.TOP, oneKing, 1_000L, fingerprint = baseFp) { false }
-        assertTrue(gate2.check(PlayZone.TOP, twoKings, 1_400L, fingerprint = newCardCoreFp) is PlayGateDecision.Accept)
+        gate2.commitAccepted(PlayZone.TOP, oneKing, 1_000L, fingerprint = baseFp, finalizeReason = FinalizeReason.COVERED) { false }
+        assertTrue(gate2.check(PlayZone.TOP, twoKings, 1_400L, fingerprint = coveredNewCardCoreFp) is PlayGateDecision.Accept)
 
-        // 3) STABLE 满帧交出后同样遵循核心区指纹变化规则：边缘光效/3点微扰拦截，核心区 >= 4 点换花色放行。
-        val minorCoreJitterFp = baseFp.copyOf().also { arr ->
-            for (c in 0 until 3) arr[5 * RoiFingerprint.COLUMNS + c] = 0x303030 + (100 shl 16)
-        }
+        // 3) STABLE 满帧交出后提高门限到 >= 8 点：顶部圆标压顶、7 点微扰均拦截，10 点真实换花色放行。
         val gate3 = StablePlayGate()
-        gate3.commitAccepted(PlayZone.TOP, twoSixes, 1_000L, fingerprint = baseFp) { false }
+        gate3.commitAccepted(PlayZone.TOP, twoSixes, 1_000L, fingerprint = baseFp, finalizeReason = FinalizeReason.STABLE) { false }
         assertEquals(
             PlayGateDecision.Suppressed(PlaySuppressionReason.EXACT_DUPLICATE),
-            gate3.check(PlayZone.TOP, twoSixes, 1_800L, fingerprint = minorCoreJitterFp)
+            gate3.check(PlayZone.TOP, twoSixes, 1_700L, fingerprint = topBadgeAndParticleFp)
         )
-        assertTrue(gate3.check(PlayZone.TOP, twoSixes, 1_900L, fingerprint = newCardCoreFp) is PlayGateDecision.Accept)
+        assertEquals(
+            PlayGateDecision.Suppressed(PlaySuppressionReason.EXACT_DUPLICATE),
+            gate3.check(PlayZone.TOP, twoSixes, 1_800L, fingerprint = stableSevenPointJitterFp)
+        )
+        assertTrue(gate3.check(PlayZone.TOP, twoSixes, 1_900L, fingerprint = stableTenPointSwapFp) is PlayGateDecision.Accept)
     }
 }

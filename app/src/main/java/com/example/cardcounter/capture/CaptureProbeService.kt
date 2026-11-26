@@ -793,7 +793,7 @@ class CaptureProbeService : Service() {
             }
             admitPlay(
                 finalized.zone, cards, voteOutcome.mergedFromDisagreement, sampleTimeMs,
-                finalizeReason = finalized.reason.name,
+                finalizeReason = finalized.reason,
                 fingerprint = finalized.frames.lastOrNull()?.fingerprint
             ) { reason ->
                 saveEvidence(finalized, voted, reason, cards, candidates)
@@ -812,7 +812,7 @@ class CaptureProbeService : Service() {
         cards: RankCounts,
         merged: Boolean,
         sampleTimeMs: Long,
-        finalizeReason: String? = null,
+        finalizeReason: FinalizeReason? = null,
         fingerprint: IntArray? = null,
         evidence: (String) -> Unit
     ) {
@@ -851,7 +851,7 @@ class CaptureProbeService : Service() {
             quantity = stable.cards.total(),
             rankTotal = stable.cards.total(),
             decision = DiagnosticsLog.Decision.STABLE,
-            reason = finalizeReason
+            reason = finalizeReason?.name
         )
         // 单写者派发：evidenceId 兼作账本事件 id，重试不会重复扣牌。
         val command = stable.toLedgerCommand()
@@ -865,7 +865,7 @@ class CaptureProbeService : Service() {
         )
         when (result) {
             is DispatchResult.Accepted -> {
-                stablePlayGate.commitAccepted(zone, stable.cards, sampleTimeMs, fingerprint) {
+                stablePlayGate.commitAccepted(zone, stable.cards, sampleTimeMs, fingerprint, finalizeReason) {
                     roiEventCache.isCleared(it, captureGeneration)
                 }
                 OverlayService.refresh(this)

@@ -180,6 +180,7 @@ class StablePlayGate {
         var accepted: RankCounts? = null
         var acceptedAtMs = 0L
         var acceptedFingerprint: IntArray? = null
+        var acceptedReason: FinalizeReason? = null
         var unlockedSinceAccept = false
         var clearedSinceAccept = false
 
@@ -201,11 +202,17 @@ class StablePlayGate {
         val previous = state.accepted
         if (previous != null && !state.unlockedSinceAccept) {
             val prevFp = state.acceptedFingerprint
-            // 不论前一手以 COVERED 还是 STABLE 交出，未清桌直接盖牌同主点数连出（如 g143651-5 TOP 连续三手 NINE:1）
-            // 只要核心区 row 2..11 变动 >= 4 点就放行；dev 全部 672 手同一停稳手内核心区最大变动仅 3 点。
+            // 未清桌直接盖牌同主点数连出：按前一手交出方式分级门限，CORE_ROW_START=4 避开邻座圆标/粒子压顶 row 0..3。
+            // - COVERED（及非 STABLE）保留 >= 4 点（同手微扰 <= 1 点，真实 COVERED 连出最小 5 点）；
+            // - STABLE 满帧交出提高到 >= 8 点（同手微扰 <= 1 点，真实 STABLE 连出最小 10 点）。
+            val minCorePoints = if (state.acceptedReason == FinalizeReason.STABLE) {
+                STABLE_CORE_CHANGE_MIN_POINTS
+            } else {
+                COVERED_CORE_CHANGE_MIN_POINTS
+            }
             val directCoverSwap = prevFp != null &&
                 fingerprint != null &&
-                RoiFingerprint.hasCoreAreaChanged(prevFp, fingerprint)
+                RoiFingerprint.hasCoreAreaChanged(prevFp, fingerprint, minCorePoints)
             if (!directCoverSwap) {
                 if (previous == cards) {
                     return PlayGateDecision.Suppressed(PlaySuppressionReason.EXACT_DUPLICATE)
@@ -231,6 +238,7 @@ class StablePlayGate {
         cards: RankCounts,
         timestampMs: Long,
         fingerprint: IntArray? = null,
+        finalizeReason: FinalizeReason? = null,
         isStillCleared: (PlayZone) -> Boolean
     ) {
         if (cards.total() == 0) return
@@ -238,6 +246,7 @@ class StablePlayGate {
         current.accepted = cards
         current.acceptedAtMs = timestampMs
         current.acceptedFingerprint = fingerprint
+        current.acceptedReason = finalizeReason
         current.unlockedSinceAccept = false
         current.clearedSinceAccept = false
         current.clearedAtMs = 0L
@@ -295,6 +304,7 @@ class StablePlayGate {
                 accepted = null
                 acceptedAtMs = 0L
                 acceptedFingerprint = null
+                acceptedReason = null
                 unlockedSinceAccept = false
                 clearedSinceAccept = false
                 clearedAtMs = 0L
@@ -307,6 +317,7 @@ class StablePlayGate {
             it.accepted = null
             it.acceptedAtMs = 0L
             it.acceptedFingerprint = null
+            it.acceptedReason = null
             it.unlockedSinceAccept = false
             it.clearedSinceAccept = false
             it.clearedAtMs = 0L
@@ -314,6 +325,8 @@ class StablePlayGate {
     }
 
     companion object {
+        const val COVERED_CORE_CHANGE_MIN_POINTS = 4
+        const val STABLE_CORE_CHANGE_MIN_POINTS = 8
         /**
          * 子集/超集拦截只在上次入账后这么久内生效：用来拦同一手牌画面闪一下后补全或漏牌的重认
          * （重新停稳要 15 次采样约 0.75 秒，加识别耗时，1.5 秒内）。超出就放行：旧牌没收走、

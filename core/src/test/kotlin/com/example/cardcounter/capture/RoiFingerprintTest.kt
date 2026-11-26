@@ -53,12 +53,14 @@ class RoiFingerprintTest {
                 }
             }
         }
-        // 只改最顶 2 行（头像框边缘）或最底 4 行（“少于10张/出牌”提示）不应判核心区换牌。
-        assertFalse(RoiFingerprint.hasCoreAreaChanged(base, changedAt(0..1, 20)))
+        // 顶 4 行（row 0..3，头像框边缘、邻座圆标压顶、特效粒子）或底 4 行（row 12..15，“少于10张/出牌”提示）不应判核心区换牌。
+        assertFalse(RoiFingerprint.hasCoreAreaChanged(base, changedAt(0..3, 20)))
         assertFalse(RoiFingerprint.hasCoreAreaChanged(base, changedAt(12..15, 30)))
-        // 中间核心区（row 2..11）即使仅花色区域 5 点（>= 4 点）红黑翻转超过 60，也必须检出换牌。
+        // 中间核心区（row 4..11）默认门限 4 点（COVERED 用）：5 点换花色检出，2~3 点微扰拦截。
         assertTrue(RoiFingerprint.hasCoreAreaChanged(base, changedAt(9..9, 5)))
-        // 仅 1~2 点局部像素抖动不应误触发。
-        assertFalse(RoiFingerprint.hasCoreAreaChanged(base, changedAt(5..5, 2)))
+        assertFalse(RoiFingerprint.hasCoreAreaChanged(base, changedAt(5..5, 3)))
+        // 提高到 STABLE 门限（8 点）时：7 点拦截，8 点及以上检出。
+        assertFalse(RoiFingerprint.hasCoreAreaChanged(base, changedAt(9..9, 7), minPoints = 8))
+        assertTrue(RoiFingerprint.hasCoreAreaChanged(base, changedAt(9..9, 8), minPoints = 8))
     }
 }

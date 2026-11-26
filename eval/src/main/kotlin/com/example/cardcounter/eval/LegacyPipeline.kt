@@ -87,9 +87,14 @@ class LegacyPipeline(
     private val openingGate = OpeningPlayGate()
     private var generation = 0L
 
+    private data class PendingCommit(
+        val fingerprint: IntArray?,
+        val reason: FinalizeReason?
+    )
+
     /** 当前这一帧的采样时间：账本接受后提交去重门要用和检查时同一个时间。 */
     private var currentNowMs = 0L
-    private val pendingFpByZone = mutableMapOf<PlayZone, IntArray?>()
+    private val pendingByZone = mutableMapOf<PlayZone, PendingCommit>()
     private val auditLog = mutableListOf<LegacyAudit>()
 
     /** 本次回放的全部最终化尝试，按发生顺序。 */
@@ -163,9 +168,9 @@ class LegacyPipeline(
     override fun onDecisionResult(decision: PipelineDecision, result: DispatchResult) {
         val zone = decision.zone ?: return
         val command = decision.command as? LedgerCommand.AcceptOutsidePlay ?: return
-        val fingerprint = pendingFpByZone.remove(zone)
+        val pending = pendingByZone.remove(zone)
         if (result is DispatchResult.Accepted) {
-            gate.commitAccepted(zone, command.cards, currentNowMs, fingerprint) {
+            gate.commitAccepted(zone, command.cards, currentNowMs, pending?.fingerprint, pending?.reason) {
                 cache.isCleared(it, generation)
             }
         }
@@ -177,7 +182,7 @@ class LegacyPipeline(
         gate.reset()
         signals.reset()
         openingGate.reset(alreadyInPlay = !requireOpeningSignal)
-        pendingFpByZone.clear()
+        pendingByZone.clear()
         auditLog.clear()
     }
 
@@ -273,7 +278,7 @@ class LegacyPipeline(
                 return null
             }
         }
-        pendingFpByZone[zone] = fingerprint
+        pendingByZone[zone] = PendingCommit(fingerprint, finalizeReason)
         audit(LegacyAudit(zone, timestampMs, LegacyOutcome.ACCEPTED, stable.cards, frameCount, finalizeReason))
         val evidenceId = UUID.randomUUID().toString()
         val command = LedgerCommand.AcceptOutsidePlay(stable.cards, requireNotNull(zone.seat), evidenceId)

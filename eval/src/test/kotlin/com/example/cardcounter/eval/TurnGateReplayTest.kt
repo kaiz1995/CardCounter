@@ -530,19 +530,24 @@ class TurnGateReplayTest {
 
     @Test
     fun stablePlayFollowedByDirectCoverSwapsWithSameRankIsAccepted() {
-        // 同一家 STABLE 满帧交出后未清桌直接盖牌连续出同点数不同花色（如 g143651-5 TOP 连续三手单 9），核心区指纹变化均应放行；
-        // 若后续仅边缘微扰重新停稳，核心区未变仍被拦下。
+        // 同一家 STABLE 满帧交出后未清桌直接盖牌连续出同点数不同花色（如 g143651-5 TOP 连续三手单 9），核心区变动 >= 8 点放行；
+        // 若后续仅底部光效、顶部 row 0..3 圆标/特效粒子压顶、或核心区 <= 7 点微扰重新停稳，均拦下不重扣。
         val stride = com.example.cardcounter.capture.RoiFingerprint.COLUMNS
         val rows = com.example.cardcounter.capture.RoiFingerprint.ROWS
         val fpSpade9 = IntArray(stride * rows) { 0x303030 }
         val fpClub9 = fpSpade9.copyOf().also { arr ->
-            for (r in 8..11) for (c in 10 until 14) arr[r * stride + c] = 0x303030 + (120 shl 16)
-        }
+            for (r in 8..10) for (c in 10 until 13) arr[r * stride + c] = 0x303030 + (120 shl 16)
+            arr[11 * stride + 10] = 0x303030 + (120 shl 16)
+        } // 10 点变化（对应黑桃9 -> 梅花9）
         val fpDiamond9 = fpSpade9.copyOf().also { arr ->
             for (r in 8..11) for (c in 10 until 18) arr[r * stride + c] = 0x303030 + (120 shl 8)
         }
-        val fpDiamond9EdgeFlicker = fpDiamond9.copyOf().also { arr ->
-            for (c in 0 until 15) arr[13 * stride + c] = 0x303030 + (120 shl 16)
+        val fpDiamond9TopBadgeAndSmallJitter = fpDiamond9.copyOf().also { arr ->
+            // row 0..2 邻座圆标/粒子压顶 + row 9 仅 5 点微扰（< 8 点，STABLE 后必须拦截）
+            for (c in 0 until 9) arr[0 * stride + c] = 0x303030 + (120 shl 16)
+            for (c in 0 until 7) arr[1 * stride + c] = 0x303030 + (120 shl 16)
+            for (c in 0 until 3) arr[2 * stride + c] = 0x303030 + (120 shl 16)
+            for (c in 0 until 5) arr[9 * stride + c] = 0x303030 + (120 shl 16)
         }
         fun topNine(still: Boolean, fp: IntArray) = ZoneObservation(
             PlayZone.TOP, true, still,
@@ -550,14 +555,14 @@ class TurnGateReplayTest {
             fingerprint = fp
         )
         val result = replayAudits(
-            // 3 帧 STABLE 交出黑桃9 -> 直接盖梅花9 -> 直接盖方块9 -> 仅底部光效微扰重新停稳
+            // 3 帧 STABLE 交出黑桃9 -> 直接盖梅花9(10点) -> 直接盖方块9 -> 顶部压顶+5点微扰重新停稳
             frames(4, topNine(true, fpSpade9)) +
                 frames(1, topNine(false, fpClub9)) +
                 frames(4, topNine(true, fpClub9)) +
                 frames(1, topNine(false, fpDiamond9)) +
                 frames(4, topNine(true, fpDiamond9)) +
-                frames(1, topNine(false, fpDiamond9EdgeFlicker)) +
-                frames(4, topNine(true, fpDiamond9EdgeFlicker)) +
+                frames(1, topNine(false, fpDiamond9TopBadgeAndSmallJitter)) +
+                frames(4, topNine(true, fpDiamond9TopBadgeAndSmallJitter)) +
                 frames(3, obs(false, 0)),
             stableSamples = 3
         )
