@@ -12,10 +12,11 @@
       "prePlayEndMs": 36011,
       "firstPlayMs": 36463,
       "complete": true,
-      "selfHand": "",
-      "selfHandCount": null,
+      "selfHand": "BIG_JOKER:1;SMALL_JOKER:1;TWO:2;ACE:3;KING:4;QUEEN:3;JACK:4;NINE:2;EIGHT:1;SEVEN:3;SIX:3;FIVE:4;FOUR:1;THREE:1",
+      "selfHandCount": 33,
       "review": "AUTO",
-      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。 firstPlayMs 37011->36463（第一手 LEFT_BOTTOM TEN:4 于 36563ms 出现，夹到出现前 100ms）。"
+      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。 firstPlayMs 37011->36463（第一手 LEFT_BOTTOM TEN:4 于 36563ms 出现，夹到出现前 100ms）。",
+      "selfHandAtMs": 30751
     },
     {
       "gameId": "g102658-2",
@@ -27,10 +28,11 @@
       "prePlayEndMs": 277513,
       "firstPlayMs": 283504,
       "complete": true,
-      "selfHand": "",
-      "selfHandCount": null,
+      "selfHand": "BIG_JOKER:1;SMALL_JOKER:1;TWO:5;ACE:5;QUEEN:3;JACK:3;TEN:4;NINE:3;EIGHT:4;SIX:2;FOUR:2;THREE:1",
+      "selfHandCount": 34,
       "review": "AUTO",
-      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。"
+      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。",
+      "selfHandAtMs": 283275
     },
     {
       "gameId": "g102658-3",
@@ -42,10 +44,11 @@
       "prePlayEndMs": 410000,
       "firstPlayMs": 413007,
       "complete": true,
-      "selfHand": "",
-      "selfHandCount": null,
+      "selfHand": "BIG_JOKER:1;SMALL_JOKER:1;TWO:7;ACE:2;QUEEN:1;JACK:1;TEN:3;NINE:5;EIGHT:4;SEVEN:2;SIX:4;FIVE:2;FOUR:1;THREE:1",
+      "selfHandCount": 35,
       "review": "AUTO",
-      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。"
+      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。",
+      "selfHandAtMs": 412763
     },
     {
       "gameId": "g102658-4",
@@ -57,10 +60,11 @@
       "prePlayEndMs": 591002,
       "firstPlayMs": 595512,
       "complete": true,
-      "selfHand": "",
-      "selfHandCount": null,
+      "selfHand": "BIG_JOKER:3;SMALL_JOKER:1;TWO:5;ACE:3;KING:4;QUEEN:4;JACK:4;TEN:1;NINE:6;EIGHT:3;SEVEN:1;FIVE:2;FOUR:1;THREE:1",
+      "selfHandCount": 39,
       "review": "AUTO",
-      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。"
+      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。",
+      "selfHandAtMs": 595030
     },
     {
       "gameId": "g102658-5",
@@ -72,10 +76,11 @@
       "prePlayEndMs": 781012,
       "firstPlayMs": 784328,
       "complete": false,
-      "selfHand": "",
-      "selfHandCount": null,
+      "selfHand": "BIG_JOKER:2;SMALL_JOKER:1;TWO:3;ACE:2;KING:3;QUEEN:2;JACK:2;TEN:4;NINE:1;EIGHT:6;SEVEN:1;SIX:1;FIVE:5;FOUR:1;THREE:1",
+      "selfHandCount": 35,
       "review": "AUTO",
-      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。 录屏只覆盖半局。 firstPlayMs 784508->784328（第一手 784428ms 出现，夹到出现之前）；prePlayEndMs=781012。"
+      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。 录屏只覆盖半局。 firstPlayMs 784508->784328（第一手 784428ms 出现，夹到出现之前）；prePlayEndMs=781012。",
+      "selfHandAtMs": 783010
     },
     {
       "gameId": "g143651-1",
@@ -87,10 +92,11 @@
       "prePlayEndMs": 29011,
       "firstPlayMs": 33516,
       "complete": true,
-      "selfHand": "",
-      "selfHandCount": null,
+      "selfHand": "SMALL_JOKER:2;TWO:2;ACE:3;KING:2;QUEEN:2;JACK:1;TEN:5;NINE:1;EIGHT:4;SEVEN:5;SIX:1;FIVE:3;FOUR:1;THREE:1",
+      "selfHandCount": 33,
       "review": "AUTO",
-      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。"
+      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。",
+      "selfHandAtMs": 32750
     },
     {
       "gameId": "g143651-2",
@@ -102,10 +108,11 @@
       "prePlayEndMs": 210006,
       "firstPlayMs": 215524,
       "complete": true,
-      "selfHand": "",
-      "selfHandCount": null,
+      "selfHand": "TWO:1;ACE:2;KING:2;QUEEN:5;JACK:2;TEN:2;NINE:3;SEVEN:4;SIX:3;FIVE:7;FOUR:1;THREE:1",
+      "selfHandCount": 33,
       "review": "AUTO",
-      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。"
+      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。",
+      "selfHandAtMs": 214002
     },
     {
       "gameId": "g143651-3",
@@ -117,10 +124,11 @@
       "prePlayEndMs": 388016,
       "firstPlayMs": 391511,
       "complete": true,
-      "selfHand": "",
-      "selfHandCount": null,
+      "selfHand": "BIG_JOKER:1;TWO:3;ACE:3;KING:2;QUEEN:2;JACK:5;TEN:2;NINE:3;SEVEN:4;SIX:2;FIVE:4;FOUR:1;THREE:1",
+      "selfHandCount": 33,
       "review": "AUTO",
-      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。"
+      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。",
+      "selfHandAtMs": 390514
     },
     {
       "gameId": "g143651-4",
@@ -132,10 +140,11 @@
       "prePlayEndMs": 570018,
       "firstPlayMs": 573515,
       "complete": true,
-      "selfHand": "",
-      "selfHandCount": null,
+      "selfHand": "BIG_JOKER:1;TWO:2;ACE:2;KING:1;QUEEN:1;JACK:7;TEN:2;NINE:3;EIGHT:3;SEVEN:5;SIX:3;FIVE:1;FOUR:1;THREE:1",
+      "selfHandCount": 33,
       "review": "AUTO",
-      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。"
+      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。",
+      "selfHandAtMs": 573022
     },
     {
       "gameId": "g143651-5",
@@ -147,10 +156,11 @@
       "prePlayEndMs": 748512,
       "firstPlayMs": 749319,
       "complete": true,
-      "selfHand": "",
-      "selfHandCount": null,
+      "selfHand": "BIG_JOKER:1;TWO:3;ACE:3;KING:4;QUEEN:3;JACK:4;TEN:3;NINE:3;EIGHT:3;SIX:2;FIVE:3;FOUR:1;THREE:1",
+      "selfHandCount": 34,
       "review": "AUTO",
-      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。 firstPlayMs 749512->749319（第一手 749419ms 出现，夹到出现之前）；prePlayEndMs=748512。"
+      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。 firstPlayMs 749512->749319（第一手 749419ms 出现，夹到出现之前）；prePlayEndMs=748512。",
+      "selfHandAtMs": 749279
     },
     {
       "gameId": "g075639-1",
@@ -162,10 +172,11 @@
       "prePlayEndMs": 10502,
       "firstPlayMs": 10802,
       "complete": false,
-      "selfHand": "",
-      "selfHandCount": null,
+      "selfHand": "BIG_JOKER:1;TWO:2;ACE:3;KING:3;QUEEN:1;JACK:3;TEN:2;NINE:5;EIGHT:1;SEVEN:2;SIX:1;FIVE:7;FOUR:1;THREE:1",
+      "selfHandCount": 33,
       "review": "AUTO",
-      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。 录屏只覆盖半局。"
+      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。 录屏只覆盖半局。",
+      "selfHandAtMs": 10766
     },
     {
       "gameId": "g075639-2",
@@ -177,10 +188,11 @@
       "prePlayEndMs": 25515,
       "firstPlayMs": 25815,
       "complete": false,
-      "selfHand": "",
-      "selfHandCount": null,
+      "selfHand": "BIG_JOKER:1;TWO:3;ACE:2;KING:3;QUEEN:3;JACK:3;TEN:5;NINE:3;SEVEN:1;SIX:2;FIVE:4;FOUR:2;THREE:1",
+      "selfHandCount": 33,
       "review": "AUTO",
-      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。 录屏只覆盖半局。"
+      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。 录屏只覆盖半局。",
+      "selfHandAtMs": 25778
     },
     {
       "gameId": "g075639-3",
@@ -192,10 +204,11 @@
       "prePlayEndMs": 42013,
       "firstPlayMs": 42313,
       "complete": false,
-      "selfHand": "",
-      "selfHandCount": null,
+      "selfHand": "SMALL_JOKER:1;TWO:3;ACE:1;KING:3;QUEEN:4;JACK:4;TEN:2;NINE:3;EIGHT:4;SEVEN:2;SIX:1;FIVE:2;FOUR:2;THREE:1",
+      "selfHandCount": 33,
       "review": "AUTO",
-      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。 录屏只覆盖半局。"
+      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。 录屏只覆盖半局。",
+      "selfHandAtMs": 41513
     },
     {
       "gameId": "g075639-4",
@@ -207,10 +220,11 @@
       "prePlayEndMs": 53009,
       "firstPlayMs": 53309,
       "complete": false,
-      "selfHand": "",
-      "selfHandCount": null,
+      "selfHand": "BIG_JOKER:1;SMALL_JOKER:1;TWO:1;ACE:4;KING:5;QUEEN:1;JACK:2;TEN:3;NINE:2;EIGHT:4;SEVEN:2;SIX:4;FIVE:1;FOUR:1;THREE:1",
+      "selfHandCount": 33,
       "review": "AUTO",
-      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。 录屏只覆盖半局。"
+      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。 录屏只覆盖半局。",
+      "selfHandAtMs": 53258
     },
     {
       "gameId": "g075639-5",
@@ -222,10 +236,11 @@
       "prePlayEndMs": 70002,
       "firstPlayMs": 70302,
       "complete": false,
-      "selfHand": "",
-      "selfHandCount": null,
+      "selfHand": "BIG_JOKER:1;SMALL_JOKER:1;TWO:3;ACE:4;KING:3;QUEEN:4;JACK:2;TEN:2;NINE:2;EIGHT:2;SEVEN:4;SIX:1;FIVE:2;FOUR:1;THREE:1",
+      "selfHandCount": 33,
       "review": "AUTO",
-      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。 录屏只覆盖半局。"
+      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。 录屏只覆盖半局。",
+      "selfHandAtMs": 70268
     },
     {
       "gameId": "g075639-6",
@@ -237,10 +252,11 @@
       "prePlayEndMs": 103507,
       "firstPlayMs": 103807,
       "complete": false,
-      "selfHand": "",
-      "selfHandCount": null,
+      "selfHand": "SMALL_JOKER:1;TWO:3;ACE:3;KING:4;QUEEN:3;JACK:2;TEN:1;NINE:3;EIGHT:3;SEVEN:2;SIX:3;FIVE:3;FOUR:1;THREE:1",
+      "selfHandCount": 33,
       "review": "AUTO",
-      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。 录屏只覆盖半局。"
+      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。 录屏只覆盖半局。",
+      "selfHandAtMs": 103770
     },
     {
       "gameId": "g075639-7",
@@ -252,10 +268,11 @@
       "prePlayEndMs": 129504,
       "firstPlayMs": 129804,
       "complete": false,
-      "selfHand": "",
-      "selfHandCount": null,
+      "selfHand": "BIG_JOKER:1;SMALL_JOKER:1;TWO:2;ACE:5;KING:4;QUEEN:2;JACK:2;TEN:3;NINE:5;SEVEN:3;SIX:1;FIVE:2;FOUR:1;THREE:1",
+      "selfHandCount": 33,
       "review": "AUTO",
-      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。 录屏只覆盖半局。"
+      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。 录屏只覆盖半局。",
+      "selfHandAtMs": 128771
     },
     {
       "gameId": "g075639-8",
@@ -267,10 +284,11 @@
       "prePlayEndMs": 141503,
       "firstPlayMs": 141803,
       "complete": false,
-      "selfHand": "",
-      "selfHandCount": null,
+      "selfHand": "BIG_JOKER:1;SMALL_JOKER:1;TWO:3;QUEEN:4;JACK:2;TEN:3;NINE:4;EIGHT:3;SEVEN:4;SIX:3;FIVE:1;FOUR:3;THREE:1",
+      "selfHandCount": 33,
       "review": "AUTO",
-      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。 录屏只覆盖半局。"
+      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。 录屏只覆盖半局。",
+      "selfHandAtMs": 141767
     },
     {
       "gameId": "g075639-9",
@@ -282,10 +300,11 @@
       "prePlayEndMs": 164503,
       "firstPlayMs": 165500,
       "complete": false,
-      "selfHand": "",
-      "selfHandCount": null,
+      "selfHand": "BIG_JOKER:1;SMALL_JOKER:1;TWO:3;ACE:2;KING:1;QUEEN:3;JACK:2;TEN:4;NINE:1;EIGHT:3;SEVEN:4;SIX:4;FIVE:3;FOUR:1;THREE:1",
+      "selfHandCount": 34,
       "review": "AUTO",
-      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。 录屏只覆盖半局。"
+      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。 录屏只覆盖半局。",
+      "selfHandAtMs": 165266
     },
     {
       "gameId": "g075639-10",
@@ -297,10 +316,11 @@
       "prePlayEndMs": 196017,
       "firstPlayMs": 196317,
       "complete": false,
-      "selfHand": "",
-      "selfHandCount": null,
+      "selfHand": "BIG_JOKER:1;TWO:7;ACE:4;KING:3;QUEEN:4;JACK:2;TEN:1;NINE:3;EIGHT:1;SEVEN:2;FIVE:3;FOUR:1;THREE:1",
+      "selfHandCount": 33,
       "review": "AUTO",
-      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。 录屏只覆盖半局。"
+      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。 录屏只覆盖半局。",
+      "selfHandAtMs": 196259
     },
     {
       "gameId": "g164333-1",
@@ -312,10 +332,11 @@
       "prePlayEndMs": 13015,
       "firstPlayMs": 14015,
       "complete": false,
-      "selfHand": "",
-      "selfHandCount": null,
+      "selfHand": "BIG_JOKER:1;SMALL_JOKER:1;TWO:5;ACE:1;KING:1;QUEEN:4;JACK:2;TEN:5;NINE:1;EIGHT:2;SEVEN:4;SIX:2;FIVE:1;FOUR:1;THREE:1",
+      "selfHandCount": 32,
       "review": "AUTO",
-      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。 录屏只覆盖半局。 开头缺少发牌画面。 173s 处是下拉通知栏遮挡（不是新一局、也不是结算）：原来把这一局切成了 g164333-1(0-173s)+g164333-2(173-220s)，检测流已合并重跑；结算 220015ms 属于本局。开头仍缺发牌画面，complete=false。"
+      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。 录屏只覆盖半局。 开头缺少发牌画面。 173s 处是下拉通知栏遮挡（不是新一局、也不是结算）：原来把这一局切成了 g164333-1(0-173s)+g164333-2(173-220s)，检测流已合并重跑；结算 220015ms 属于本局。开头仍缺发牌画面，complete=false。",
+      "selfHandAtMs": 8505
     },
     {
       "gameId": "g202234-1",
@@ -357,10 +378,11 @@
       "prePlayEndMs": 0,
       "firstPlayMs": 0,
       "complete": false,
-      "selfHand": "",
-      "selfHandCount": null,
+      "selfHand": "BIG_JOKER:1;TWO:4;ACE:3;QUEEN:2;JACK:2;TEN:5;NINE:2;EIGHT:2;SEVEN:5;FIVE:5;FOUR:1;THREE:1",
+      "selfHandCount": 33,
       "review": "AUTO",
-      "notes": "开局/片段录制，不覆盖完整牌局；只登记，不做整局切分。"
+      "notes": "开局/片段录制，不覆盖完整牌局；只登记，不做整局切分。",
+      "selfHandAtMs": 15267
     },
     {
       "gameId": "g135222-1",
@@ -372,10 +394,11 @@
       "prePlayEndMs": 0,
       "firstPlayMs": 0,
       "complete": false,
-      "selfHand": "",
-      "selfHandCount": null,
+      "selfHand": "BIG_JOKER:3;SMALL_JOKER:1;TWO:2;ACE:2;KING:3;QUEEN:3;JACK:1;TEN:2;NINE:3;EIGHT:5;SEVEN:2;SIX:1;FIVE:4;FOUR:1;THREE:1",
+      "selfHandCount": 34,
       "review": "AUTO",
-      "notes": "开局/片段录制，不覆盖完整牌局；只登记，不做整局切分。"
+      "notes": "开局/片段录制，不覆盖完整牌局；只登记，不做整局切分。",
+      "selfHandAtMs": 19256
     },
     {
       "gameId": "g214558-1",
@@ -387,10 +410,11 @@
       "prePlayEndMs": 0,
       "firstPlayMs": 0,
       "complete": false,
-      "selfHand": "",
-      "selfHandCount": null,
+      "selfHand": "BIG_JOKER:1;TWO:2;ACE:1;KING:3;QUEEN:4;JACK:3;TEN:3;NINE:1;EIGHT:2;SEVEN:3;SIX:4;FIVE:4;FOUR:1;THREE:1",
+      "selfHandCount": 33,
       "review": "AUTO",
-      "notes": "开局/片段录制，不覆盖完整牌局；只登记，不做整局切分。"
+      "notes": "开局/片段录制，不覆盖完整牌局；只登记，不做整局切分。",
+      "selfHandAtMs": 11257
     },
     {
       "gameId": "g145252-1",
@@ -402,10 +426,11 @@
       "prePlayEndMs": 0,
       "firstPlayMs": 0,
       "complete": false,
-      "selfHand": "",
-      "selfHandCount": null,
+      "selfHand": "BIG_JOKER:1;SMALL_JOKER:1;TWO:4;ACE:2;KING:2;QUEEN:3;JACK:2;TEN:1;NINE:2;EIGHT:1;SEVEN:3;SIX:3;FIVE:3;FOUR:3;THREE:1",
+      "selfHandCount": 32,
       "review": "AUTO",
-      "notes": "开局/片段录制，不覆盖完整牌局；只登记，不做整局切分。"
+      "notes": "开局/片段录制，不覆盖完整牌局；只登记，不做整局切分。",
+      "selfHandAtMs": 17258
     },
     {
       "gameId": "g145333-1",
@@ -417,10 +442,11 @@
       "prePlayEndMs": 0,
       "firstPlayMs": 0,
       "complete": false,
-      "selfHand": "",
-      "selfHandCount": null,
+      "selfHand": "BIG_JOKER:1;SMALL_JOKER:1;TWO:3;ACE:2;KING:3;QUEEN:1;JACK:5;TEN:2;NINE:2;EIGHT:4;SEVEN:2;SIX:5;FOUR:1;THREE:1",
+      "selfHandCount": 33,
       "review": "AUTO",
-      "notes": "开局/片段录制，不覆盖完整牌局；只登记，不做整局切分。"
+      "notes": "开局/片段录制，不覆盖完整牌局；只登记，不做整局切分。",
+      "selfHandAtMs": 16258
     },
     {
       "gameId": "g145406-1",
@@ -432,10 +458,11 @@
       "prePlayEndMs": 0,
       "firstPlayMs": 0,
       "complete": false,
-      "selfHand": "",
-      "selfHandCount": null,
+      "selfHand": "TWO:1;ACE:2;KING:2;JACK:3;TEN:7;NINE:4;EIGHT:2;SEVEN:3;SIX:4;FIVE:1;FOUR:3;THREE:1",
+      "selfHandCount": 33,
       "review": "AUTO",
-      "notes": "开局/片段录制，不覆盖完整牌局；只登记，不做整局切分。"
+      "notes": "开局/片段录制，不覆盖完整牌局；只登记，不做整局切分。",
+      "selfHandAtMs": 13764
     },
     {
       "gameId": "g145436-1",
@@ -447,10 +474,11 @@
       "prePlayEndMs": 0,
       "firstPlayMs": 0,
       "complete": false,
-      "selfHand": "",
-      "selfHandCount": null,
+      "selfHand": "BIG_JOKER:1;TWO:3;KING:2;QUEEN:4;JACK:2;TEN:4;NINE:5;EIGHT:1;SEVEN:2;SIX:3;FIVE:4;FOUR:1;THREE:1",
+      "selfHandCount": 33,
       "review": "AUTO",
-      "notes": "开局/片段录制，不覆盖完整牌局；只登记，不做整局切分。"
+      "notes": "开局/片段录制，不覆盖完整牌局；只登记，不做整局切分。",
+      "selfHandAtMs": 13766
     },
     {
       "gameId": "g145511-1",
@@ -462,10 +490,11 @@
       "prePlayEndMs": 0,
       "firstPlayMs": 0,
       "complete": false,
-      "selfHand": "",
-      "selfHandCount": null,
+      "selfHand": "BIG_JOKER:1;SMALL_JOKER:2;TWO:2;ACE:2;KING:2;QUEEN:5;JACK:2;TEN:5;EIGHT:2;SEVEN:2;SIX:3;FIVE:3;FOUR:1;THREE:1",
+      "selfHandCount": 33,
       "review": "AUTO",
-      "notes": "开局/片段录制，不覆盖完整牌局；只登记，不做整局切分。"
+      "notes": "开局/片段录制，不覆盖完整牌局；只登记，不做整局切分。",
+      "selfHandAtMs": 12258
     },
     {
       "gameId": "g145541-1",
@@ -477,10 +506,11 @@
       "prePlayEndMs": 0,
       "firstPlayMs": 0,
       "complete": false,
-      "selfHand": "",
-      "selfHandCount": null,
+      "selfHand": "BIG_JOKER:1;TWO:4;ACE:3;KING:2;QUEEN:4;JACK:4;TEN:3;NINE:2;EIGHT:1;SIX:3;FIVE:3;FOUR:1;THREE:1",
+      "selfHandCount": 32,
       "review": "AUTO",
-      "notes": "开局/片段录制，不覆盖完整牌局；只登记，不做整局切分。"
+      "notes": "开局/片段录制，不覆盖完整牌局；只登记，不做整局切分。",
+      "selfHandAtMs": 12750
     },
     {
       "gameId": "g145608-1",
@@ -492,10 +522,11 @@
       "prePlayEndMs": 0,
       "firstPlayMs": 0,
       "complete": false,
-      "selfHand": "",
-      "selfHandCount": null,
+      "selfHand": "BIG_JOKER:2;SMALL_JOKER:1;TWO:2;ACE:2;KING:4;QUEEN:1;JACK:2;TEN:2;NINE:2;EIGHT:3;SEVEN:3;SIX:3;FIVE:3;FOUR:3;THREE:1",
+      "selfHandCount": 34,
       "review": "AUTO",
-      "notes": "开局/片段录制，不覆盖完整牌局；只登记，不做整局切分。"
+      "notes": "开局/片段录制，不覆盖完整牌局；只登记，不做整局切分。",
+      "selfHandAtMs": 11756
     },
     {
       "gameId": "g145637-1",
@@ -507,10 +538,11 @@
       "prePlayEndMs": 0,
       "firstPlayMs": 0,
       "complete": false,
-      "selfHand": "",
-      "selfHandCount": null,
+      "selfHand": "SMALL_JOKER:1;TWO:3;ACE:5;KING:2;QUEEN:3;JACK:1;TEN:1;NINE:1;EIGHT:1;SEVEN:4;SIX:4;FIVE:4;FOUR:1;THREE:1",
+      "selfHandCount": 32,
       "review": "AUTO",
-      "notes": "开局/片段录制，不覆盖完整牌局；只登记，不做整局切分。"
+      "notes": "开局/片段录制，不覆盖完整牌局；只登记，不做整局切分。",
+      "selfHandAtMs": 11250
     },
     {
       "gameId": "g145704-1",
@@ -522,10 +554,11 @@
       "prePlayEndMs": 0,
       "firstPlayMs": 0,
       "complete": false,
-      "selfHand": "",
-      "selfHandCount": null,
+      "selfHand": "BIG_JOKER:1;SMALL_JOKER:1;TWO:3;ACE:5;KING:2;QUEEN:2;JACK:3;TEN:3;NINE:1;EIGHT:2;SEVEN:2;SIX:3;FIVE:4;FOUR:1;THREE:1",
+      "selfHandCount": 34,
       "review": "AUTO",
-      "notes": "开局/片段录制，不覆盖完整牌局；只登记，不做整局切分。"
+      "notes": "开局/片段录制，不覆盖完整牌局；只登记，不做整局切分。",
+      "selfHandAtMs": 10267
     }
   ]
 }
