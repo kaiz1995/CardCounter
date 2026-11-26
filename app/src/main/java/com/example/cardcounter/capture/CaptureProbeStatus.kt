@@ -76,6 +76,8 @@ data class OverlayProbeSnapshot(
 )
 
 object OverlayProbeState {
+    private val lock = Any()
+
     @Volatile
     private var current = OverlayProbeSnapshot()
 
@@ -85,11 +87,16 @@ object OverlayProbeState {
     fun snapshot(): OverlayProbeSnapshot = current
 
     fun update(transform: (OverlayProbeSnapshot) -> OverlayProbeSnapshot) {
-        val next = transform(current)
-        if (next != current) {
-            current = next
-            onChange?.invoke()
+        val changed = synchronized(lock) {
+            val next = transform(current)
+            if (next != current) {
+                current = next
+                true
+            } else {
+                false
+            }
         }
+        if (changed) onChange?.invoke()
     }
 
     fun notifyChanged() {
@@ -97,7 +104,9 @@ object OverlayProbeState {
     }
 
     fun reset() {
-        current = OverlayProbeSnapshot()
+        synchronized(lock) {
+            current = OverlayProbeSnapshot()
+        }
         onChange?.invoke()
     }
 }

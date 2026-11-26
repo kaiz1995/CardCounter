@@ -445,8 +445,10 @@ class CaptureProbeService : Service() {
      * 每个出牌区清空一次之后才开始记新出的牌。
      */
     private fun startNewGame() {
-        sessionActor.post(LedgerCommand.NewSession())
-        resetSessionTracking(SessionTrackingReset.onManualNewGame())
+        synchronized(this) {
+            sessionActor.post(LedgerCommand.NewSession())
+            resetSessionTracking(SessionTrackingReset.onManualNewGame())
+        }
         OverlayService.refresh(this)
         Log.i(TAG, "MANUAL_NEW_GAME")
     }
@@ -456,7 +458,7 @@ class CaptureProbeService : Service() {
      * 返回 null 时以 [PauseReason.HAND_NOT_RECOGNIZED] 停记并存证据包；之后不再接收手牌识别结果。
      */
     private fun lockHand(expectedGeneration: Long) {
-        val (data, frozenProbe, areaCopy) = synchronized(this) {
+        val (data, latestBeforeReset, frozenProbe, areaCopy) = synchronized(this) {
             if (destroyed ||
                 handLocked ||
                 expectedGeneration != captureGeneration ||
@@ -467,22 +469,29 @@ class CaptureProbeService : Service() {
             }
             handLocked = true
             val lockedData = handAutoLock.lock()
+            val latestReading = if (lockedData == null) handAutoLock.latest() else null
             val probe = handProbe
             val copy = probe?.area?.takeIf { !it.isRecycled }?.copy(Bitmap.Config.ARGB_8888, false)
             replaceHandProbe(null)
-            Triple(lockedData, probe, copy)
+            LockSnapshot(lockedData, latestReading, probe, copy)
         }
         try {
             handMerger.reset()
             positionVoter.reset()
             handSampleThrottle.reset()
             if (data == null) {
-                val latest = handAutoLock.latest()
-                val pauseResult = sessionActor.post(LedgerCommand.Pause(PauseReason.HAND_NOT_RECOGNIZED))
+                val pauseResult = synchronized(this) {
+                    if (destroyed || expectedGeneration != captureGeneration) return
+                    val result = sessionActor.post(LedgerCommand.Pause(PauseReason.HAND_NOT_RECOGNIZED))
+                    OverlayProbeState.update {
+                        it.copy(handLocked = true, handConfirmedAtMs = null, handConfirmedCount = null)
+                    }
+                    result
+                }
                 val metadata = handAutoLockEvidenceJson(
                     reason = PauseReason.HAND_NOT_RECOGNIZED.name,
                     timeMs = SystemClock.elapsedRealtime(),
-                    latest = latest,
+                    latest = latestBeforeReset,
                     topRowCount = frozenProbe?.rows?.first,
                     bottomRowCount = frozenProbe?.rows?.second,
                     model = frozenProbe?.model,
@@ -491,31 +500,43 @@ class CaptureProbeService : Service() {
                     outcome = outcomeOf(pauseResult)
                 )
                 issueSampleStore.saveHandNotRecognized(areaCopy, metadata)
-                OverlayProbeState.update {
-                    it.copy(handLocked = true, handConfirmedAtMs = null, handConfirmedCount = null)
-                }
                 OverlayService.refresh(this)
-                Log.w(TAG, "SELF_HAND_LOCK_FAILED reason=HAND_NOT_RECOGNIZED latest=$latest result=${outcomeOf(pauseResult)}")
+                Log.w(
+                    TAG,
+                    "SELF_HAND_LOCK_FAILED reason=HAND_NOT_RECOGNIZED latest=$latestBeforeReset result=${outcomeOf(pauseResult)}"
+                )
                 return
             }
-            val result = sessionActor.post(LedgerCommand.ConfirmHand(data.cards, data.handCount))
-            if (result is DispatchResult.Accepted) {
-                val nowMs = SystemClock.elapsedRealtime()
-                OverlayProbeState.update {
-                    it.copy(
-                        handLocked = true,
-                        handConfirmedAtMs = nowMs,
-                        handConfirmedCount = data.cards.total()
-                    )
+            val (confirmResult, finalResult) = synchronized(this) {
+                if (destroyed || expectedGeneration != captureGeneration) return
+                val result = sessionActor.post(LedgerCommand.ConfirmHand(data.cards, data.handCount))
+                if (result is DispatchResult.Accepted) {
+                    val nowMs = SystemClock.elapsedRealtime()
+                    OverlayProbeState.update {
+                        it.copy(
+                            handLocked = true,
+                            handConfirmedAtMs = nowMs,
+                            handConfirmedCount = data.cards.total()
+                        )
+                    }
+                    result to result
+                } else {
+                    val afterPause = if (
+                        result is DispatchResult.Rejected &&
+                        result.state.phase == SessionPhase.ACTIVE &&
+                        !result.state.handConfirmed
+                    ) {
+                        sessionActor.post(LedgerCommand.Pause(PauseReason.HAND_NOT_RECOGNIZED))
+                    } else {
+                        result
+                    }
+                    OverlayProbeState.update {
+                        it.copy(handLocked = true, handConfirmedAtMs = null, handConfirmedCount = null)
+                    }
+                    result to afterPause
                 }
-            } else {
-                var finalResult = result
-                if (result is DispatchResult.Rejected &&
-                    result.state.phase == SessionPhase.ACTIVE &&
-                    !result.state.handConfirmed
-                ) {
-                    finalResult = sessionActor.post(LedgerCommand.Pause(PauseReason.HAND_NOT_RECOGNIZED))
-                }
+            }
+            if (confirmResult !is DispatchResult.Accepted) {
                 val metadata = handAutoLockEvidenceJson(
                     reason = HAND_CONFIRM_FAILED,
                     timeMs = SystemClock.elapsedRealtime(),
@@ -525,27 +546,31 @@ class CaptureProbeService : Service() {
                     model = frozenProbe?.model,
                     modelDetections = frozenProbe?.modelDetections.orEmpty(),
                     template = frozenProbe?.template,
-                    outcome = outcomeOf(result)
+                    outcome = outcomeOf(confirmResult)
                 )
                 issueSampleStore.saveHandNotRecognized(areaCopy, metadata)
-                OverlayProbeState.update {
-                    it.copy(handLocked = true, handConfirmedAtMs = null, handConfirmedCount = null)
-                }
                 Log.w(
                     TAG,
-                    "SELF_HAND_CONFIRM_REJECTED confirm=${outcomeOf(result)} final=${outcomeOf(finalResult)}"
+                    "SELF_HAND_CONFIRM_REJECTED confirm=${outcomeOf(confirmResult)} final=${outcomeOf(finalResult)}"
                 )
             }
             OverlayService.refresh(this)
             Log.i(
                 TAG,
                 "SELF_HAND_LOCKED total=${data.cards.total()} positionCount=${data.handCount} " +
-                    "cards=${data.cards} result=${outcomeOf(result)}"
+                    "cards=${data.cards} result=${outcomeOf(confirmResult)} final=${outcomeOf(finalResult)}"
             )
         } finally {
             areaCopy?.recycle()
         }
     }
+
+    private data class LockSnapshot(
+        val data: HandAutoLock.Result?,
+        val latest: HandReading?,
+        val probe: HandProbe?,
+        val areaCopy: Bitmap?
+    )
 
     private fun outcomeOf(result: DispatchResult): String = when (result) {
         is DispatchResult.Accepted -> "ACCEPTED"
