@@ -9,6 +9,8 @@ import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.view.Gravity
 import android.view.View
@@ -33,6 +35,17 @@ class MainActivity : Activity() {
     private lateinit var diagnosticsText: TextView
     private var diagnosticsExpanded = false
     private var pendingStartAfterOverlayPermission = false
+    private var pendingStatusNote: String? = null
+    private var activeStatusNote: String? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val statusRefreshRunnable = object : Runnable {
+        override fun run() {
+            if (::status.isInitialized) {
+                renderStatus(activeStatusNote)
+            }
+            mainHandler.postDelayed(this, STATUS_REFRESH_INTERVAL_MS)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -57,18 +70,31 @@ class MainActivity : Activity() {
                 pendingStartAfterOverlayPermission = false
                 if (Settings.canDrawOverlays(this)) {
                     launchOverlayAndCapture()
-                    return
+                } else {
+                    activeStatusNote = "未授予悬浮窗权限。"
+                    renderStatus(activeStatusNote)
                 }
-                renderStatus("未授予悬浮窗权限。")
-                return
+            } else {
+                pendingStatusNote?.let {
+                    activeStatusNote = it
+                    pendingStatusNote = null
+                }
+                renderStatus(activeStatusNote)
             }
-            renderStatus()
+            startStatusRefresh()
         }
     }
 
     override fun onPause() {
+        mainHandler.removeCallbacks(statusRefreshRunnable)
+        activeStatusNote = null
         OverlayService.setMainForeground(this, false)
         super.onPause()
+    }
+
+    override fun onDestroy() {
+        mainHandler.removeCallbacks(statusRefreshRunnable)
+        super.onDestroy()
     }
 
     @Deprecated("使用 onActivityResult 保持首版依赖最小")
@@ -76,10 +102,11 @@ class MainActivity : Activity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode != REQUEST_CAPTURE) return
         if (resultCode == RESULT_OK && data != null) {
+            OverlayService.show(this)
             CaptureProbeService.start(this, resultCode, data)
-            renderStatus("已开始记牌，请切回游戏。")
+            pendingStatusNote = "已开始记牌，请切回游戏。"
         } else {
-            renderStatus("未授予截屏权限。")
+            pendingStatusNote = "未授予截屏权限。"
         }
     }
 
@@ -103,6 +130,7 @@ class MainActivity : Activity() {
         addView(status)
 
         addView(button("开始记牌") {
+            activeStatusNote = null
             if (Settings.canDrawOverlays(this@MainActivity)) {
                 launchOverlayAndCapture()
             } else {
@@ -117,12 +145,13 @@ class MainActivity : Activity() {
         })
 
         addView(button("开新局") {
-            if (CaptureProbeService.requestNewGame(this@MainActivity)) {
-                renderStatus("已开新局，切回游戏后自动识别手牌。")
+            activeStatusNote = if (CaptureProbeService.requestNewGame(this@MainActivity)) {
+                "已开新局，切回游戏后自动识别手牌。"
             } else {
                 resetLedgerOffline()
-                renderStatus("已开新局。")
+                "已开新局。"
             }
+            renderStatus(activeStatusNote)
         })
 
         addView(button("停止记牌") {
@@ -130,7 +159,8 @@ class MainActivity : Activity() {
             stopService(Intent(this@MainActivity, OverlayService::class.java))
             OverlayProbeState.reset()
             CaptureProbeStatus.stopped()
-            renderStatus("已停止记牌。")
+            activeStatusNote = "已停止记牌。"
+            renderStatus(activeStatusNote)
         })
 
         diagnosticsToggle = TextView(context).apply {
@@ -163,13 +193,18 @@ class MainActivity : Activity() {
     }
 
     private fun launchOverlayAndCapture() {
-        OverlayService.show(this)
         if (!CaptureProbeStatus.snapshot().running) {
             val manager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
             startActivityForResult(manager.createScreenCaptureIntent(), REQUEST_CAPTURE)
         } else {
-            renderStatus()
+            OverlayService.show(this)
+            renderStatus(activeStatusNote)
         }
+    }
+
+    private fun startStatusRefresh() {
+        mainHandler.removeCallbacks(statusRefreshRunnable)
+        mainHandler.postDelayed(statusRefreshRunnable, STATUS_REFRESH_INTERVAL_MS)
     }
 
     private fun resetLedgerOffline() {
@@ -224,5 +259,6 @@ class MainActivity : Activity() {
     private companion object {
         const val REQUEST_NOTIFICATIONS = 1
         const val REQUEST_CAPTURE = 2
+        const val STATUS_REFRESH_INTERVAL_MS = 250L
     }
 }
