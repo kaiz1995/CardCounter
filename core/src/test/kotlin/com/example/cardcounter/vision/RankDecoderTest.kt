@@ -1,10 +1,12 @@
 package com.example.cardcounter.vision
 
 import com.example.cardcounter.domain.Rank
+import org.json.JSONArray
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
+import javax.imageio.ImageIO
 
 class RankDecoderTest {
     private fun emptyOutput() = FloatArray(RankModelContract.OUTPUT_SIZE)
@@ -176,9 +178,9 @@ class RankDecoderTest {
     @Test
     fun narrowLeftRedStripMisclassifiedAsNormalRanksIsRefinedToBigJoker() {
         val argb = blankArgb320()
-        // 最左框 cx=20, cy=180, w=14.8, h=29.2 (h/w=1.97, w/24=0.617)，上半部绘红字 JOKER 墨迹，底边绘模拟干扰不越界。
-        paintRect(argb, 15, 168, 25, 173, 0xD02020)
-        // 模拟底边红色“出牌”圆标压住底部（不应误导正常黑字，也不影响红字）
+        // 最左框 cx=20, cy=180, w=14.8, h=29.2 (x=12..28, y=165..195)：顶部 0..25% 在右半侧画细竖笔“J”，中段画椭圆“O”。
+        paintRect(argb, 22, 165, 25, 178, 0xD02020)
+        paintRect(argb, 14, 180, 26, 189, 0xD02020)
         for (misRank in listOf(Rank.JACK, Rank.KING, Rank.ACE)) {
             val dets = listOf(
                 YoloDetection(misRank, misRank.name, 0.84f, 20f, 180f, 14.8f, 29.2f),
@@ -190,26 +192,47 @@ class RankDecoderTest {
     }
 
     @Test
-    fun narrowLeftBlackStripWithBottomRedBadgeIsRefinedToSmallJoker() {
-        val argb = blankArgb320()
-        // 最左框 cx=120, cy=180, w=13.6, h=31.1 (h/w=2.29, w/21.4=0.636)
-        // 上半部 65%（y=164..184）绘黑字墨迹，底部 35%（y=186..195）模拟红圆标边缘压入：只看上半部不被红圆标带偏。
-        paintRect(argb, 115, 167, 125, 172, 0x151515)
-        paintRect(argb, 114, 188, 127, 195, 0xD02020)
+    fun narrowLeftBlackStripWithoutBottomRedBadgeIsRefinedToSmallJokerAndBottomBadgeBlocksIt() {
+        val cleanSmallJoker = blankArgb320()
+        // 最左框 cx=120, cy=180, w=13.6, h=31.1 (x=113..127, y=164..196)：右半侧画细竖笔“J”，中段画黑字。
+        paintRect(cleanSmallJoker, 121, 164, 124, 178, 0x151515)
+        paintRect(cleanSmallJoker, 116, 179, 125, 184, 0x151515)
         for (misRank in listOf(Rank.FIVE, Rank.TWO, Rank.THREE)) {
             val dets = listOf(
                 YoloDetection(misRank, misRank.name, 0.56f, 120f, 180f, 13.6f, 31.1f),
                 YoloDetection(misRank, misRank.name, 0.96f, 160f, 182f, 21.4f, 34.3f)
             )
-            val refined = refineNarrowLeftJoker(dets, argb)
+            val refined = refineNarrowLeftJoker(dets, cleanSmallJoker)
             assertEquals("黑字竖条误认成 $misRank 应纠偏为 SMALL_JOKER", listOf(Rank.SMALL_JOKER, misRank), refined.map { it.rank })
         }
+
+        // 若底部 35%（y=186..195）出现红圆标侵入，说明可能是红圆标压住普通黑牌左下角，不得误改成 SMALL_JOKER。
+        val withRedBadge = cleanSmallJoker.copyOf()
+        paintRect(withRedBadge, 114, 188, 127, 195, 0xD02020)
+        val occluded = listOf(
+            YoloDetection(Rank.EIGHT, "EIGHT", 0.78f, 120f, 180f, 13.6f, 31.1f),
+            YoloDetection(Rank.EIGHT, "EIGHT", 0.96f, 160f, 182f, 21.4f, 34.3f)
+        )
+        assertEquals(listOf(Rank.EIGHT, Rank.EIGHT), refineNarrowLeftJoker(occluded, withRedBadge).map { it.rank })
+
+        // 若顶部 15% 横向撑满左半区（普通数字如 10/8/J 顶横），不得误改成王。
+        val wideTop = blankArgb320()
+        paintRect(wideTop, 114, 164, 126, 171, 0x151515)
+        assertEquals(listOf(Rank.TEN, Rank.TEN), refineNarrowLeftJoker(
+            listOf(
+                YoloDetection(Rank.TEN, "TEN", 0.40f, 120f, 180f, 13.6f, 31.1f),
+                YoloDetection(Rank.TEN, "TEN", 0.95f, 160f, 182f, 21.4f, 34.3f)
+            ),
+            wideTop
+        ).map { it.rank })
     }
 
     @Test
     fun normalAspectOrSingleCardOrAmbiguousColorIsNotModified() {
         val argb = blankArgb320()
-        paintRect(argb, 15, 168, 25, 173, 0xD02020)
+        // 绘符合 J 形态的细竖笔墨迹，确保下面几个测试真正检验的是几何/张数门而非墨迹形态门。
+        paintRect(argb, 22, 165, 25, 178, 0xD02020)
+        paintRect(argb, 15, 179, 25, 185, 0xD02020)
         // 1) 普通牌正常高宽比（如 1.66 < 1.85）即使较窄也不改
         val normalAspect = listOf(
             YoloDetection(Rank.TWO, "TWO", 0.96f, 20f, 180f, 15.0f, 24.9f),
@@ -235,5 +258,44 @@ class RankDecoderTest {
             YoloDetection(Rank.JACK, "JACK", 0.95f, 60f, 180f, 24.0f, 36.0f)
         )
         assertEquals(listOf(Rank.JACK, Rank.JACK), refineNarrowLeftJoker(ambiguous, blankArgb).map { it.rank })
+    }
+
+    @Test
+    fun realCapturedFramesNeverMisrefineOccludedNormalCardsAndStillFixJokers() {
+        val stream = requireNotNull(javaClass.getResourceAsStream("/joker_refine/cases.json")) {
+            "缺少 /joker_refine/cases.json"
+        }
+        val cases = JSONArray(stream.use { it.readBytes().toString(Charsets.UTF_8) })
+        val size = RankModelContract.INPUT_SIZE
+        for (i in 0 until cases.length()) {
+            val item = cases.getJSONObject(i)
+            val id = item.getString("id")
+            val imageName = item.getString("image")
+            val expectedLeftRank = Rank.valueOf(item.getString("expectedLeftRank"))
+            val imgStream = requireNotNull(javaClass.getResourceAsStream("/joker_refine/$imageName")) {
+                "缺少 /joker_refine/$imageName"
+            }
+            val img = imgStream.use { ImageIO.read(it) }
+            assertEquals("$id 宽", size, img.width)
+            assertEquals("$id 高", size, img.height)
+            val argb = IntArray(size * size) { idx -> img.getRGB(idx % size, idx / size) }
+            val rawArray = item.getJSONArray("rawDetections")
+            val dets = (0 until rawArray.length()).map { j ->
+                val d = rawArray.getJSONObject(j)
+                val rank = Rank.valueOf(d.getString("rank"))
+                YoloDetection(
+                    rank = rank,
+                    rawLabel = rank.name,
+                    confidence = d.getDouble("conf").toFloat(),
+                    centerX = d.getDouble("cx").toFloat(),
+                    centerY = d.getDouble("cy").toFloat(),
+                    width = d.getDouble("w").toFloat(),
+                    height = d.getDouble("h").toFloat()
+                )
+            }
+            val refined = refineNarrowLeftJoker(dets, argb)
+            val leftIndex = refined.indices.minBy { refined[it].centerX }
+            assertEquals("$id 最左张结果不符", expectedLeftRank, refined[leftIndex].rank)
+        }
     }
 }

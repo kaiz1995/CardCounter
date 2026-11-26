@@ -117,15 +117,24 @@ private fun iou(first: Candidate, second: Candidate): Float {
 
 private const val NARROW_JOKER_MIN_ASPECT = 1.85f
 private const val NARROW_JOKER_MAX_WIDTH_RATIO = 0.72f
+private const val NARROW_JOKER_TOP15_PERCENT = 15
+private const val NARROW_JOKER_TOP25_PERCENT = 25
 private const val NARROW_JOKER_TOP_PERCENT = 65
+private const val NARROW_JOKER_MIN_TOP25_RIGHT_INK = 4
+private const val NARROW_JOKER_MAX_TOP25_LEFT_RATIO_NUM = 1
+private const val NARROW_JOKER_MAX_TOP25_LEFT_RATIO_DEN = 3
 private const val NARROW_JOKER_MIN_INK_PIXELS = 8
+private const val NARROW_JOKER_MAX_BOTTOM_RED_FOR_SMALL = 2
 
 /**
  * 修正扇形最左侧被圆标/印章部分遮挡、被模型误判为普通牌的王牌竖条（与 tools/dataset/phone_vision.py 同口径）：
- * 实测 dev 全部 20 局 39,130 个普通牌框中，停稳帧最大高宽比为 1.69（多牌最左张也仅 1.32..1.66），
- * 而误判为普通牌的王牌竖条（如 g102658-4 RIGHT_TOP SMALL_JOKER->FIVE、g102658-5 RIGHT_BOTTOM BIG_JOKER->JACK）
- * 高宽比分别为 2.28..2.29 与 1.97，且宽度显著窄于同手右侧正常牌（相对宽度 0.62..0.64）。
- * 取最左侧框上半部 65%（避开底边“出牌”圆标红像素），按红字/黑字墨迹分别纠正为 BIG_JOKER / SMALL_JOKER。
+ * 1. 几何：多张牌的最左框、高宽比 >= 1.85、宽度 <= 0.72 × 其他牌最大宽；
+ * 2. 字形墨迹形态（独立强证据，防止“出牌”圆标压住普通牌左下角形成窄条误判）：
+ *    王牌竖条纵向排“JOKER”，顶部 0..25% 必为无左顶横的细竖笔“J”，集中在框右半侧；
+ *    普通牌（10/8/K/Q/J等）顶部数字形横跨框宽或左半有大量笔画：
+ *    - 顶部 15% 内逐行墨迹（红或低饱和暗像素 <160）最大横向跨度 <= 框宽 50%；
+ *    - 顶部 25% 右半区墨迹 >= 4 点，且左半区墨迹 <= 右半区 1/3；
+ * 3. 红/黑归属与小王防圆标侵入：上半部 65% 红/黑墨迹 >= 8 分别判大王/小王，且判小王时底边 35% 红像素 <= 2（防红圆标压入普通黑牌底部）。
  */
 fun refineNarrowLeftJoker(
     detections: List<YoloDetection>,
@@ -150,27 +159,68 @@ fun refineNarrowLeftJoker(
     val x2 = kotlin.math.ceil(leftmost.centerX + leftmost.width / 2f).toInt().coerceIn(x1 + 1, size)
     val y1 = kotlin.math.floor(leftmost.centerY - leftmost.height / 2f).toInt().coerceIn(0, size - 1)
     val y2 = kotlin.math.ceil(leftmost.centerY + leftmost.height / 2f).toInt().coerceIn(y1 + 1, size)
-    val yTopEnd = (y1 + maxOf(1, (y2 - y1) * NARROW_JOKER_TOP_PERCENT / 100)).coerceAtMost(size)
+    val boxWidth = x2 - x1
+    val boxHeight = y2 - y1
+    val yTop15 = (y1 + maxOf(1, boxHeight * NARROW_JOKER_TOP15_PERCENT / 100)).coerceAtMost(size)
+    val yTop25 = (y1 + maxOf(1, boxHeight * NARROW_JOKER_TOP25_PERCENT / 100)).coerceAtMost(size)
+    val yTopEnd = (y1 + maxOf(1, boxHeight * NARROW_JOKER_TOP_PERCENT / 100)).coerceAtMost(size)
+    val xMid = x1 + boxWidth / 2
 
+    var maxTop15Span = 0
+    var top25Left = 0
+    var top25Right = 0
     var redInk = 0
     var blackInk = 0
-    for (y in y1 until yTopEnd) {
+    var bottomRedInk = 0
+
+    for (y in y1 until y2) {
         val rowOffset = y * size
+        var rowMinX = -1
+        var rowMaxX = -1
         for (x in x1 until x2) {
             val rgb = inputArgb320[rowOffset + x]
             val r = (rgb shr 16) and 0xff
             val g = (rgb shr 8) and 0xff
             val b = rgb and 0xff
-            if (r >= 120 && r - g >= 45 && r - b >= 45) {
-                redInk++
-            } else if (r < 115 && g < 115 && b < 115) {
-                blackInk++
+            val isRed = r >= 120 && r - g >= 45 && r - b >= 45
+            val isBlack = r < 115 && g < 115 && b < 115
+            val high = maxOf(r, g, b)
+            val low = minOf(r, g, b)
+            val isMorphInk = isRed || (high < 160 && high - low <= 45)
+            if (isMorphInk) {
+                if (rowMinX < 0) rowMinX = x
+                rowMaxX = x
+                if (y < yTop25) {
+                    if (x < xMid) top25Left++ else top25Right++
+                }
+            }
+            if (y < yTopEnd) {
+                if (isRed) {
+                    redInk++
+                } else if (isBlack) {
+                    blackInk++
+                }
+            } else if (isRed) {
+                bottomRedInk++
             }
         }
+        if (y < yTop15 && rowMinX >= 0) {
+            maxTop15Span = maxOf(maxTop15Span, rowMaxX - rowMinX + 1)
+        }
     }
+
+    if (maxTop15Span == 0 || maxTop15Span * 2 > boxWidth) return detections
+    if (top25Right < NARROW_JOKER_MIN_TOP25_RIGHT_INK ||
+        top25Left * NARROW_JOKER_MAX_TOP25_LEFT_RATIO_DEN > top25Right * NARROW_JOKER_MAX_TOP25_LEFT_RATIO_NUM
+    ) {
+        return detections
+    }
+
     val refinedRank = when {
         redInk >= NARROW_JOKER_MIN_INK_PIXELS && redInk >= blackInk * 2 -> Rank.BIG_JOKER
-        blackInk >= NARROW_JOKER_MIN_INK_PIXELS && (redInk <= 2 || blackInk >= redInk * 2) -> Rank.SMALL_JOKER
+        blackInk >= NARROW_JOKER_MIN_INK_PIXELS &&
+            (redInk <= 2 || blackInk >= redInk * 2) &&
+            bottomRedInk <= NARROW_JOKER_MAX_BOTTOM_RED_FOR_SMALL -> Rank.SMALL_JOKER
         else -> return detections
     }
     return detections.mapIndexed { index, det ->

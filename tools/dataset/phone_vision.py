@@ -348,11 +348,17 @@ def rank_tensor(rgb: np.ndarray) -> np.ndarray:
     return np.ascontiguousarray(np.transpose(rgb.astype(np.float32) / 255.0, (2, 0, 1))[None])
 
 
-# RankDecoder.refineNarrowLeftJoker 同口径参数（dev 39,130 普通牌框最大 h/w=1.69，误判王牌竖条 1.97..2.29 且相对宽度 0.62..0.64）
+# RankDecoder.refineNarrowLeftJoker 同口径参数
 NARROW_JOKER_MIN_ASPECT = 1.85
 NARROW_JOKER_MAX_WIDTH_RATIO = 0.72
+NARROW_JOKER_TOP15_PERCENT = 15
+NARROW_JOKER_TOP25_PERCENT = 25
 NARROW_JOKER_TOP_PERCENT = 65
+NARROW_JOKER_MIN_TOP25_RIGHT_INK = 4
+NARROW_JOKER_MAX_TOP25_LEFT_RATIO_NUM = 1
+NARROW_JOKER_MAX_TOP25_LEFT_RATIO_DEN = 3
 NARROW_JOKER_MIN_INK_PIXELS = 8
+NARROW_JOKER_MAX_BOTTOM_RED_FOR_SMALL = 2
 
 
 def refine_narrow_left_joker(
@@ -361,7 +367,7 @@ def refine_narrow_left_joker(
     big_joker_id: int = 0,
     small_joker_id: int = 1,
 ) -> list[tuple[int, float, float, float, float, float]]:
-    """与 RankDecoder.refineNarrowLeftJoker 完全一致：按竖条几何与上半部红黑墨迹纠偏最左侧被误认王牌。"""
+    """与 RankDecoder.refineNarrowLeftJoker 完全一致：几何比例 + J 字顶部形态 + 上半部红黑墨迹 + 小王底边防红圆标侵入。"""
     if len(detections) < 2:
         return detections
     left_i = min(range(len(detections)), key=lambda i: detections[i][2])
@@ -378,14 +384,52 @@ def refine_narrow_left_joker(
     x2 = max(x1 + 1, min(MODEL_SIZE, int(math.ceil(cx + w / 2.0))))
     y1 = max(0, min(MODEL_SIZE - 1, int(math.floor(cy - h / 2.0))))
     y2 = max(y1 + 1, min(MODEL_SIZE, int(math.ceil(cy + h / 2.0))))
-    y_top = min(MODEL_SIZE, y1 + max(1, (y2 - y1) * NARROW_JOKER_TOP_PERCENT // 100))
-    patch = rgb320[y1:y_top, x1:x2].astype(np.int32)
+    bw = x2 - x1
+    bh = y2 - y1
+    y_top15 = min(MODEL_SIZE, y1 + max(1, bh * NARROW_JOKER_TOP15_PERCENT // 100))
+    y_top25 = min(MODEL_SIZE, y1 + max(1, bh * NARROW_JOKER_TOP25_PERCENT // 100))
+    y_top = min(MODEL_SIZE, y1 + max(1, bh * NARROW_JOKER_TOP_PERCENT // 100))
+    x_mid = x1 + bw // 2
+
+    patch = rgb320[y1:y2, x1:x2].astype(np.int32)
     r, g, b = patch[:, :, 0], patch[:, :, 1], patch[:, :, 2]
-    red = int(((r >= 120) & (r - g >= 45) & (r - b >= 45)).sum())
-    black = int(((r < 115) & (g < 115) & (b < 115)).sum())
+    is_red = (r >= 120) & (r - g >= 45) & (r - b >= 45)
+    is_black = (r < 115) & (g < 115) & (b < 115)
+    high = np.maximum(np.maximum(r, g), b)
+    low = np.minimum(np.minimum(r, g), b)
+    is_morph = is_red | ((high < 160) & (high - low <= 45))
+
+    rows15 = y_top15 - y1
+    max_top15_span = 0
+    for ry in range(rows15):
+        cols = np.flatnonzero(is_morph[ry])
+        if cols.size > 0:
+            max_top15_span = max(max_top15_span, int(cols[-1] - cols[0] + 1))
+    if max_top15_span == 0 or max_top15_span * 2 > bw:
+        return detections
+
+    rows25 = y_top25 - y1
+    mid_col = x_mid - x1
+    top25_left = int(is_morph[:rows25, :mid_col].sum())
+    top25_right = int(is_morph[:rows25, mid_col:].sum())
+    if (
+        top25_right < NARROW_JOKER_MIN_TOP25_RIGHT_INK
+        or top25_left * NARROW_JOKER_MAX_TOP25_LEFT_RATIO_DEN
+        > top25_right * NARROW_JOKER_MAX_TOP25_LEFT_RATIO_NUM
+    ):
+        return detections
+
+    rows65 = y_top - y1
+    red = int(is_red[:rows65].sum())
+    black = int(is_black[:rows65].sum())
+    bottom_red = int(is_red[rows65:].sum())
     if red >= NARROW_JOKER_MIN_INK_PIXELS and red >= black * 2:
         refined_cls = big_joker_id
-    elif black >= NARROW_JOKER_MIN_INK_PIXELS and (red <= 2 or black >= red * 2):
+    elif (
+        black >= NARROW_JOKER_MIN_INK_PIXELS
+        and (red <= 2 or black >= red * 2)
+        and bottom_red <= NARROW_JOKER_MAX_BOTTOM_RED_FOR_SMALL
+    ):
         refined_cls = small_joker_id
     else:
         return detections
