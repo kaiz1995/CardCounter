@@ -346,3 +346,49 @@ def describe_frame(screen: Screen, previous: dict[str, np.ndarray] | None = None
 def rank_tensor(rgb: np.ndarray) -> np.ndarray:
     """argbToRankTensor：RGB、0..1、NCHW。"""
     return np.ascontiguousarray(np.transpose(rgb.astype(np.float32) / 255.0, (2, 0, 1))[None])
+
+
+# RankDecoder.refineNarrowLeftJoker 同口径参数（dev 39,130 普通牌框最大 h/w=1.69，误判王牌竖条 1.97..2.29 且相对宽度 0.62..0.64）
+NARROW_JOKER_MIN_ASPECT = 1.85
+NARROW_JOKER_MAX_WIDTH_RATIO = 0.72
+NARROW_JOKER_TOP_PERCENT = 65
+NARROW_JOKER_MIN_INK_PIXELS = 8
+
+
+def refine_narrow_left_joker(
+    detections: list[tuple[int, float, float, float, float, float]],
+    rgb320: np.ndarray,
+    big_joker_id: int = 0,
+    small_joker_id: int = 1,
+) -> list[tuple[int, float, float, float, float, float]]:
+    """与 RankDecoder.refineNarrowLeftJoker 完全一致：按竖条几何与上半部红黑墨迹纠偏最左侧被误认王牌。"""
+    if len(detections) < 2:
+        return detections
+    left_i = min(range(len(detections)), key=lambda i: detections[i][2])
+    cls_id, score, cx, cy, w, h = detections[left_i]
+    if cls_id in (big_joker_id, small_joker_id):
+        return detections
+    if w <= 0.0 or h / w < NARROW_JOKER_MIN_ASPECT:
+        return detections
+    max_other_w = max(detections[i][4] for i in range(len(detections)) if i != left_i)
+    if w > NARROW_JOKER_MAX_WIDTH_RATIO * max_other_w:
+        return detections
+
+    x1 = max(0, min(MODEL_SIZE - 1, int(math.floor(cx - w / 2.0))))
+    x2 = max(x1 + 1, min(MODEL_SIZE, int(math.ceil(cx + w / 2.0))))
+    y1 = max(0, min(MODEL_SIZE - 1, int(math.floor(cy - h / 2.0))))
+    y2 = max(y1 + 1, min(MODEL_SIZE, int(math.ceil(cy + h / 2.0))))
+    y_top = min(MODEL_SIZE, y1 + max(1, (y2 - y1) * NARROW_JOKER_TOP_PERCENT // 100))
+    patch = rgb320[y1:y_top, x1:x2].astype(np.int32)
+    r, g, b = patch[:, :, 0], patch[:, :, 1], patch[:, :, 2]
+    red = int(((r >= 120) & (r - g >= 45) & (r - b >= 45)).sum())
+    black = int(((r < 115) & (g < 115) & (b < 115)).sum())
+    if red >= NARROW_JOKER_MIN_INK_PIXELS and red >= black * 2:
+        refined_cls = big_joker_id
+    elif black >= NARROW_JOKER_MIN_INK_PIXELS and (red <= 2 or black >= red * 2):
+        refined_cls = small_joker_id
+    else:
+        return detections
+    out = list(detections)
+    out[left_i] = (refined_cls, score, cx, cy, w, h)
+    return out

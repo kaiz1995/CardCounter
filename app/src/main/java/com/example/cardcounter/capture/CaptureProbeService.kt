@@ -732,7 +732,7 @@ class CaptureProbeService : Service() {
             // 只拿牌停稳之后的最后几帧投票，不带上牌还在滑入时的画面（与 eval 的 takeLast 一致）。
             val voted = finalized.frames.takeLast(FINALIZE_FRAME_COUNT)
             val candidates = voted.mapNotNull { frame ->
-                frame.bitmap?.let(::detectYoloCards)?.let {
+                frame.bitmap?.let { detectYoloCards(it, refineOutsideJoker = true) }?.let {
                     RankCountsCandidate(it.cards, it.minimumConfidence, it.detections)
                 }
             }
@@ -959,9 +959,9 @@ class CaptureProbeService : Service() {
         val fingerprint: IntArray
     )
 
-    private fun detectYoloCards(bitmap: Bitmap): YoloCards? = runCatching {
+    private fun detectYoloCards(bitmap: Bitmap, refineOutsideJoker: Boolean = false): YoloCards? = runCatching {
         val counts = Rank.entries.associateWith { 0 }.toMutableMap()
-        val detections = requireNotNull(publicPlayYolo).detect(bitmap)
+        val detections = requireNotNull(publicPlayYolo).detect(bitmap, refineOutsideJoker)
         detections.forEach { detection ->
             counts[detection.rank] = counts.getValue(detection.rank) + 1
         }

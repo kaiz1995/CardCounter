@@ -152,4 +152,88 @@ class RankDecoderTest {
         assertEquals(0f, tensor[2 * plane], 0f)
         assertEquals(1f, tensor[plane - 1], 0f)
     }
+
+    private fun blankArgb320(rgb: Int = 0xf0f0f0): IntArray =
+        IntArray(RankModelContract.INPUT_SIZE * RankModelContract.INPUT_SIZE) { 0xff000000.toInt() or rgb }
+
+    private fun paintRect(
+        argb: IntArray,
+        x0: Int,
+        y0: Int,
+        x1: Int,
+        y1: Int,
+        rgb: Int
+    ) {
+        val size = RankModelContract.INPUT_SIZE
+        val color = 0xff000000.toInt() or rgb
+        for (y in y0.coerceIn(0, size) until y1.coerceIn(0, size)) {
+            for (x in x0.coerceIn(0, size) until x1.coerceIn(0, size)) {
+                argb[y * size + x] = color
+            }
+        }
+    }
+
+    @Test
+    fun narrowLeftRedStripMisclassifiedAsNormalRanksIsRefinedToBigJoker() {
+        val argb = blankArgb320()
+        // 最左框 cx=20, cy=180, w=14.8, h=29.2 (h/w=1.97, w/24=0.617)，上半部绘红字 JOKER 墨迹，底边绘模拟干扰不越界。
+        paintRect(argb, 15, 168, 25, 173, 0xD02020)
+        // 模拟底边红色“出牌”圆标压住底部（不应误导正常黑字，也不影响红字）
+        for (misRank in listOf(Rank.JACK, Rank.KING, Rank.ACE)) {
+            val dets = listOf(
+                YoloDetection(misRank, misRank.name, 0.84f, 20f, 180f, 14.8f, 29.2f),
+                YoloDetection(misRank, misRank.name, 0.94f, 62f, 184f, 24.0f, 36.0f)
+            )
+            val refined = refineNarrowLeftJoker(dets, argb)
+            assertEquals("红字竖条误认成 $misRank 应纠偏为 BIG_JOKER", listOf(Rank.BIG_JOKER, misRank), refined.map { it.rank })
+        }
+    }
+
+    @Test
+    fun narrowLeftBlackStripWithBottomRedBadgeIsRefinedToSmallJoker() {
+        val argb = blankArgb320()
+        // 最左框 cx=120, cy=180, w=13.6, h=31.1 (h/w=2.29, w/21.4=0.636)
+        // 上半部 65%（y=164..184）绘黑字墨迹，底部 35%（y=186..195）模拟红圆标边缘压入：只看上半部不被红圆标带偏。
+        paintRect(argb, 115, 167, 125, 172, 0x151515)
+        paintRect(argb, 114, 188, 127, 195, 0xD02020)
+        for (misRank in listOf(Rank.FIVE, Rank.TWO, Rank.THREE)) {
+            val dets = listOf(
+                YoloDetection(misRank, misRank.name, 0.56f, 120f, 180f, 13.6f, 31.1f),
+                YoloDetection(misRank, misRank.name, 0.96f, 160f, 182f, 21.4f, 34.3f)
+            )
+            val refined = refineNarrowLeftJoker(dets, argb)
+            assertEquals("黑字竖条误认成 $misRank 应纠偏为 SMALL_JOKER", listOf(Rank.SMALL_JOKER, misRank), refined.map { it.rank })
+        }
+    }
+
+    @Test
+    fun normalAspectOrSingleCardOrAmbiguousColorIsNotModified() {
+        val argb = blankArgb320()
+        paintRect(argb, 15, 168, 25, 173, 0xD02020)
+        // 1) 普通牌正常高宽比（如 1.66 < 1.85）即使较窄也不改
+        val normalAspect = listOf(
+            YoloDetection(Rank.TWO, "TWO", 0.96f, 20f, 180f, 15.0f, 24.9f),
+            YoloDetection(Rank.EIGHT, "EIGHT", 0.96f, 60f, 180f, 22.0f, 34.0f)
+        )
+        assertEquals(listOf(Rank.TWO, Rank.EIGHT), refineNarrowLeftJoker(normalAspect, argb).map { it.rank })
+
+        // 2) 高宽比够高但宽度与右牌接近（未体现扇形左侧遮挡窄化，w/maxRight > 0.72）不改
+        val similarWidth = listOf(
+            YoloDetection(Rank.FIVE, "FIVE", 0.90f, 20f, 180f, 16.0f, 32.0f),
+            YoloDetection(Rank.FIVE, "FIVE", 0.95f, 60f, 180f, 20.0f, 32.0f)
+        )
+        assertEquals(listOf(Rank.FIVE, Rank.FIVE), refineNarrowLeftJoker(similarWidth, argb).map { it.rank })
+
+        // 3) 单张牌不改
+        val single = listOf(YoloDetection(Rank.JACK, "JACK", 0.90f, 20f, 180f, 14.0f, 30.0f))
+        assertEquals(listOf(Rank.JACK), refineNarrowLeftJoker(single, argb).map { it.rank })
+
+        // 4) 框内无足够红/黑像素（空白或纯灰）不乱改
+        val blankArgb = blankArgb320()
+        val ambiguous = listOf(
+            YoloDetection(Rank.JACK, "JACK", 0.80f, 20f, 180f, 14.0f, 30.0f),
+            YoloDetection(Rank.JACK, "JACK", 0.95f, 60f, 180f, 24.0f, 36.0f)
+        )
+        assertEquals(listOf(Rank.JACK, Rank.JACK), refineNarrowLeftJoker(ambiguous, blankArgb).map { it.rank })
+    }
 }

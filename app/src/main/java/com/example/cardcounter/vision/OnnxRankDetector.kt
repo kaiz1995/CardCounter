@@ -34,10 +34,10 @@ class OnnxRankDetector(context: Context) : Closeable {
      * 输入是已经摆好的画布：出牌区是 320×320（letterbox），手牌是 870×870 手牌画布。
      * 不是 320 见方时用 [ScreenScale.resizeLinear] 缩，和训练端的双线性逐像素一致（不用系统的 createScaledBitmap）。
      */
-    fun detect(bitmap: Bitmap): List<YoloDetection> =
-        guard.runIfOpen(emptyList<YoloDetection>()) { detectLocked(bitmap) }
+    fun detect(bitmap: Bitmap, refineOutsideJoker: Boolean = false): List<YoloDetection> =
+        guard.runIfOpen(emptyList<YoloDetection>()) { detectLocked(bitmap, refineOutsideJoker) }
 
-    private fun detectLocked(bitmap: Bitmap): List<YoloDetection> {
+    private fun detectLocked(bitmap: Bitmap, refineOutsideJoker: Boolean): List<YoloDetection> {
         val size = RankModelContract.INPUT_SIZE
         val source = IntArray(bitmap.width * bitmap.height)
         bitmap.getPixels(source, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
@@ -57,7 +57,8 @@ class OnnxRankDetector(context: Context) : Closeable {
                 val buffer = output.floatBuffer
                 val raw = FloatArray(buffer.remaining())
                 buffer.get(raw)
-                return decodeRankOutput(raw)
+                val decoded = decodeRankOutput(raw)
+                return if (refineOutsideJoker) refineNarrowLeftJoker(decoded, pixels) else decoded
             }
         }
     }

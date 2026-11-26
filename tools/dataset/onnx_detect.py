@@ -185,7 +185,8 @@ class GameSampler:
         }
         if self.still_run[name] <= INFER_STILL_RUN_LIMIT:
             crop = pv.expanded_crop(screen, spec)
-            found = detector.detect(pv.play_zone_input(screen, crop))
+            rgb320 = pv.play_zone_input(screen, crop)
+            found = pv.refine_narrow_left_joker(detector.detect(rgb320), rgb320)
             self.stats["inferences"] += 1
             self.stats["boxes"] += len(found)
             zone["dets"] = [

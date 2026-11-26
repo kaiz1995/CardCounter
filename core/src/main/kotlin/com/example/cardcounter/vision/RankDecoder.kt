@@ -114,3 +114,66 @@ private fun iou(first: Candidate, second: Candidate): Float {
     val secondArea = (second.x2 - second.x1) * (second.y2 - second.y1)
     return intersection / maxOf(firstArea + secondArea - intersection, 1e-6f)
 }
+
+private const val NARROW_JOKER_MIN_ASPECT = 1.85f
+private const val NARROW_JOKER_MAX_WIDTH_RATIO = 0.72f
+private const val NARROW_JOKER_TOP_PERCENT = 65
+private const val NARROW_JOKER_MIN_INK_PIXELS = 8
+
+/**
+ * 修正扇形最左侧被圆标/印章部分遮挡、被模型误判为普通牌的王牌竖条（与 tools/dataset/phone_vision.py 同口径）：
+ * 实测 dev 全部 20 局 39,130 个普通牌框中，停稳帧最大高宽比为 1.69（多牌最左张也仅 1.32..1.66），
+ * 而误判为普通牌的王牌竖条（如 g102658-4 RIGHT_TOP SMALL_JOKER->FIVE、g102658-5 RIGHT_BOTTOM BIG_JOKER->JACK）
+ * 高宽比分别为 2.28..2.29 与 1.97，且宽度显著窄于同手右侧正常牌（相对宽度 0.62..0.64）。
+ * 取最左侧框上半部 65%（避开底边“出牌”圆标红像素），按红字/黑字墨迹分别纠正为 BIG_JOKER / SMALL_JOKER。
+ */
+fun refineNarrowLeftJoker(
+    detections: List<YoloDetection>,
+    inputArgb320: IntArray
+): List<YoloDetection> {
+    val size = RankModelContract.INPUT_SIZE
+    if (detections.size < 2 || inputArgb320.size != size * size) return detections
+    var leftIndex = 0
+    for (i in 1 until detections.size) {
+        if (detections[i].centerX < detections[leftIndex].centerX) leftIndex = i
+    }
+    val leftmost = detections[leftIndex]
+    if (leftmost.rank == Rank.BIG_JOKER || leftmost.rank == Rank.SMALL_JOKER) return detections
+    if (leftmost.width <= 0f || leftmost.height / leftmost.width < NARROW_JOKER_MIN_ASPECT) return detections
+    var maxOtherWidth = 0f
+    for (i in detections.indices) {
+        if (i != leftIndex && detections[i].width > maxOtherWidth) maxOtherWidth = detections[i].width
+    }
+    if (leftmost.width > NARROW_JOKER_MAX_WIDTH_RATIO * maxOtherWidth) return detections
+
+    val x1 = kotlin.math.floor(leftmost.centerX - leftmost.width / 2f).toInt().coerceIn(0, size - 1)
+    val x2 = kotlin.math.ceil(leftmost.centerX + leftmost.width / 2f).toInt().coerceIn(x1 + 1, size)
+    val y1 = kotlin.math.floor(leftmost.centerY - leftmost.height / 2f).toInt().coerceIn(0, size - 1)
+    val y2 = kotlin.math.ceil(leftmost.centerY + leftmost.height / 2f).toInt().coerceIn(y1 + 1, size)
+    val yTopEnd = (y1 + maxOf(1, (y2 - y1) * NARROW_JOKER_TOP_PERCENT / 100)).coerceAtMost(size)
+
+    var redInk = 0
+    var blackInk = 0
+    for (y in y1 until yTopEnd) {
+        val rowOffset = y * size
+        for (x in x1 until x2) {
+            val rgb = inputArgb320[rowOffset + x]
+            val r = (rgb shr 16) and 0xff
+            val g = (rgb shr 8) and 0xff
+            val b = rgb and 0xff
+            if (r >= 120 && r - g >= 45 && r - b >= 45) {
+                redInk++
+            } else if (r < 115 && g < 115 && b < 115) {
+                blackInk++
+            }
+        }
+    }
+    val refinedRank = when {
+        redInk >= NARROW_JOKER_MIN_INK_PIXELS && redInk >= blackInk * 2 -> Rank.BIG_JOKER
+        blackInk >= NARROW_JOKER_MIN_INK_PIXELS && (redInk <= 2 || blackInk >= redInk * 2) -> Rank.SMALL_JOKER
+        else -> return detections
+    }
+    return detections.mapIndexed { index, det ->
+        if (index == leftIndex) det.copy(rank = refinedRank, rawLabel = refinedRank.name) else det
+    }
+}
