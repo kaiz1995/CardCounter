@@ -399,7 +399,7 @@ class TurnGateReplayTest {
 
     @Test
     fun otherSeatPlayRightAfterAFlashClearDoesNotUnlockTheReappearingOldCards() {
-        // 右下先出 5×3 入账 → 右下闪空清桌（约 300ms）→ 上家出 10×3 入账 → 右下 5×3 重现停稳：
+        // 右下先出 5×3 入账 → 右下闪空清桌后不足 OTHER_SEAT_UNLOCK_MIN_CLEAR_MS(150ms) 时上家出 10×3 入账（这里间隔 120ms）→ 右下 5×3 重现停稳：
         // 清桌标记是粘性的，但清桌时间不足、不能被上家入账解锁，重现的旧牌必须判重复。
         fun zone(zone: PlayZone, rank: Rank?) =
             if (rank == null) {
@@ -411,8 +411,8 @@ class TurnGateReplayTest {
                 )
             }
 
-        fun both(count: Int, rightBottom: Rank?, top: Rank?) = List(count) {
-            clock += 100
+        fun both(count: Int, rightBottom: Rank?, top: Rank?, stepMs: Long = 40L) = List(count) {
+            clock += stepMs
             FrameObservation(
                 clock, true,
                 mapOf(
@@ -472,5 +472,59 @@ class TurnGateReplayTest {
         assertEquals(listOf(LegacyOutcome.ACCEPTED, LegacyOutcome.ACCEPTED, LegacyOutcome.ACCEPTED), result.map { it.outcome })
         assertEquals(listOf(FinalizeReason.COVERED, FinalizeReason.COVERED, FinalizeReason.CLEARED), result.map { it.reason })
         assertEquals(listOf(5, 5, 1), result.map { it.cards?.total() })
+    }
+
+    @Test
+    fun fastClearWith155MsOtherSeatAcceptUnlocksZone() {
+        // 某区清桌上升沿后仅隔 155ms 他座就入账（比如 g143651-5 LEFT_TOP 空桌 404ms、清桌后 155ms 他座入账）：也应解锁。
+        val emptyTop = ZoneObservation(PlayZone.TOP, false, false, emptyList())
+        val emptyRb = ZoneObservation(PlayZone.RIGHT_BOTTOM, false, false, emptyList())
+        val topKing = obs(true, 1, rank = Rank.KING)
+        val rbAce = ZoneObservation(
+            PlayZone.RIGHT_BOTTOM, true, true,
+            listOf(Detection(Rank.ACE, 0.9f, 0.5f, 0.42f, 0.12f, 0.22f))
+        )
+        val seq = mutableListOf<FrameObservation>()
+        fun addStep(dt: Long, top: ZoneObservation, rb: ZoneObservation) {
+            clock += dt
+            seq += FrameObservation(clock, true, mapOf(PlayZone.TOP to top, PlayZone.RIGHT_BOTTOM to rb))
+        }
+        repeat(3) { addStep(50, topKing, emptyRb) } // TOP K:1 入账
+        repeat(2) { addStep(100, emptyTop, emptyRb) } // 第 2 帧 TOP 清桌上升沿 (clearedAt = T)
+        addStep(50, emptyTop, rbAce) // RB 出现
+        addStep(50, emptyTop, rbAce) // RB still 1
+        addStep(55, emptyTop, rbAce) // RB 满 stableSamples=2 在 T + 155ms 入账 -> 应解锁 TOP
+        repeat(3) { addStep(50, topKing, rbAce) } // TOP 再出 1 张 K
+        repeat(2) { addStep(50, emptyTop, rbAce) }
+
+        val result = replayAudits(seq, stableSamples = 2)
+        assertEquals(
+            listOf(LegacyOutcome.ACCEPTED, LegacyOutcome.ACCEPTED, LegacyOutcome.ACCEPTED),
+            result.map { it.outcome }
+        )
+        assertEquals(listOf(PlayZone.TOP, PlayZone.RIGHT_BOTTOM, PlayZone.TOP), result.map { it.zone })
+    }
+
+    @Test
+    fun directCoverWithSameMainRankAndCoreFingerprintChangeIsAcceptedWithoutClear() {
+        // 未经过清桌，一手以 COVERED 交出后紧接着被同主点数（1 张 K -> 2 张 K，或同点数 2 张 6）盖牌替换且核心区指纹变化，应放行入账。
+        val fp1 = IntArray(com.example.cardcounter.capture.RoiFingerprint.COLUMNS * com.example.cardcounter.capture.RoiFingerprint.ROWS) { 0x303030 }
+        val fp2 = fp1.copyOf().also { arr ->
+            for (r in 6..10) for (c in 0 until 6) arr[r * com.example.cardcounter.capture.RoiFingerprint.COLUMNS + c] = 0x303030 + (120 shl 16)
+        }
+        fun topWithFp(kings: Int, still: Boolean, fp: IntArray) = ZoneObservation(
+            PlayZone.TOP, true, still,
+            List(kings) { Detection(Rank.KING, 0.9f, 0.3f + 0.2f * it, 0.42f, 0.12f, 0.22f) },
+            fingerprint = fp
+        )
+        val result = replayAudits(
+            frames(4, topWithFp(1, true, fp1)) +
+                frames(1, topWithFp(2, false, fp2)) +
+                frames(4, topWithFp(2, true, fp2)) +
+                frames(2, obs(false, 0)),
+            stableSamples = 10
+        )
+        assertEquals(listOf(LegacyOutcome.ACCEPTED, LegacyOutcome.ACCEPTED), result.map { it.outcome })
+        assertEquals(listOf(1, 2), result.map { it.cards?.total() })
     }
 }

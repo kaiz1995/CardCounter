@@ -540,4 +540,56 @@ class StablePlayGateTest {
         gate.onOutsideTurn(turned = true, nowMs = 0L, isOnTable = { false })
         assertTrue(gate.isReady(handConfirmed = false))
     }
+
+    @Test
+    fun otherSeatAcceptedAfter150MsClearUnlocksZone() {
+        val gate = StablePlayGate()
+        val king = RankCounts.of(mapOf(Rank.KING to 1))
+        val ace = RankCounts.of(mapOf(Rank.ACE to 1))
+        assertEquals(StablePlay(PlayZone.LEFT_TOP, king), gate.accept(PlayZone.LEFT_TOP, king, 0L))
+        gate.noteZoneCleared(PlayZone.LEFT_TOP, 1_000L)
+        // 清桌后 149ms（不足 150ms）不解锁；满 155ms（>= 150ms）他座入账即解锁。
+        gate.commitAccepted(PlayZone.RIGHT_TOP, ace, 1_149L) { true }
+        assertTrue(gate.check(PlayZone.LEFT_TOP, king, 1_200L) is PlayGateDecision.Suppressed)
+        gate.commitAccepted(PlayZone.RIGHT_BOTTOM, ace, 1_155L) { true }
+        assertTrue(gate.check(PlayZone.LEFT_TOP, king, 1_300L) is PlayGateDecision.Accept)
+    }
+
+    @Test
+    fun coveredPlayUnlocksDirectCoverWithCoreFingerprintChangeAndKeepsEdgeFlickerBlocked() {
+        val baseFp = IntArray(RoiFingerprint.COLUMNS * RoiFingerprint.ROWS) { 0x303030 }
+        val bottomFlickerFp = baseFp.copyOf().also { arr ->
+            for (r in 12..15) for (c in 0 until 20) arr[r * RoiFingerprint.COLUMNS + c] = 0x303030 + (100 shl 16)
+        }
+        val newCardCoreFp = baseFp.copyOf().also { arr ->
+            for (r in 9..10) for (c in 0 until 4) arr[r * RoiFingerprint.COLUMNS + c] = 0x303030 + (100 shl 16)
+        }
+        val twoSixes = RankCounts.of(mapOf(Rank.SIX to 2))
+        val oneKing = RankCounts.of(mapOf(Rank.KING to 1))
+        val twoKings = RankCounts.of(mapOf(Rank.KING to 2))
+
+        // 1) 前一手以 COVERED 入账：若重交仅底部“少于10张”光效变化，核心区未变，仍被 EXACT/SUBSET 拦截。
+        val gate1 = StablePlayGate()
+        assertTrue(gate1.check(PlayZone.TOP, twoSixes, 1_000L, covered = true, fingerprint = baseFp) is PlayGateDecision.Accept)
+        gate1.commitAccepted(PlayZone.TOP, twoSixes, 1_000L, covered = true, fingerprint = baseFp) { false }
+        assertEquals(
+            PlayGateDecision.Suppressed(PlaySuppressionReason.EXACT_DUPLICATE),
+            gate1.check(PlayZone.TOP, twoSixes, 1_300L, covered = true, fingerprint = bottomFlickerFp)
+        )
+        // 2) 若核心区 (row 2..11) 确实发生变化，直接盖牌同点连出（EXACT 和 SUBSET）均应放行。
+        assertTrue(gate1.check(PlayZone.TOP, twoSixes, 1_500L, covered = true, fingerprint = newCardCoreFp) is PlayGateDecision.Accept)
+
+        val gate2 = StablePlayGate()
+        assertTrue(gate2.check(PlayZone.TOP, oneKing, 1_000L, covered = true, fingerprint = baseFp) is PlayGateDecision.Accept)
+        gate2.commitAccepted(PlayZone.TOP, oneKing, 1_000L, covered = true, fingerprint = baseFp) { false }
+        assertTrue(gate2.check(PlayZone.TOP, twoKings, 1_400L, covered = true, fingerprint = newCardCoreFp) is PlayGateDecision.Accept)
+
+        // 3) 若前一手是 STABLE 满帧交出而非 COVERED，保持保守拦截不因局部扰动放行。
+        val gate3 = StablePlayGate()
+        gate3.commitAccepted(PlayZone.TOP, twoSixes, 1_000L, covered = false, fingerprint = baseFp) { false }
+        assertEquals(
+            PlayGateDecision.Suppressed(PlaySuppressionReason.EXACT_DUPLICATE),
+            gate3.check(PlayZone.TOP, twoSixes, 1_800L, covered = false, fingerprint = newCardCoreFp)
+        )
+    }
 }

@@ -68,7 +68,12 @@ class LegacyPipeline(
     private val requireOpeningSignal: Boolean = true,
     private val onAudit: (LegacyAudit) -> Unit = {}
 ) : StepwisePlayPipeline {
-    private data class ZoneSample(val timestampMs: Long, val still: Boolean, val detections: List<Detection>?)
+    private data class ZoneSample(
+        val timestampMs: Long,
+        val still: Boolean,
+        val detections: List<Detection>?,
+        val fingerprint: IntArray? = null
+    )
 
     private val cache = RoiPlayEventCache<ZoneSample>(
         maxFrames = maxFrames,
@@ -84,6 +89,8 @@ class LegacyPipeline(
 
     /** 当前这一帧的采样时间：账本接受后提交去重门要用和检查时同一个时间。 */
     private var currentNowMs = 0L
+    private val pendingCoveredByZone = mutableMapOf<PlayZone, Boolean>()
+    private val pendingFpByZone = mutableMapOf<PlayZone, IntArray?>()
     private val auditLog = mutableListOf<LegacyAudit>()
 
     /** 本次回放的全部最终化尝试，按发生顺序。 */
@@ -124,7 +131,7 @@ class LegacyPipeline(
             val zoneTableVisible = tableVisible && observed?.occluded != true
             val visible = zoneTableVisible && observed != null && isPlayVisible(observed.cardVisible)
             val sample = if (visible) {
-                ZoneSample(observation.timestampMs, observed.still, observed.detections)
+                ZoneSample(observation.timestampMs, observed.still, observed.detections, observed.fingerprint)
             } else {
                 null
             }
@@ -157,8 +164,12 @@ class LegacyPipeline(
     override fun onDecisionResult(decision: PipelineDecision, result: DispatchResult) {
         val zone = decision.zone ?: return
         val command = decision.command as? LedgerCommand.AcceptOutsidePlay ?: return
+        val covered = pendingCoveredByZone.remove(zone) ?: false
+        val fingerprint = pendingFpByZone.remove(zone)
         if (result is DispatchResult.Accepted) {
-            gate.commitAccepted(zone, command.cards, currentNowMs) { cache.isCleared(it, generation) }
+            gate.commitAccepted(zone, command.cards, currentNowMs, covered, fingerprint) {
+                cache.isCleared(it, generation)
+            }
         }
     }
 
@@ -168,6 +179,8 @@ class LegacyPipeline(
         gate.reset()
         signals.reset()
         openingGate.reset(alreadyInPlay = !requireOpeningSignal)
+        pendingCoveredByZone.clear()
+        pendingFpByZone.clear()
         auditLog.clear()
     }
 
@@ -214,7 +227,10 @@ class LegacyPipeline(
             )
             return null
         }
-        return admit(finalized.zone, cards, finalized.frames.size, finalized.reason, timestampMs, nowMs, ledger)
+        return admit(
+            finalized.zone, cards, finalized.frames.size, finalized.reason, timestampMs, nowMs, ledger,
+            fingerprint = finalized.frames.lastOrNull()?.fingerprint
+        )
     }
 
     /** 开局门因圆标打开后补记门控打开前交出过、牌还在桌上的一手：规则早已校验过，只重走账本状态、开局门和去重门（与手机一致）。 */
@@ -223,7 +239,7 @@ class LegacyPipeline(
             audit(LegacyAudit(play.zone, play.atMs, LegacyOutcome.NOT_ACTIVE, play.cards, 0))
             return null
         }
-        return admit(play.zone, play.cards, 0, null, play.atMs, currentNowMs, ledger)
+        return admit(play.zone, play.cards, 0, null, play.atMs, currentNowMs, ledger, fingerprint = null)
     }
 
     /** 开局门 → 去重门检查 → 生成账本命令；正常交出和补记共用。 */
@@ -234,7 +250,8 @@ class LegacyPipeline(
         finalizeReason: FinalizeReason?,
         timestampMs: Long,
         nowMs: Long,
-        ledger: GameState
+        ledger: GameState,
+        fingerprint: IntArray?
     ): PipelineDecision? {
         if (requireOpeningSignal && !openingGate.isReady(ledger.handConfirmed)) {
             // 记下这一手：开局门稍后因圆标打开时，桌上还摆着的会补记。
@@ -247,7 +264,8 @@ class LegacyPipeline(
             )
             return null
         }
-        val stable = when (val decision = gate.check(zone, cards, nowMs)) {
+        val covered = finalizeReason == FinalizeReason.COVERED
+        val stable = when (val decision = gate.check(zone, cards, nowMs, covered, fingerprint)) {
             is PlayGateDecision.Accept -> decision.play
             is PlayGateDecision.Suppressed -> {
                 audit(
@@ -259,6 +277,8 @@ class LegacyPipeline(
                 return null
             }
         }
+        pendingCoveredByZone[zone] = covered
+        pendingFpByZone[zone] = fingerprint
         audit(LegacyAudit(zone, timestampMs, LegacyOutcome.ACCEPTED, stable.cards, frameCount, finalizeReason))
         val evidenceId = UUID.randomUUID().toString()
         val command = LedgerCommand.AcceptOutsidePlay(stable.cards, requireNotNull(zone.seat), evidenceId)

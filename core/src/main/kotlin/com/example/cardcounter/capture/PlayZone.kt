@@ -179,6 +179,8 @@ class StablePlayGate {
     private class ZoneState {
         var accepted: RankCounts? = null
         var acceptedAtMs = 0L
+        var acceptedCovered = false
+        var acceptedFingerprint: IntArray? = null
         var unlockedSinceAccept = false
         var clearedSinceAccept = false
 
@@ -189,18 +191,32 @@ class StablePlayGate {
     private val states = PlayZone.entries.associateWith { ZoneState() }
 
     /** 只判断不修改状态；供提交账本前使用。 */
-    fun check(zone: PlayZone, cards: RankCounts, timestampMs: Long): PlayGateDecision {
+    @Suppress("UNUSED_PARAMETER")
+    fun check(
+        zone: PlayZone,
+        cards: RankCounts,
+        timestampMs: Long,
+        covered: Boolean = false,
+        fingerprint: IntArray? = null
+    ): PlayGateDecision {
         if (cards.total() == 0) return PlayGateDecision.Suppressed(PlaySuppressionReason.EMPTY)
         val state = states.getValue(zone)
         val previous = state.accepted
         if (previous != null && !state.unlockedSinceAccept) {
-            if (previous == cards) {
-                return PlayGateDecision.Suppressed(PlaySuppressionReason.EXACT_DUPLICATE)
-            }
-            if (timestampMs - state.acceptedAtMs <= SUBSET_WINDOW_MS &&
-                isSameMainRankSubsetOrSuperset(previous, cards)
-            ) {
-                return PlayGateDecision.Suppressed(PlaySuppressionReason.SUBSET_OR_SUPERSET)
+            val prevFp = state.acceptedFingerprint
+            val directCoverSwap = state.acceptedCovered &&
+                prevFp != null &&
+                fingerprint != null &&
+                RoiFingerprint.hasCoreAreaChanged(prevFp, fingerprint)
+            if (!directCoverSwap) {
+                if (previous == cards) {
+                    return PlayGateDecision.Suppressed(PlaySuppressionReason.EXACT_DUPLICATE)
+                }
+                if (timestampMs - state.acceptedAtMs <= SUBSET_WINDOW_MS &&
+                    isSameMainRankSubsetOrSuperset(previous, cards)
+                ) {
+                    return PlayGateDecision.Suppressed(PlaySuppressionReason.SUBSET_OR_SUPERSET)
+                }
             }
         }
         return PlayGateDecision.Accept(StablePlay(zone, cards))
@@ -216,12 +232,16 @@ class StablePlayGate {
         zone: PlayZone,
         cards: RankCounts,
         timestampMs: Long,
+        covered: Boolean = false,
+        fingerprint: IntArray? = null,
         isStillCleared: (PlayZone) -> Boolean
     ) {
         if (cards.total() == 0) return
         val current = states.getValue(zone)
         current.accepted = cards
         current.acceptedAtMs = timestampMs
+        current.acceptedCovered = covered
+        current.acceptedFingerprint = fingerprint
         current.unlockedSinceAccept = false
         current.clearedSinceAccept = false
         current.clearedAtMs = 0L
@@ -278,6 +298,8 @@ class StablePlayGate {
             states.getValue(zone).apply {
                 accepted = null
                 acceptedAtMs = 0L
+                acceptedCovered = false
+                acceptedFingerprint = null
                 unlockedSinceAccept = false
                 clearedSinceAccept = false
                 clearedAtMs = 0L
@@ -289,6 +311,8 @@ class StablePlayGate {
         states.values.forEach {
             it.accepted = null
             it.acceptedAtMs = 0L
+            it.acceptedCovered = false
+            it.acceptedFingerprint = null
             it.unlockedSinceAccept = false
             it.clearedSinceAccept = false
             it.clearedAtMs = 0L
@@ -305,9 +329,10 @@ class StablePlayGate {
 
         /**
          * 他座入账解锁本区所需的最短清桌时长：本区最近一次清桌上升沿到他座入账至少隔这么久，才算旧牌真的收走。
-         * 压暗面板、特效等瞬时遮挡通常不到半秒，旧牌随后原样重现，不能当作新的一手。
+         * 依据 dev 实测：g143651-5 LEFT_TOP #80 在清桌上升沿后仅 155ms 他座即入账（总空桌 404ms）；
+         * 150ms 在全 dev 与 tuning 上可 0 副作用解锁真实换手并仍挡住单/双帧闪空。
          */
-        const val OTHER_SEAT_UNLOCK_MIN_CLEAR_MS = 600L
+        const val OTHER_SEAT_UNLOCK_MIN_CLEAR_MS = 150L
     }
 }
 

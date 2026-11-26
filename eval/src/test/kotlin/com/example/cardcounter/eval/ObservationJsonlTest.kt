@@ -96,4 +96,27 @@ class ObservationJsonlTest {
         assertTrue(error is DataFormatException)
         assertTrue(error!!.message.orEmpty().contains("ts_ms"))
     }
+
+    @Test
+    fun parsesOptionalBase64FingerprintAndRejectsWrongLength() {
+        val rawBytes = ByteArray(com.example.cardcounter.capture.RoiFingerprint.COLUMNS * com.example.cardcounter.capture.RoiFingerprint.ROWS * 3) {
+            (it % 251).toByte()
+        }
+        val b64 = java.util.Base64.getEncoder().encodeToString(rawBytes)
+        val okFrame = ObservationJsonl.parseLine(
+            """{"ts_ms":10,"table_visible":true,"zones":{"TOP":{"card_visible":true,"still":true,"fp":"$b64"}}}"""
+        )
+        val parsedFp = okFrame.zones.getValue(PlayZone.TOP).fingerprint
+        assertEquals(0x000102, parsedFp!![0])
+        assertEquals(640, parsedFp.size)
+
+        val badB64 = java.util.Base64.getEncoder().encodeToString(ByteArray(12))
+        val badError = runCatching {
+            ObservationJsonl.parse(
+                """{"ts_ms":10,"table_visible":true,"zones":{"TOP":{"card_visible":true,"still":true,"fp":"$badB64"}}}"""
+            )
+        }.exceptionOrNull()
+        assertTrue(badError is DataFormatException)
+        assertTrue(badError!!.message.orEmpty().contains("fp"))
+    }
 }

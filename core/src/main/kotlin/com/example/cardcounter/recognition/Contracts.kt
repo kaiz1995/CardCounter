@@ -52,10 +52,41 @@ data class ZoneObservation(
     /** 这一区的“出牌”倒计时圆标亮着（轮到这一家），见 TurnBadge。 */
     val turnBadge: Boolean = false,
     /** 这一区被压暗面板等遮挡（手机 ZoneVisibility.OCCLUDED）：按本区牌桌不可见处理，不推进清桌和圆标，必要时交出没交出的一手。 */
-    val occluded: Boolean = false
+    val occluded: Boolean = false,
+    /** 与 [com.example.cardcounter.capture.RoiFingerprint] 同口径的 40x16 RGB 指纹（0xRRGGBB）；单测缺省时为 null。 */
+    val fingerprint: IntArray? = null
 ) {
     init {
         require(!occluded || !cardVisible) { "${zone.name} 被遮挡时 cardVisible 必须为 false" }
+    }
+
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is ZoneObservation) return false
+        return zone == other.zone &&
+            cardVisible == other.cardVisible &&
+            still == other.still &&
+            detections == other.detections &&
+            turnBadge == other.turnBadge &&
+            occluded == other.occluded &&
+            fingerprint.contentEqualsOrBothNull(other.fingerprint)
+    }
+
+    override fun hashCode(): Int {
+        var result = zone.hashCode()
+        result = 31 * result + cardVisible.hashCode()
+        result = 31 * result + still.hashCode()
+        result = 31 * result + (detections?.hashCode() ?: 0)
+        result = 31 * result + turnBadge.hashCode()
+        result = 31 * result + occluded.hashCode()
+        result = 31 * result + (fingerprint?.contentHashCode() ?: 0)
+        return result
+    }
+
+    private fun IntArray?.contentEqualsOrBothNull(other: IntArray?): Boolean = when {
+        this === other -> true
+        this == null || other == null -> false
+        else -> contentEquals(other)
     }
 }
 

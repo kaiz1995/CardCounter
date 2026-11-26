@@ -1,12 +1,14 @@
 package com.example.cardcounter.eval
 
 import com.example.cardcounter.capture.PlayZone
+import com.example.cardcounter.capture.RoiFingerprint
 import com.example.cardcounter.domain.Rank
 import com.example.cardcounter.recognition.Detection
 import com.example.cardcounter.recognition.FrameObservation
 import com.example.cardcounter.recognition.ZoneObservation
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.Base64
 
 /**
  * 逐帧观察 JSONL：每行一个 FrameObservation，格式见 DATA-FORMATS 第 5 节。
@@ -56,8 +58,11 @@ object ObservationJsonl {
         val turn = if (JsonFields.has(json, "turn")) JsonFields.boolean(json, "turn", "$prefix.turn") else false
         val occluded = if (JsonFields.has(json, "occluded")) JsonFields.boolean(json, "occluded", "$prefix.occluded") else false
         if (occluded && cardVisible) throw IllegalArgumentException("$prefix.occluded 为 true 时 card_visible 必须为 false")
+        val fingerprint = if (JsonFields.has(json, "fp")) parseFingerprint(json, prefix) else null
         if (!JsonFields.has(json, "dets")) {
-            return ZoneObservation(zone, cardVisible, still, detections = null, turnBadge = turn, occluded = occluded)
+            return ZoneObservation(
+                zone, cardVisible, still, detections = null, turnBadge = turn, occluded = occluded, fingerprint = fingerprint
+            )
         }
         val dets = json.get("dets")
         if (dets !is JSONArray) throw IllegalArgumentException("$prefix.dets 不是数组")
@@ -66,7 +71,29 @@ object ObservationJsonl {
             if (item !is JSONObject) throw IllegalArgumentException("$prefix.dets[$index] 不是对象")
             parseDetection(zone, index, item)
         }
-        return ZoneObservation(zone, cardVisible, still, parsed, turnBadge = turn, occluded = occluded)
+        return ZoneObservation(
+            zone, cardVisible, still, parsed, turnBadge = turn, occluded = occluded, fingerprint = fingerprint
+        )
+    }
+
+    private fun parseFingerprint(json: JSONObject, prefix: String): IntArray {
+        val encoded = JsonFields.string(json, "fp", "$prefix.fp")
+        val raw = try {
+            Base64.getDecoder().decode(encoded)
+        } catch (error: IllegalArgumentException) {
+            throw IllegalArgumentException("$prefix.fp Base64 无效: ${error.message}")
+        }
+        val expectedPixels = RoiFingerprint.COLUMNS * RoiFingerprint.ROWS
+        if (raw.size != expectedPixels * 3) {
+            throw IllegalArgumentException("$prefix.fp 字节数 ${raw.size}，期望 ${expectedPixels * 3}")
+        }
+        return IntArray(expectedPixels) { index ->
+            val offset = index * 3
+            val r = raw[offset].toInt() and 0xff
+            val g = raw[offset + 1].toInt() and 0xff
+            val b = raw[offset + 2].toInt() and 0xff
+            (r shl 16) or (g shl 8) or b
+        }
     }
 
     private fun parseDetection(zone: PlayZone, index: Int, json: JSONObject): Detection {
