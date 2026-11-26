@@ -60,8 +60,8 @@
       "prePlayEndMs": 591002,
       "firstPlayMs": 595512,
       "complete": true,
-      "selfHand": "BIG_JOKER:3;SMALL_JOKER:1;TWO:5;ACE:3;KING:4;QUEEN:4;JACK:4;TEN:1;NINE:6;EIGHT:3;SEVEN:1;FIVE:2;FOUR:1;THREE:1",
-      "selfHandCount": 39,
+      "selfHand": "BIG_JOKER:3;SMALL_JOKER:1;TWO:5;ACE:3;KING:4;QUEEN:4;JACK:4;TEN:1;NINE:5;EIGHT:3;SEVEN:1;FIVE:2;FOUR:1;THREE:1",
+      "selfHandCount": 38,
       "review": "AUTO",
       "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。",
       "selfHandAtMs": 595030
