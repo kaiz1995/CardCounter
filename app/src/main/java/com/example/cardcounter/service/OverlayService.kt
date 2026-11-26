@@ -293,10 +293,8 @@ class OverlayService : Service() {
         })
         addView(menuButton("停止记牌", Color.rgb(255, 110, 120)) {
             menuVisible = false
-            isRunning = false
-            OverlayProbeState.onChange = null
+            stop(this@OverlayService)
             stopService(Intent(this@OverlayService, CaptureProbeService::class.java))
-            stopSelf()
         })
     }
 
@@ -568,6 +566,17 @@ class OverlayService : Service() {
         private var mainForeground: Boolean = false
 
         fun show(context: Context) = send(context, ACTION_SHOW)
+
+        /**
+         * 停掉悬浮窗服务。先把 [isRunning] 置 false、断开状态回调，再停服务：服务真正销毁前，
+         * 识别线程或回调线程调 [refresh] 就不会再发启动请求，把刚停掉的悬浮窗和常驻通知重新拉起来。
+         * 所有停悬浮窗的入口（主界面、小图标菜单、截屏被系统停止）都走这里。
+         */
+        fun stop(context: Context) {
+            isRunning = false
+            OverlayProbeState.onChange = null
+            context.stopService(Intent(context, OverlayService::class.java))
+        }
 
         fun refresh(context: Context) {
             if (isRunning) send(context, ACTION_REFRESH)

@@ -155,8 +155,8 @@ class MainActivity : Activity() {
         })
 
         addView(button("停止记牌") {
+            OverlayService.stop(this@MainActivity)
             stopService(Intent(this@MainActivity, CaptureProbeService::class.java))
-            stopService(Intent(this@MainActivity, OverlayService::class.java))
             OverlayProbeState.reset()
             CaptureProbeStatus.stopped()
             activeStatusNote = "已停止记牌。"
