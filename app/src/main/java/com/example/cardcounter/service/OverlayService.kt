@@ -17,6 +17,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.SystemClock
+import android.provider.Settings
 import android.util.DisplayMetrics
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
@@ -67,6 +68,9 @@ class OverlayService : Service() {
     /** 点击小图标弹出的两项菜单是否可见。 */
     private var menuVisible = false
 
+    /** 竖屏小图标正在被手指拖动：期间 renderAll 不重设小图标位置，防止跳回贴边。 */
+    private var iconDragging = false
+
     /** 竖屏小图标贴哪边和纵坐标（像素），记住在 SharedPreferences。 */
     private var portraitOnRight = true
     private var portraitY = -1
@@ -93,10 +97,11 @@ class OverlayService : Service() {
             ACTION_MAIN_BACKGROUND -> mainForeground = false
         }
         renderAll()
-        return START_STICKY
+        return START_NOT_STICKY
     }
 
     override fun onDestroy() {
+        iconDragging = false
         isRunning = false
         OverlayProbeState.onChange = null
         mainHandler.removeCallbacksAndMessages(null)
@@ -116,6 +121,7 @@ class OverlayService : Service() {
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         menuVisible = false
+        iconDragging = false
         iconView?.let { windowManager.updateViewLayout(it, controlParams(iconPixelRect(newConfig))) }
         holdNewGameView?.let { windowManager.updateViewLayout(it, controlParams(OverlayLayout.holdNewGame)) }
         iconMenuView?.let { windowManager.updateViewLayout(it, controlParams(menuPixelRect(newConfig))) }
@@ -123,6 +129,12 @@ class OverlayService : Service() {
     }
 
     private fun attachIfNeeded() {
+        if (!Settings.canDrawOverlays(this)) {
+            isRunning = false
+            OverlayProbeState.onChange = null
+            stopSelf()
+            return
+        }
         if (counter != null) return
         counter = CounterOverlayView(this).also { view ->
             windowManager.addView(view, fullScreenParams())
@@ -197,7 +209,9 @@ class OverlayService : Service() {
             holdButton.visibility = View.GONE
             icon.visibility = View.VISIBLE
             updateIconAppearance(icon, expanded = false)
-            windowManager.updateViewLayout(icon, controlParams(iconPixelRect(config)))
+            if (!iconDragging) {
+                windowManager.updateViewLayout(icon, controlParams(iconPixelRect(config)))
+            }
             menu.visibility = if (menuVisible) View.VISIBLE else View.GONE
             if (menuVisible) {
                 windowManager.updateViewLayout(menu, controlParams(menuPixelRect(config)))
@@ -211,7 +225,9 @@ class OverlayService : Service() {
         holdButton.visibility = if (showExpanded) View.VISIBLE else View.GONE
         icon.visibility = View.VISIBLE
         updateIconAppearance(icon, expanded = showExpanded)
-        windowManager.updateViewLayout(icon, controlParams(iconPixelRect(config)))
+        if (!iconDragging) {
+            windowManager.updateViewLayout(icon, controlParams(iconPixelRect(config)))
+        }
         menu.visibility = if (menuVisible) View.VISIBLE else View.GONE
         if (menuVisible) {
             windowManager.updateViewLayout(menu, controlParams(menuPixelRect(config)))
@@ -277,6 +293,8 @@ class OverlayService : Service() {
         })
         addView(menuButton("停止记牌", Color.rgb(255, 110, 120)) {
             menuVisible = false
+            isRunning = false
+            OverlayProbeState.onChange = null
             stopService(Intent(this@OverlayService, CaptureProbeService::class.java))
             stopSelf()
         })
@@ -298,7 +316,6 @@ class OverlayService : Service() {
         var downRawY = 0f
         var startX = 0
         var startY = 0
-        var dragging = false
         var longPressed = false
         val longPressRunnable = Runnable {
             if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE && effectiveOnTable) {
@@ -321,7 +338,7 @@ class OverlayService : Service() {
                     val currentRect = iconPixelRect(config)
                     startX = currentRect.left
                     startY = currentRect.top
-                    dragging = false
+                    iconDragging = false
                     longPressed = false
                     if (isLandscape && effectiveOnTable) {
                         mainHandler.postDelayed(
@@ -337,8 +354,8 @@ class OverlayService : Service() {
                     if (abs(dx) > touchSlop || abs(dy) > touchSlop) {
                         mainHandler.removeCallbacks(longPressRunnable)
                         if (!isLandscape) {
-                            if (!dragging) {
-                                dragging = true
+                            if (!iconDragging) {
+                                iconDragging = true
                                 if (menuVisible) {
                                     menuVisible = false
                                     iconMenuView?.visibility = View.GONE
@@ -359,7 +376,8 @@ class OverlayService : Service() {
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     mainHandler.removeCallbacks(longPressRunnable)
-                    if (!isLandscape && dragging) {
+                    if (!isLandscape && iconDragging) {
+                        iconDragging = false
                         val size = dp(OverlayLayout.ICON_DP)
                         val maxX = (screen.first - size).coerceAtLeast(0)
                         val maxY = (screen.second - size).coerceAtLeast(0)
@@ -373,9 +391,11 @@ class OverlayService : Service() {
                             .apply()
                         renderAll()
                     } else if (event.actionMasked == MotionEvent.ACTION_UP && !longPressed) {
+                        iconDragging = false
                         onIconTap(isLandscape)
+                    } else {
+                        iconDragging = false
                     }
-                    dragging = false
                     longPressed = false
                     true
                 }
