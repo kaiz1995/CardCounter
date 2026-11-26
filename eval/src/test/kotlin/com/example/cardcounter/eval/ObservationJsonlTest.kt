@@ -12,6 +12,7 @@ class ObservationJsonlTest {
     @Test
     fun parsesFramesAndKeepsMissingDetsAsNull() {
         val text = """
+            ${ObservationJsonl.metaLine()}
             {"ts_ms":100,"table_visible":true,"zones":{"TOP":{"card_visible":true,"still":true,"dets":[{"rank":"FOUR","conf":0.89,"cx":0.5,"cy":0.42,"w":0.12,"h":0.22}]}}}
 
             {"ts_ms":200,"table_visible":false,"zones":{}}
@@ -44,7 +45,8 @@ class ObservationJsonlTest {
 
     @Test
     fun reportsLineAndReasonForNonBooleanTurn() {
-        val text = """{"ts_ms":1,"table_visible":true,"zones":{"TOP":{"card_visible":true,"still":true,"turn":"yes"}}}"""
+        val text = "${ObservationJsonl.metaLine()}\n" +
+            """{"ts_ms":1,"table_visible":true,"zones":{"TOP":{"card_visible":true,"still":true,"turn":"yes"}}}"""
 
         val error = runCatching { ObservationJsonl.parse(text) }.exceptionOrNull()
 
@@ -65,6 +67,7 @@ class ObservationJsonlTest {
     @Test
     fun reportsLineAndReasonForBadRank() {
         val text = """
+            ${ObservationJsonl.metaLine()}
             {"ts_ms":1,"table_visible":true,"zones":{}}
             {"ts_ms":2,"table_visible":true,"zones":{"TOP":{"card_visible":true,"still":true,"dets":[{"rank":"SEVEN?","conf":0.5,"cx":0.5,"cy":0.5,"w":0.1,"h":0.1}]}}}
         """.trimIndent()
@@ -73,13 +76,14 @@ class ObservationJsonlTest {
 
         assertTrue(error is DataFormatException)
         val message = error!!.message.orEmpty()
-        assertTrue(message.contains("第 2 行"))
+        assertTrue(message.contains("第 3 行"))
         assertTrue(message.contains("rank"))
     }
 
     @Test
     fun reportsLineAndReasonForOutOfRangeCoordinate() {
-        val text = """{"ts_ms":1,"table_visible":true,"zones":{"TOP":{"card_visible":true,"still":true,"dets":[{"rank":"ACE","conf":0.5,"cx":1.4,"cy":0.5,"w":0.1,"h":0.1}]}}}"""
+        val text = "${ObservationJsonl.metaLine()}\n" +
+            """{"ts_ms":1,"table_visible":true,"zones":{"TOP":{"card_visible":true,"still":true,"dets":[{"rank":"ACE","conf":0.5,"cx":1.4,"cy":0.5,"w":0.1,"h":0.1}]}}}"""
 
         val error = runCatching { ObservationJsonl.parse(text) }.exceptionOrNull()
 
@@ -89,12 +93,26 @@ class ObservationJsonlTest {
 
     @Test
     fun reportsMissingTimestamp() {
-        val text = """{"table_visible":true,"zones":{}}"""
+        val text = "${ObservationJsonl.metaLine()}\n" + """{"table_visible":true,"zones":{}}"""
 
         val error = runCatching { ObservationJsonl.parse(text) }.exceptionOrNull()
 
         assertTrue(error is DataFormatException)
         assertTrue(error!!.message.orEmpty().contains("ts_ms"))
+    }
+
+    @Test
+    fun rejectsMissingOrMismatchedVisionRuleVersion() {
+        val missing = """{"ts_ms":1,"table_visible":true,"zones":{}}"""
+        val missingErr = runCatching { ObservationJsonl.parse(missing) }.exceptionOrNull()
+        assertTrue(missingErr is DataFormatException)
+        assertTrue(missingErr!!.message.orEmpty().contains(ObservationJsonl.VERSION_MISMATCH_MESSAGE))
+
+        val stale = "${ObservationJsonl.metaLine("v2-stale")}\n$missing"
+        val staleErr = runCatching { ObservationJsonl.parse(stale) }.exceptionOrNull()
+        assertTrue(staleErr is DataFormatException)
+        assertTrue(staleErr!!.message.orEmpty().contains(ObservationJsonl.VERSION_MISMATCH_MESSAGE))
+        assertTrue(staleErr.message.orEmpty().contains("v2-stale"))
     }
 
     @Test
@@ -113,7 +131,8 @@ class ObservationJsonlTest {
         val badB64 = java.util.Base64.getEncoder().encodeToString(ByteArray(12))
         val badError = runCatching {
             ObservationJsonl.parse(
-                """{"ts_ms":10,"table_visible":true,"zones":{"TOP":{"card_visible":true,"still":true,"fp":"$badB64"}}}"""
+                """${ObservationJsonl.metaLine()}
+{"ts_ms":10,"table_visible":true,"zones":{"TOP":{"card_visible":true,"still":true,"fp":"$badB64"}}}"""
             )
         }.exceptionOrNull()
         assertTrue(badError is DataFormatException)

@@ -6,6 +6,9 @@ import com.example.cardcounter.domain.Rank
 object RankModelContract {
     const val INPUT_SIZE = 320
 
+    /** 视觉后处理规则版本标识（由 VisionRuleVersionGuardTest 机械校验 RankDecoder.kt 与 phone_vision.py 内容哈希一致）。 */
+    const val VISION_RULE_VERSION = "v3-5d6b86cacc34"
+
     /** 类别号 = Rank.entries 的顺序（0 BIG_JOKER … 14 THREE）。 */
     const val CLASS_COUNT = 15
     const val CANDIDATES = 2100

@@ -6,23 +6,44 @@ import com.example.cardcounter.domain.Rank
 import com.example.cardcounter.recognition.Detection
 import com.example.cardcounter.recognition.FrameObservation
 import com.example.cardcounter.recognition.ZoneObservation
+import com.example.cardcounter.vision.RankModelContract
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Base64
 
 /**
- * 逐帧观察 JSONL：每行一个 FrameObservation，格式见 DATA-FORMATS 第 5 节。
+ * 逐帧观察 JSONL：首行必须是元数据对象 `{"_meta":true,"vision_rule_version":"..."}`，
+ * 之后每行一个 FrameObservation，格式见 DATA-FORMATS 第 5 节。
  * 行间不保证按时间排序，回放前由调用方排序。
- * 字段类型严格校验：不接受字符串布尔、浮点时间戳、NaN，也不接受一行里拼两个对象。
+ * 字段类型严格校验：不接受字符串布尔、浮点时间戳、NaN，也不接受一行里拼两个对象；
+ * 视觉规则版本缺失或与 [RankModelContract.VISION_RULE_VERSION] 不一致时直接报错退出。
  */
 object ObservationJsonl {
+    const val META_KEY = "_meta"
+    const val VERSION_KEY = "vision_rule_version"
+    const val VERSION_MISMATCH_MESSAGE = "视觉规则已改，请用 onnx_detect.py 全量重新生成 dev+tuning 观察"
+
+    fun metaLine(version: String = RankModelContract.VISION_RULE_VERSION): String =
+        """{"$META_KEY":true,"$VERSION_KEY":"$version"}"""
+
     fun parse(text: String, source: String = "obs.jsonl"): List<FrameObservation> {
         val errors = mutableListOf<String>()
         val frames = mutableListOf<FrameObservation>()
-        val lines = text.removePrefix("﻿").replace("\r\n", "\n").replace('\r', '\n').split('\n')
+        val lines = text.removePrefix("\uFEFF").replace("\r\n", "\n").replace('\r', '\n').split('\n')
+        var metaChecked = false
         for ((index, raw) in lines.withIndex()) {
             if (raw.isBlank()) continue
             val line = index + 1
+            if (!metaChecked) {
+                metaChecked = true
+                val metaVersion = readMetaVersion(raw)
+                if (metaVersion != RankModelContract.VISION_RULE_VERSION) {
+                    throw DataFormatException(
+                        "$source: $VERSION_MISMATCH_MESSAGE（观察版本=${metaVersion ?: "缺失"}，当前代码版本=${RankModelContract.VISION_RULE_VERSION}）"
+                    )
+                }
+                continue
+            }
             val frame = runCatching { parseLine(raw) }
                 .getOrElse { error ->
                     errors += "第 $line 行: ${error.message ?: error::class.java.simpleName}"
@@ -30,8 +51,19 @@ object ObservationJsonl {
                 }
             frame?.let { frames += it }
         }
+        if (!metaChecked) {
+            throw DataFormatException(
+                "$source: $VERSION_MISMATCH_MESSAGE（观察版本=缺失，当前代码版本=${RankModelContract.VISION_RULE_VERSION}）"
+            )
+        }
         if (errors.isNotEmpty()) fail(errors, source)
         return frames
+    }
+
+    private fun readMetaVersion(raw: String): String? {
+        val json = runCatching { JsonFields.parseObject(raw) }.getOrNull() ?: return null
+        if (json.opt(META_KEY) != true) return null
+        return runCatching { JsonFields.string(json, VERSION_KEY) }.getOrNull()
     }
 
     fun parseLine(raw: String): FrameObservation {

@@ -30,7 +30,7 @@ import dscommon as ds  # noqa: E402
 import phone_vision as pv  # noqa: E402
 
 MODEL_PATH = ds.REPO / "app" / "src" / "main" / "assets" / "poker_rank15_yolo11n_320.onnx"
-OUT_DIR = ds.DATA_ROOT / "detections_v2"
+OUT_DIR = ds.DATA_ROOT / "detections_v3"
 
 STEP_MS = 50  # 手机 ROI_SAMPLE_INTERVAL_MS
 CONF_THRESHOLD = 0.25
@@ -121,7 +121,7 @@ def _unit(value: float, counters: dict) -> float:
 class GameSampler:
     """一局的采样状态：下一次采样时刻、每区上一次指纹和连续静止次数。"""
 
-    def __init__(self, game: dict, out_path: Path):
+    def __init__(self, game: dict, out_path: Path, vision_rule_version: str):
         self.game = game
         start, end, pre = int(game["startMs"]), int(game["endMs"]), int(game["prePlayEndMs"])
         # 评测只回放 [prePlayEndMs, endMs]；从它前 1 秒开始，让指纹和静止计数先热起来。
@@ -130,11 +130,20 @@ class GameSampler:
         self.next_t = self.begin
         self.previous_fp: dict[str, np.ndarray | None] = {spec.name: None for spec in OUTSIDE_SPECS}
         self.still_run: dict[str, int] = {spec.name: 0 for spec in OUTSIDE_SPECS}
-        self.stats = {"samples": 0, "table_samples": 0, "inferences": 0, "boxes": 0, "clamped": 0}
+        self.stats = {"samples": 0, "table_samples": 0, "inferences": 0, "boxes": 0, "clamped": 0, "refined": 0}
+        self.refined_events: list[dict] = []
         out_path.parent.mkdir(parents=True, exist_ok=True)
         self.tmp_path = out_path.with_suffix(".jsonl.tmp")
         self.out_path = out_path
         self.handle = self.tmp_path.open("w", encoding="utf-8", newline="\n")
+        self.handle.write(
+            json.dumps(
+                {"_meta": True, "vision_rule_version": vision_rule_version},
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+            + "\n"
+        )
 
     def wants(self, t_ms: float) -> bool:
         return self.begin <= t_ms <= self.end and t_ms >= self.next_t
@@ -150,7 +159,7 @@ class GameSampler:
         zones: dict[str, dict] = {}
         if table:
             for spec in OUTSIDE_SPECS:
-                zones[spec.name] = self._zone(screen, spec, detector)
+                zones[spec.name] = self._zone(screen, spec, detector, t_ms)
             self.stats["table_samples"] += 1
         self.stats["samples"] += 1
         self.handle.write(
@@ -162,7 +171,7 @@ class GameSampler:
             + "\n"
         )
 
-    def _zone(self, screen: pv.Screen, spec: pv.ZoneSpec, detector: RankDetector) -> dict:
+    def _zone(self, screen: pv.Screen, spec: pv.ZoneSpec, detector: RankDetector, ts_ms: int) -> dict:
         state = pv.zone_visibility(screen, spec)
         name = spec.name
         if state == pv.OCCLUDED:
@@ -186,7 +195,17 @@ class GameSampler:
         if self.still_run[name] <= INFER_STILL_RUN_LIMIT:
             crop = pv.expanded_crop(screen, spec)
             rgb320 = pv.play_zone_input(screen, crop)
-            found = pv.refine_narrow_left_joker(detector.detect(rgb320), rgb320)
+            raw_found = detector.detect(rgb320)
+            found = pv.refine_narrow_left_joker(raw_found, rgb320)
+            if found != raw_found:
+                self.stats["refined"] += 1
+                self.refined_events.append({
+                    "ts_ms": int(ts_ms),
+                    "zone": name,
+                    "still": still,
+                    "raw": [ds.RANK_ORDER[d[0]] for d in raw_found],
+                    "refined": [ds.RANK_ORDER[d[0]] for d in found],
+                })
             self.stats["inferences"] += 1
             self.stats["boxes"] += len(found)
             zone["dets"] = [
@@ -207,9 +226,9 @@ class GameSampler:
         self.tmp_path.replace(self.out_path)
 
 
-def run_video(video: str, games: list[dict], detector: RankDetector) -> None:
+def run_video(video: str, games: list[dict], detector: RankDetector, out_dir: Path, vision_rule_version: str) -> None:
     path = ds.SOURCE_BASE / video
-    samplers = [GameSampler(g, OUT_DIR / f"{g['gameId']}.jsonl") for g in games]
+    samplers = [GameSampler(g, out_dir / f"{g['gameId']}.jsonl", vision_rule_version) for g in games]
     cap = cv2.VideoCapture(str(path))
     if not cap.isOpened():
         raise SystemExit(f"打不开视频: {path}")
@@ -242,17 +261,23 @@ def run_video(video: str, games: list[dict], detector: RankDetector) -> None:
         stats = sampler.stats
         print(
             f"{sampler.game['gameId']}: {stats['samples']} 帧（牌桌可见 {stats['table_samples']}）, "
-            f"{stats['inferences']} 次推理, {stats['boxes']} 个框, 越界夹住 {stats['clamped']} 个 "
-            f"-> {sampler.out_path}  [{time.time() - started:.0f}s]",
+            f"{stats['inferences']} 次推理, {stats['boxes']} 个框, 越界夹住 {stats['clamped']} 个, "
+            f"王牌纠偏 {stats['refined']} 帧 -> {sampler.out_path}  [{time.time() - started:.0f}s]",
             flush=True,
         )
+        if sampler.refined_events:
+            refine_log = out_dir / f"{sampler.game['gameId']}_refined.json"
+            refine_log.write_text(json.dumps(sampler.refined_events, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--games", help="逗号分隔的 gameId，缺省 = 全部 dev + tuning")
+    parser.add_argument("--out-dir", type=Path, default=OUT_DIR, help=f"输出目录（缺省 {OUT_DIR}）")
     parser.add_argument("--threads", type=int, default=4)
     args = parser.parse_args()
+
+    vision_rule_version = pv.verify_vision_rule_version(ds.REPO)
 
     payload = ds.load_games()
     all_games = payload["games"]
@@ -275,7 +300,7 @@ def main() -> None:
     for game in selected:
         by_video.setdefault(game["video"], []).append(game)
     for video, games in by_video.items():
-        run_video(video, games, detector)
+        run_video(video, games, detector, args.out_dir, vision_rule_version)
 
 
 if __name__ == "__main__":

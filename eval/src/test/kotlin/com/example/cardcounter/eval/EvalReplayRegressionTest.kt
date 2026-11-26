@@ -57,7 +57,11 @@ class EvalReplayRegressionTest {
                 )
                 "{\"ts_ms\":$ts,\"table_visible\":true,\"zones\":{${zones.joinToString(",")}}}"
             }
-            Files.writeString(obsDir.resolve("$gameId.jsonl"), lines.joinToString("\n", postfix = "\n"), StandardCharsets.UTF_8)
+            Files.writeString(
+                obsDir.resolve("$gameId.jsonl"),
+                (listOf(ObservationJsonl.metaLine()) + lines).joinToString("\n", postfix = "\n"),
+                StandardCharsets.UTF_8
+            )
             val out = root.resolve("out")
             val buffer = ByteArrayOutputStream()
             val stream = PrintStream(buffer, true, StandardCharsets.UTF_8)

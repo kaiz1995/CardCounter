@@ -57,6 +57,7 @@ class OfflineEvalSmokeTest {
             StandardCharsets.UTF_8
         )
         val lines = mutableListOf(
+            ObservationJsonl.metaLine(),
             obsLine(0, "TOP", true, listOf(det("TWO"), det("TWO"))),
             obsLine(100, "TOP", true, listOf(det("TWO"), det("TWO"))),
             obsLine(200, "TOP", false, emptyList()),

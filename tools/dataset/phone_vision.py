@@ -14,9 +14,13 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from pathlib import Path
+import hashlib
 
 import cv2
 import numpy as np
+
+VISION_RULE_VERSION = "v3-5d6b86cacc34"
 
 CANVAS_W = 1280
 CANVAS_H = 578
@@ -436,3 +440,34 @@ def refine_narrow_left_joker(
     out = list(detections)
     out[left_i] = (refined_cls, score, cx, cy, w, h)
     return out
+
+
+def compute_vision_rule_version(repo_root: Path) -> str:
+    """机械计算 RankDecoder.kt 与 phone_vision.py 视觉规则代码的 SHA-256 前 12 位版本标识。"""
+    def normalized_slice(path: Path, marker: str) -> str:
+        text = path.read_text(encoding="utf-8").replace("\r\n", "\n")
+        start = text.index(marker)
+        lines = [line for line in text[start:].rstrip("\n").split("\n") if "VISION_RULE_VERSION" not in line]
+        return "\n".join(lines)
+
+    rank_part = normalized_slice(
+        repo_root / "core" / "src" / "main" / "kotlin" / "com" / "example" / "cardcounter" / "vision" / "RankDecoder.kt",
+        "object RankModelContract",
+    )
+    vision_part = normalized_slice(
+        repo_root / "tools" / "dataset" / "phone_vision.py",
+        "CANVAS_W =",
+    )
+    digest = hashlib.sha256(f"{rank_part}\n---\n{vision_part}".encode("utf-8")).hexdigest()[:12]
+    return f"v3-{digest}"
+
+
+def verify_vision_rule_version(repo_root: Path) -> str:
+    """校验当前声明的 VISION_RULE_VERSION 与代码内容哈希一致，防止改了规则却忘了升版本。"""
+    expected = compute_vision_rule_version(repo_root)
+    if VISION_RULE_VERSION != expected:
+        raise RuntimeError(
+            f"视觉规则版本与代码不一致：当前声明={VISION_RULE_VERSION}，代码计算={expected}，"
+            "请同步更新 RankDecoder.kt 与 phone_vision.py 的 VISION_RULE_VERSION"
+        )
+    return VISION_RULE_VERSION

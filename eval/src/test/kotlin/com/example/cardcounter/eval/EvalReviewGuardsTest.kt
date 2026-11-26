@@ -240,7 +240,7 @@ class EvalReviewGuardsTest {
         )
         Files.writeString(
             root.resolve("obs").resolve("$gameId.jsonl"),
-            "{\"ts_ms\":0,\"table_visible\":true,\"zones\":{}}\n",
+            "${ObservationJsonl.metaLine()}\n{\"ts_ms\":0,\"table_visible\":true,\"zones\":{}}\n",
             StandardCharsets.UTF_8
         )
     }
@@ -313,9 +313,27 @@ class EvalReviewGuardsTest {
             "table_visible" to """{"ts_ms":1,"table_visible":"true","zones":{}}"""
         )
         for ((expected, line) in cases) {
-            val message = formatError { ObservationJsonl.parse(line) }
+            val message = formatError { ObservationJsonl.parse("${ObservationJsonl.metaLine()}\n$line") }
             assertTrue("应提到 '$expected'，实际: $message", message.contains(expected))
         }
+    }
+
+    @Test
+    fun evalCliFailsWhenObservationVisionVersionIsMissingOrMismatched() = withDataset("dev") { root ->
+        val obsFile = root.resolve("obs").resolve("$gameId.jsonl")
+        Files.writeString(obsFile, "{\"ts_ms\":0,\"table_visible\":true,\"zones\":{}}\n", StandardCharsets.UTF_8)
+        val (missingCode, missingText) = cli(root)
+        assertEquals(1, missingCode)
+        assertTrue(missingText, missingText.contains(ObservationJsonl.VERSION_MISMATCH_MESSAGE))
+
+        Files.writeString(
+            obsFile,
+            "${ObservationJsonl.metaLine("old-version")}\n{\"ts_ms\":0,\"table_visible\":true,\"zones\":{}}\n",
+            StandardCharsets.UTF_8
+        )
+        val (mismatchCode, mismatchText) = cli(root)
+        assertEquals(1, mismatchCode)
+        assertTrue(mismatchText, mismatchText.contains(ObservationJsonl.VERSION_MISMATCH_MESSAGE))
     }
 
     // ---- 真值 CSV ----
