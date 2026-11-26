@@ -66,7 +66,7 @@ class LegacyPipeline(
     /** 回放约 97ms 一次采样，取 2 次（约 194ms）；手机 50ms 一次，取 3 次（约 150ms）。 */
     coveredStillSamples: Int = 2,
     private val finalizeFrameCount: Int = 3,
-    private val requireOpeningSignal: Boolean = true,
+    private val requireOpeningSignal: Boolean = false,
     private val onAudit: (LegacyAudit) -> Unit = {}
 ) : StepwisePlayPipeline {
     private data class ZoneSample(val timestampMs: Long, val still: Boolean, val detections: List<Detection>?)
