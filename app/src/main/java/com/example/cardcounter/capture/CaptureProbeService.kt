@@ -74,6 +74,14 @@ class CaptureProbeService : Service() {
     private var restartPrimeDeadlineAt = 0L
     @Volatile private var captureGeneration = 0L
     @Volatile private var handRevision = 0L
+    /**
+     * 手牌画面编号：亮度指纹变化超过 STABLE_CHANGE_PERCENT（或新局后第一次取指纹）就加一，只在回调线程写。
+     * 多帧合并按它分段：编号变了，累积的牌位全部作废。
+     */
+    @Volatile private var handScene = 0L
+    /** 手牌多帧合并和低把握样本限流：只在识别线程上用；新局和手牌确认时在识别线程上清空。 */
+    private val handMerger = HandFrameMerger()
+    private val handSampleThrottle = HandSampleThrottle()
     /** 中途打开：本局不记，等下一局；新局重置时清掉。 */
     @Volatile private var gameSkipped = false
     /** 还没判断过“是不是中途打开”；牌桌第一次出现时判断一次。 */
@@ -222,7 +230,9 @@ class CaptureProbeService : Service() {
             if (now - lastHandSampleAt >= HAND_SAMPLE_INTERVAL_MS) {
                 val signature = handSignature(image)
                 val change = handChangePercent(lastHandSignature, signature)
-                stableHandSamples = if (change != null && change <= STABLE_CHANGE_PERCENT) stableHandSamples + 1 else 0
+                val stillScene = change != null && change <= STABLE_CHANGE_PERCENT
+                stableHandSamples = if (stillScene) stableHandSamples + 1 else 0
+                if (!stillScene) handScene += 1
                 maxHandChangePercent = maxOf(maxHandChangePercent, change ?: 0.0)
                 CaptureProbeStatus.handCandidate(change, maxHandChangePercent, stableHandSamples)
                 lastHandSignature = signature
@@ -244,6 +254,7 @@ class CaptureProbeService : Service() {
                     val yoloFrame = (if (publicPlayYolo != null) handYoloBitmap(image) else null)
                         .also { handYoloFrame = it }
                     val revision = handRevision
+                    val scene = handScene
                     posted = rankHandler.post {
                         var handAreaKept = false
                         try {
@@ -253,19 +264,28 @@ class CaptureProbeService : Service() {
                             val positionCount = handCardPositionDetector.detect(rowCounts)
                             val templateCards = handRankMatcher.detect(frame)
                             val yoloCards = yoloFrame?.let(::detectYoloCards)
-                            val cards = chooseHandCards(yoloCards?.cards, templateCards)
+                            // 手牌画面停稳期间把每一帧的检测框累积起来：把握度低的牌时有时无，只取最新一帧会漏牌。
+                            val merge = yoloCards?.let { handMerger.add(scene, it.detections) }
+                            val cards = chooseHandCards(merge?.merged, templateCards)
                             handAreaKept = publishHandProbe(
                                 revision, cards, positionCount,
-                                HandProbe(area, rowCounts, yoloCards?.cards, templateCards)
+                                HandProbe(area, rowCounts, merge?.merged, templateCards)
                             )
                             if (!handAreaKept) return@post
                             HandPanelState.changed()
                             Log.i(
                                 TAG,
-                                "HAND_CANDIDATE total=${cards.total()} positionCount=$positionCount " +
-                                    "rows=${rowCounts.first}/${rowCounts.second} " +
+                                "HAND_CANDIDATE total=${cards.total()} single=${merge?.single?.total()} " +
+                                    "merged=${merge?.merged?.total()} frames=${merge?.frames} " +
+                                    "positionCount=$positionCount rows=${rowCounts.first}/${rowCounts.second} " +
                                     "yolo=$yoloCards template=$templateCards cards=$cards"
                             )
+                            if (merge != null) {
+                                if (merge.fellBack) {
+                                    Log.w(TAG, "HAND_MERGE_OVER_INVENTORY fallback to single frame merged=${merge.single}")
+                                }
+                                saveHandSample(yoloFrame, revision, scene, merge, positionCount, templateCards)
+                            }
                         } finally {
                             if (!handAreaKept) area.recycle()
                             yoloFrame?.recycle()
@@ -296,6 +316,27 @@ class CaptureProbeService : Service() {
         } finally {
             image.close()
         }
+    }
+
+    /**
+     * 手牌识别出现“合并比单帧多出牌”或有检测框把握度低于 0.5 时，存一份训练样本（送进模型的手牌画布 + meta.json）。
+     * 同一画面同一原因只存一次、每局有上限；画布由识别线程拥有，存档在这里同步拷贝，返回后识别线程可以马上回收它。
+     */
+    private fun saveHandSample(
+        canvas: Bitmap?,
+        revision: Long,
+        scene: Long,
+        merge: HandMergeResult,
+        positionCount: Int?,
+        template: RankCounts
+    ) {
+        val triggers = merge.sampleTriggers()
+        if (canvas == null || triggers.isEmpty() || !handSampleThrottle.admit(scene, triggers)) return
+        if (canvas.isRecycled) return
+        issueSampleStore.saveHandLowConfidence(
+            canvas, SystemClock.elapsedRealtime(), revision, scene, triggers, merge, positionCount, template
+        )
+        Log.i(TAG, "HAND_SAMPLE_SAVED triggers=$triggers single=${merge.single.total()} merged=${merge.merged.total()}")
     }
 
     private fun startForegroundCompat() {
@@ -382,6 +423,13 @@ class CaptureProbeService : Service() {
         val data = draft.confirmData() ?: return
         val result = sessionActor.post(LedgerCommand.ConfirmHand(data.cards, data.handCount))
         HandPanelState.rejectReason = (result as? DispatchResult.Rejected)?.reason
+        // 手牌确认后清空多帧累积；确认被拒时手牌仍是未确认，下一帧会从头累积，不会错。
+        if (result is DispatchResult.Accepted) {
+            rankHandler.post {
+                handMerger.reset()
+                handSampleThrottle.reset()
+            }
+        }
         val mismatch = data.handCount != data.cards.total()
         val accepted = result is DispatchResult.Accepted
         // 日志和证据用同一帧：锁里只读一次 handProbe。
@@ -772,7 +820,11 @@ class CaptureProbeService : Service() {
         lastRoiSampleAt = 0L
         gameSkipped = false
         openCheckPending = checkMidOpen
-        rankHandler.post { stablePlayGate.reset() }
+        rankHandler.post {
+            stablePlayGate.reset()
+            handMerger.reset()
+            handSampleThrottle.reset()
+        }
     }
 
     private fun notification(text: String): Notification = NotificationCompat.Builder(this, CHANNEL_ID)

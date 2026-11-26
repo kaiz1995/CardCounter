@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.util.Log
 import com.example.cardcounter.domain.RankCounts
+import com.example.cardcounter.vision.RankModelContract
 import com.example.cardcounter.vision.YoloDetection
 import java.io.File
 import java.util.concurrent.Executors
@@ -82,6 +83,39 @@ internal class IssueSampleStore(context: Context) : AutoCloseable {
     }
 
     /**
+     * 手牌识别低把握或多帧合并比单帧多出牌时存一份训练样本：送进模型的手牌画布（原样，便于直接标注）和 meta.json。
+     * [canvas] 归识别线程所有，这里同步拷一份再交给写盘线程，调用返回后识别线程可以马上回收它。
+     */
+    fun saveHandLowConfidence(
+        canvas: Bitmap,
+        timeMs: Long,
+        revision: Long,
+        scene: Long,
+        triggers: List<String>,
+        result: HandMergeResult,
+        positionCount: Int?,
+        template: RankCounts
+    ) {
+        val copy = canvas.copy(Bitmap.Config.ARGB_8888, false) ?: run {
+            Log.w(TAG, "ISSUE_EVIDENCE_SAVE_FAILED copy=null")
+            return
+        }
+        val metadata = handLowConfidenceJson(
+            timeMs, revision, scene, triggers, result, positionCount, template, copy.width
+        )
+        submit(listOf(copy)) {
+            root.mkdirs()
+            trim()
+            val directory = File(root, "${System.currentTimeMillis()}_SELF_$HAND_LOW_CONFIDENCE")
+            check(directory.mkdirs()) { "无法创建证据目录" }
+            File(directory, "hand_canvas.png").outputStream().use { out ->
+                check(copy.compress(Bitmap.CompressFormat.PNG, 100, out)) { "无法写入手牌画布" }
+            }
+            File(directory, "meta.json").writeText(metadata.toString())
+        }
+    }
+
+    /**
      * 在写盘线程上存一组证据，写完回收 [copies]。服务退出后线程池已关，提交会被拒：
      * 这时这组证据不存，拷贝当场回收，不抛到调用方（调用方在识别或回调线程上，抛出去会崩）。
      */
@@ -141,6 +175,56 @@ internal fun handCountMismatchJson(
     .put("model", model?.let(::rankCountsJson) ?: JSONObject.NULL)
     .put("template", rankCountsJson(template))
     .put("edited", JSONArray(edited))
+
+/** 手牌识别低把握或合并多出牌时存的训练样本的原因。 */
+internal const val HAND_LOW_CONFIDENCE = "HAND_LOW_CONFIDENCE"
+
+/**
+ * 低把握手牌样本的 meta：检测框坐标是模型输入（[RankModelContract.INPUT_SIZE] 见方）上的像素，
+ * 手牌画布是 [canvasSize] 见方，标注时按 canvasSize / modelInputSize 换算。
+ * frameDetections 是这一帧自己的检测框，slotDetections 是合并后每个牌位留下的那次检测。
+ */
+internal fun handLowConfidenceJson(
+    timeMs: Long,
+    revision: Long,
+    scene: Long,
+    triggers: List<String>,
+    result: HandMergeResult,
+    positionCount: Int?,
+    template: RankCounts,
+    canvasSize: Int
+): JSONObject = JSONObject()
+    .put("reason", HAND_LOW_CONFIDENCE)
+    .put("triggers", JSONArray(triggers))
+    .put("timeMs", timeMs)
+    .put("handRevision", revision)
+    .put("scene", scene)
+    .put("canvasSize", canvasSize)
+    .put("modelInputSize", RankModelContract.INPUT_SIZE)
+    .put("frames", result.frames)
+    .put("fellBack", result.fellBack)
+    .put("single", rankCountsJson(result.single))
+    .put("singleTotal", result.single.total())
+    .put("merged", rankCountsJson(result.merged))
+    .put("mergedTotal", result.merged.total())
+    .put("positionCount", positionCount ?: JSONObject.NULL)
+    .put("template", rankCountsJson(template))
+    .put("frameDetections", detectionsJson(result.frameDetections))
+    .put("slotDetections", detectionsJson(result.slotDetections))
+
+private fun detectionsJson(detections: List<YoloDetection>): JSONArray = JSONArray().apply {
+    detections.forEach { detection ->
+        put(
+            JSONObject()
+                .put("rank", detection.rank.name)
+                .put("conf", detection.confidence.toDouble())
+                .put("cx", detection.centerX.toDouble())
+                .put("cy", detection.centerY.toDouble())
+                .put("w", detection.width.toDouble())
+                .put("h", detection.height.toDouble())
+        )
+    }
+}
 
 /** 投票里一帧的识别结果：点数计数、最低置信度和每个检测框。 */
 internal data class RankCountsCandidate(

@@ -64,6 +64,42 @@ class IssueEvidenceTest {
         assertEquals("SEVEN", edited.getString(0))
     }
 
+    /** 低把握手牌样本的 meta：带原因、单帧与合并结果、两份检测框，没数出来的张数是显式 null。 */
+    @Test
+    fun handLowConfidenceJsonKeepsTriggersCountsAndBoxes() {
+        val low = YoloDetection(Rank.FOUR, "FOUR", .3f, 268.7f, 244.2f, 6.8f, 10f)
+        val sure = YoloDetection(Rank.FOUR, "FOUR", .8f, 284.7f, 244.3f, 6.8f, 9.9f)
+        val merged = RankCounts.of(mapOf(Rank.FOUR to 2))
+        val result = HandMergeResult(
+            single = RankCounts.of(mapOf(Rank.FOUR to 1)),
+            merged = merged,
+            frameDetections = listOf(sure),
+            slotDetections = listOf(low, sure),
+            frames = 2,
+            fellBack = false
+        )
+
+        val json = handLowConfidenceJson(
+            42, 7, 9, listOf(HandSampleTrigger.MERGE_GAIN), result, null, RankCounts.zero(), 870
+        )
+
+        assertEquals(HAND_LOW_CONFIDENCE, json.getString("reason"))
+        assertEquals(HandSampleTrigger.MERGE_GAIN, json.getJSONArray("triggers").getString(0))
+        assertEquals(7L, json.getLong("handRevision"))
+        assertEquals(870, json.getInt("canvasSize"))
+        assertEquals(320, json.getInt("modelInputSize"))
+        assertEquals(1, json.getInt("singleTotal"))
+        assertEquals(2, json.getInt("mergedTotal"))
+        assertEquals(2, json.getJSONObject("merged").getInt("FOUR"))
+        assertTrue("positionCount 必须是显式 null", json.has("positionCount") && json.isNull("positionCount"))
+        assertEquals(1, json.getJSONArray("frameDetections").length())
+        val slots = json.getJSONArray("slotDetections")
+        assertEquals(2, slots.length())
+        assertEquals("FOUR", slots.getJSONObject(0).getString("rank"))
+        assertEquals(.3, slots.getJSONObject(0).getDouble("conf"), 0.001)
+        assertEquals(268.7, slots.getJSONObject(0).getDouble("cx"), 0.01)
+    }
+
     @Test
     fun noConsensusEvidenceHasNoResult() {
         val metadata = evidenceMetadata(PlayZone.TOP, "NO_CONSENSUS", 1, 7, null, emptyList())
