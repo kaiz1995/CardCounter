@@ -96,9 +96,13 @@ class OverlayLayoutTest {
         }
     }
 
+    /** 重叠或贴边（间距不足 1 像素）均视为不合格。 */
+    private fun OverlayLayout.Rect.touchesOrOverlaps(other: OverlayLayout.Rect): Boolean =
+        x <= other.right && other.x <= right && y <= other.bottom && other.y <= bottom
+
     /**
      * 悬浮窗会被截屏录进去：
-     * - 新增矩形（顶部点数条、识别中标签、停记块、小图标、长按开新局、小图标菜单）不许压任何出牌区（含 SELF 裁剪区和长串扩展）、手牌区（除亮度指纹）、圆标取色窗；
+     * - 新增矩形（顶部点数条、识别中标签、停记块、小图标、长按开新局、小图标菜单）不许压任何出牌区（含 SELF 裁剪区和长串扩展）、手牌区（除亮度指纹）、圆标取色窗，且各边至少留 1 像素间距（贴边也不合格）；
      * - 原有矩形（五个座位框、外面剩余横条）保持原位置，不许压 OUTSIDE 出牌区（含长串扩展）、SELF 判断带、圆标取色窗、手牌边缘行与墨迹区；
      *   其中 TOP 框底边 y=144 与未使用的 SELF 裁剪区（y=138 起）重合 6px，LEFT_BOTTOM/RIGHT_BOTTOM 框（y=322..374）仅擦过 HandRegions.yoloArea 上沿留白（inkArea 从 y=380 起）。
      */
@@ -108,8 +112,8 @@ class OverlayLayoutTest {
         OverlayLayout.newLandscapeRects.forEach { (boxName, box) ->
             allAreas.forEach { (areaName, area) ->
                 assertFalse(
-                    "悬浮窗的「$boxName」$box 压住了「$areaName」$area，请把这个框挪开",
-                    box.overlaps(area)
+                    "悬浮窗的「$boxName」$box 压住或贴边了「$areaName」$area（要求至少 1 像素间距），请把这个框挪开",
+                    box.touchesOrOverlaps(area)
                 )
             }
         }
@@ -136,8 +140,8 @@ class OverlayLayoutTest {
         val rects = OverlayLayout.landscapeRects
         for (i in rects.indices) for (j in i + 1 until rects.size) {
             assertFalse(
-                "「${rects[i].first}」${rects[i].second} 和「${rects[j].first}」${rects[j].second} 重叠",
-                rects[i].second.overlaps(rects[j].second)
+                "「${rects[i].first}」${rects[i].second} 和「${rects[j].first}」${rects[j].second} 重叠或贴边（要求至少 1 像素间距）",
+                rects[i].second.touchesOrOverlaps(rects[j].second)
             )
         }
     }
@@ -165,7 +169,10 @@ class OverlayLayoutTest {
         }
     }
 
-    /** 新增的横屏矩形不进左侧挖孔（x < CUTOUT_RIGHT）。 */
+    /**
+     * 新增的横屏矩形不进左侧挖孔（x < CUTOUT_RIGHT）。
+     * 既有的五个座位框和外面剩余横条不进挖孔、圆角测试：位置沿用旧版，真机截图上完整可见；挖孔是左侧中部的小孔，不是整条左边。
+     */
     @Test
     fun newLandscapeRectsStayOutOfCutout() {
         OverlayLayout.newLandscapeRects.forEach { (name, rect) ->
@@ -173,7 +180,10 @@ class OverlayLayoutTest {
         }
     }
 
-    /** 新增的横屏矩形四个角都不进屏幕四角的圆角（设计坐标里是椭圆）。 */
+    /**
+     * 新增的横屏矩形四个角都不进屏幕四角的圆角（设计坐标里是椭圆）。
+     * 既有的五个座位框和外面剩余横条不进挖孔、圆角测试：位置沿用旧版，真机截图上完整可见；挖孔是左侧中部的小孔，不是整条左边。
+     */
     @Test
     fun newLandscapeRectsStayOutOfRoundedCorners() {
         val rx = OverlayLayout.CORNER_RX.toDouble()
