@@ -509,6 +509,13 @@ class CaptureProbeService : Service() {
                     )
                 }
             } else {
+                var finalResult = result
+                if (result is DispatchResult.Rejected &&
+                    result.state.phase == SessionPhase.ACTIVE &&
+                    !result.state.handConfirmed
+                ) {
+                    finalResult = sessionActor.post(LedgerCommand.Pause(PauseReason.HAND_NOT_RECOGNIZED))
+                }
                 val metadata = handAutoLockEvidenceJson(
                     reason = HAND_CONFIRM_FAILED,
                     timeMs = SystemClock.elapsedRealtime(),
@@ -524,6 +531,10 @@ class CaptureProbeService : Service() {
                 OverlayProbeState.update {
                     it.copy(handLocked = true, handConfirmedAtMs = null, handConfirmedCount = null)
                 }
+                Log.w(
+                    TAG,
+                    "SELF_HAND_CONFIRM_REJECTED confirm=${outcomeOf(result)} final=${outcomeOf(finalResult)}"
+                )
             }
             OverlayService.refresh(this)
             Log.i(
