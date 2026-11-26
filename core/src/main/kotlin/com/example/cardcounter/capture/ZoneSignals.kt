@@ -63,7 +63,7 @@ fun routeZoneSignals(
     var retries = emptyList<OpeningPlayGate.SkippedPlay>()
     if (handConfirmed) openingGate.isReady(true)
     if (signals.clearedRose) {
-        stableGate.noteZoneCleared(zone)
+        stableGate.noteZoneCleared(zone, nowMs)
         openingGate.noteZoneCleared(zone)
     }
     if (signals.turned) {

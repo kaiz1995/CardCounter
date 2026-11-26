@@ -22,20 +22,26 @@ class OverlayLayoutTest {
 
         outsideZones.forEach { zone ->
             val panel = OverlayLayout.seatPanels.getValue(requireNotNull(zone.seat))
-            assertTrue(panel.y >= zone.rankY(OverlayLayout.DESIGN_HEIGHT) + zone.visibilityHeight)
+            val crop = zone.yoloCrop(width, height)
+            assertTrue(panel.y >= crop.top + crop.height)
         }
     }
 
-    /** 六个出牌区的“有牌判断带”和识别裁剪区，面板都不许压。 */
+    /** 出牌区的可见性判定区与识别裁剪区（OUTSIDE 区两者同为 yoloCrop，SELF 区另保留判断带），面板都不许压。 */
     private fun playZoneRects(): List<Pair<String, OverlayLayout.Rect>> = PlayZone.entries.flatMap { zone ->
-        val left = zone.left(width)
-        val right = zone.right(width)
-        val rankY = zone.rankY(height)
         val crop = zone.yoloCrop(width, height)
-        listOf(
-            "${zone.name} 判断带" to OverlayLayout.Rect(left, rankY - 4, right - left + 1, zone.visibilityHeight + 5),
-            "${zone.name} 裁剪区" to OverlayLayout.Rect(crop.left, crop.top, crop.width, crop.height)
-        )
+        val cropRect = "${zone.name} 裁剪区" to OverlayLayout.Rect(crop.left, crop.top, crop.width, crop.height)
+        if (zone.source == PlaySource.SELF) {
+            val left = zone.left(width)
+            val right = zone.right(width)
+            val rankY = zone.rankY(height)
+            listOf(
+                "${zone.name} 判断带" to OverlayLayout.Rect(left, rankY - 4, right - left + 1, zone.visibilityHeight + 5),
+                cropRect
+            )
+        } else {
+            listOf(cropRect)
+        }
     }
 
     private fun areaRect(name: String, area: HandRegions.Area): Pair<String, OverlayLayout.Rect> =

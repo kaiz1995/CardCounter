@@ -43,7 +43,7 @@ interface Detector : AutoCloseable {
 /** 一个出牌区在某一采样时刻的观察结果。 */
 data class ZoneObservation(
     val zone: PlayZone,
-    /** 白色牌面面积达到可见阈值（hasVisibleCardArea）。 */
+    /** 白色牌面面积达到可见阈值（hasVisibleCardArea）；OUTSIDE 区采用 yoloCrop 范围且要求局部绿桌 ≥ 12%（否则视为被遮挡，不推进清桌）。 */
     val cardVisible: Boolean,
     /** 与上一次采样相比画面静止（无动画）。 */
     val still: Boolean,

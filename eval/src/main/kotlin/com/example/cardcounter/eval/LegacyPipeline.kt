@@ -139,7 +139,7 @@ class LegacyPipeline(
         val zone = decision.zone ?: return
         val command = decision.command as? LedgerCommand.AcceptOutsidePlay ?: return
         if (result is DispatchResult.Accepted) {
-            gate.commitAccepted(zone, command.cards, currentNowMs)
+            gate.commitAccepted(zone, command.cards, currentNowMs) { cache.isCleared(it, generation) }
         }
     }
 

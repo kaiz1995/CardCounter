@@ -86,8 +86,11 @@ sealed interface PlayGateDecision {
  * 3. 解锁条件（共用同一解锁状态）：
  *    - 本区“出牌”圆标确认轮到这一家（[noteTurn]）；
  *    - 本区经历过一次真实的长清桌（连续空桌 >= 1.5s，[noteLongClear]）；
- *    - 本区已经清桌（[noteZoneCleared]）之后，别的座位有新的出牌入账（[commitAccepted]）。
+ *    - 本区已经清桌（[noteZoneCleared]）之后，别的座位有新的出牌入账（[commitAccepted]），且同时满足：
+ *      a) 入账那一刻本区仍是清桌状态（[commitAccepted] 的 isStillCleared 现场回查），清桌后旧牌又回来的不算；
+ *      b) 本区最近一次清桌上升沿距这次入账已满 [OTHER_SEAT_UNLOCK_MIN_CLEAR_MS]，瞬时遮挡闪空的不算。
  *      顺序不能反：本区还没清桌时别的座位入账不算，否则旧牌被特效遮挡闪空一下就会解锁，旧牌重现被重扣。
+ *      清桌标记本身是粘性的（旧牌回来也不会自动清掉），所以上面 a)、b) 两道现场校验缺一不可。
  * 清桌不清“上一次入账的牌”；只有 [reset]（新局）全清，[noteReverted] 仅清理被撤销座位的记录。
  */
 class StablePlayGate {
@@ -96,6 +99,9 @@ class StablePlayGate {
         var acceptedAtMs = 0L
         var unlockedSinceAccept = false
         var clearedSinceAccept = false
+
+        /** 最近一次清桌上升沿的时间（毫秒，与 [commitAccepted] 同一时钟）；只在 [clearedSinceAccept] 为 true 时有意义。 */
+        var clearedAtMs = 0L
     }
 
     private val states = PlayZone.entries.associateWith { ZoneState() }
@@ -118,18 +124,31 @@ class StablePlayGate {
         return PlayGateDecision.Accept(StablePlay(zone, cards))
     }
 
-    /** 账本真正接受（Accepted）之后再更新门控状态，同时给已清桌的其他座位解锁。 */
-    fun commitAccepted(zone: PlayZone, cards: RankCounts, timestampMs: Long) {
+    /**
+     * 账本真正接受（Accepted）之后再更新门控状态，同时给已清桌的其他座位解锁。
+     * [isStillCleared]：现场回查某区此刻是不是仍然清桌（手机和评测都传 [RoiPlayEventCache.isCleared]）。
+     * 清桌标记是粘性的，旧牌被特效遮挡闪空后原样回来时标记还在，所以他座入账时必须再确认那一区此刻还空着，
+     * 并且这次清桌已持续 [OTHER_SEAT_UNLOCK_MIN_CLEAR_MS] 以上，才解锁。故意不设默认值，调用方必须显式传入。
+     */
+    fun commitAccepted(
+        zone: PlayZone,
+        cards: RankCounts,
+        timestampMs: Long,
+        isStillCleared: (PlayZone) -> Boolean
+    ) {
         if (cards.total() == 0) return
         val current = states.getValue(zone)
         current.accepted = cards
         current.acceptedAtMs = timestampMs
         current.unlockedSinceAccept = false
         current.clearedSinceAccept = false
+        current.clearedAtMs = 0L
         if (zone.source == PlaySource.OUTSIDE) {
             states.forEach { (otherZone, otherState) ->
                 if (otherZone != zone && otherZone.source == PlaySource.OUTSIDE &&
-                    otherState.accepted != null && otherState.clearedSinceAccept
+                    otherState.accepted != null && otherState.clearedSinceAccept &&
+                    timestampMs - otherState.clearedAtMs >= OTHER_SEAT_UNLOCK_MIN_CLEAR_MS &&
+                    isStillCleared(otherZone)
                 ) {
                     otherState.unlockedSinceAccept = true
                 }
@@ -141,7 +160,7 @@ class StablePlayGate {
     fun accept(zone: PlayZone, cards: RankCounts, timestampMs: Long = 0L): StablePlay? =
         when (val decision = check(zone, cards, timestampMs)) {
             is PlayGateDecision.Accept -> {
-                commitAccepted(zone, cards, timestampMs)
+                commitAccepted(zone, cards, timestampMs) { true }
                 decision.play
             }
             is PlayGateDecision.Suppressed -> null
@@ -162,11 +181,13 @@ class StablePlayGate {
     /**
      * 本区经历过常规清桌（牌已从桌面收走）：只记下已清桌，不解锁。
      * 之后别的座位入账（[commitAccepted]）才会解锁本区；清桌之前的他座入账不算。
+     * [timestampMs] 是这次清桌上升沿的时间（与 [commitAccepted] 同一时钟）；重复清桌以最近一次为准。
      */
-    fun noteZoneCleared(zone: PlayZone) {
+    fun noteZoneCleared(zone: PlayZone, timestampMs: Long) {
         val state = states.getValue(zone)
         if (state.accepted == null) return
         state.clearedSinceAccept = true
+        state.clearedAtMs = timestampMs
     }
 
     /** 人工撤销某座位的一手出牌后，清空该区上次入账记忆，避免错误记忆继续拦截后续出牌。 */
@@ -177,6 +198,7 @@ class StablePlayGate {
                 acceptedAtMs = 0L
                 unlockedSinceAccept = false
                 clearedSinceAccept = false
+                clearedAtMs = 0L
             }
         }
     }
@@ -187,6 +209,7 @@ class StablePlayGate {
             it.acceptedAtMs = 0L
             it.unlockedSinceAccept = false
             it.clearedSinceAccept = false
+            it.clearedAtMs = 0L
         }
     }
 
@@ -197,6 +220,12 @@ class StablePlayGate {
          * 挂王没人要时直接盖上同主点数（或纯配牌）的新一手，不能被永久当成重认拦掉。
          */
         const val SUBSET_WINDOW_MS = 1_500L
+
+        /**
+         * 他座入账解锁本区所需的最短清桌时长：本区最近一次清桌上升沿到他座入账至少隔这么久，才算旧牌真的收走。
+         * 压暗面板、特效等瞬时遮挡通常不到半秒，旧牌随后原样重现，不能当作新的一手。
+         */
+        const val OTHER_SEAT_UNLOCK_MIN_CLEAR_MS = 600L
     }
 }
 
@@ -247,54 +276,83 @@ fun isCardSurfaceColor(red: Int, green: Int, blue: Int): Boolean {
     return high >= CARD_SURFACE_MIN_BRIGHTNESS && high - low <= CARD_SURFACE_MAX_SATURATION
 }
 
-/** 在 1280×578 画布坐标下采样判断单个出牌区是否存在可见牌面（低饱和亮块占比 >= 10%）。 */
-fun isZoneCardVisible(
+/** 出牌区可见性三态：看到牌面、确认空桌、被压暗面板等遮挡（不推进清桌）。 */
+enum class ZoneVisibility { CARD, EMPTY, OCCLUDED }
+
+/**
+ * 在 1280×578 画布坐标下采样判断单个出牌区的三态可见性：
+ * - OUTSIDE 区采样范围与识别用的 [PlayZone.yoloCrop] 完全一致，并要求局部背景有绿桌（[hasLocalTableGreen]）；
+ *   若局部绿桌不足 12%（如「王 3 / 送 3」压暗面板盖住出牌区），返回 [ZoneVisibility.OCCLUDED]，不推进清桌计数。
+ * - SELF 区保持原来的判定带（[PlayZone.rankY] 往下 [PlayZone.visibilityHeight]），不查局部绿桌，返回 CARD 或 EMPTY。
+ */
+fun zoneVisibility(
     zone: PlayZone,
     step: Int = PLAY_VISIBILITY_STEP,
     pixel: (canonicalX: Int, canonicalY: Int) -> Int
-): Boolean {
-    val left = zone.left(ScreenScale.CANVAS_WIDTH)
-    val right = zone.right(ScreenScale.CANVAS_WIDTH)
-    val top = zone.rankY(ScreenScale.CANVAS_HEIGHT)
-    val bottom = top + zone.visibilityHeight
+): ZoneVisibility {
+    val needsLocalGreen = zone.source == PlaySource.OUTSIDE
+    val left: Int
+    val right: Int
+    val top: Int
+    val bottom: Int
+    if (needsLocalGreen) {
+        val crop = zone.yoloCrop(ScreenScale.CANVAS_WIDTH, ScreenScale.CANVAS_HEIGHT)
+        left = crop.left
+        right = crop.left + crop.width - 1
+        top = crop.top
+        bottom = crop.top + crop.height - 1
+    } else {
+        left = zone.left(ScreenScale.CANVAS_WIDTH)
+        right = zone.right(ScreenScale.CANVAS_WIDTH)
+        top = zone.rankY(ScreenScale.CANVAS_HEIGHT)
+        bottom = top + zone.visibilityHeight
+    }
     var matched = 0
+    var greenMatched = 0
     var samples = 0
     var y = top
     while (y <= bottom) {
         var x = left
         while (x <= right) {
-            if (isCardSurfaceRgb(pixel(x, y))) matched++
+            val rgb = pixel(x, y)
+            if (isCardSurfaceRgb(rgb)) {
+                matched++
+            } else if (needsLocalGreen &&
+                isDimmedOrNormalTableGreen((rgb shr 16) and 0xff, (rgb shr 8) and 0xff, rgb and 0xff)
+            ) {
+                greenMatched++
+            }
             samples++
             x += step
         }
         y += step
     }
-    return hasVisibleCardArea(matched, samples)
+    if (needsLocalGreen && !hasLocalTableGreen(greenMatched, samples)) {
+        return ZoneVisibility.OCCLUDED
+    }
+    return if (hasVisibleCardArea(matched, samples)) ZoneVisibility.CARD else ZoneVisibility.EMPTY
 }
 
-/** 直接从 [Raster] 采样判断六个出牌区的可见性（无数组分配）。 */
-fun playZoneVisibility(frame: Raster, step: Int = PLAY_VISIBILITY_STEP): Map<PlayZone, Boolean> =
+/** 直接从 [Raster] 采样判断六个出牌区的三态可见性；判定与 [zoneVisibility] 完全相同。 */
+fun playZoneStates(frame: Raster, step: Int = PLAY_VISIBILITY_STEP): Map<PlayZone, ZoneVisibility> =
     PlayZone.entries.associateWith { zone ->
-        val left = zone.left(ScreenScale.CANVAS_WIDTH)
-        val right = zone.right(ScreenScale.CANVAS_WIDTH)
-        val top = zone.rankY(ScreenScale.CANVAS_HEIGHT)
-        val bottom = top + zone.visibilityHeight
-        var matched = 0
-        var samples = 0
-        var y = top
-        while (y <= bottom) {
+        zoneVisibility(zone, step) { x, y ->
+            val sx = (x * frame.width / ScreenScale.CANVAS_WIDTH).coerceIn(0, frame.width - 1)
             val sy = (y * frame.height / ScreenScale.CANVAS_HEIGHT).coerceIn(0, frame.height - 1)
-            var x = left
-            while (x <= right) {
-                val sx = (x * frame.width / ScreenScale.CANVAS_WIDTH).coerceIn(0, frame.width - 1)
-                if (isCardSurfaceRgb(frame.rgb(sx, sy))) matched++
-                samples++
-                x += step
-            }
-            y += step
+            frame.rgb(sx, sy)
         }
-        hasVisibleCardArea(matched, samples)
     }
+
+/** 兼容布尔调用：仅当三态为 [ZoneVisibility.CARD] 时返回 true。 */
+fun isZoneCardVisible(
+    zone: PlayZone,
+    step: Int = PLAY_VISIBILITY_STEP,
+    pixel: (canonicalX: Int, canonicalY: Int) -> Int
+): Boolean = zoneVisibility(zone, step, pixel) == ZoneVisibility.CARD
+
+/** 直接从 [Raster] 采样判断六个出牌区是否可见牌面；仅当三态为 [ZoneVisibility.CARD] 时为 true。 */
+fun playZoneVisibility(frame: Raster, step: Int = PLAY_VISIBILITY_STEP): Map<PlayZone, Boolean> =
+    playZoneStates(frame, step).mapValues { (_, state) -> state == ZoneVisibility.CARD }
 
 /** 牌桌绿点判定（1280×578 画布坐标 (500, 200) 和 (800, 200)）。 */
 fun isTableVisible(frame: Raster): Boolean =
@@ -316,6 +374,14 @@ fun hasVisibleCardArea(whiteSamples: Int, totalSamples: Int): Boolean =
 
 fun isTableGreen(red: Int, green: Int, blue: Int): Boolean =
     green >= 70 && green - red >= 30 && green - blue >= 10
+
+/** 宽松绿桌：兼容烧牌/开点 0.55 倍压暗后的桌面（绿色通道仍在 48~72）。压暗面板（如 3, 18, 15）不算。 */
+fun isDimmedOrNormalTableGreen(red: Int, green: Int, blue: Int): Boolean =
+    green >= 35 && green - red >= 10 && green - blue >= 5
+
+/** 出牌区局部绿桌占比 >= 12%：正常 OUTSIDE 区 6 张满排也有 27.8% 以上，压暗面板盖住时为 0%。 */
+fun hasLocalTableGreen(greenSamples: Int, totalSamples: Int): Boolean =
+    totalSamples > 0 && greenSamples * 100 >= totalSamples * 12
 
 /** 只用于旧模型回放（eval 的 LegacyPipeline）；新模型的框只框点数，手机端不再按纵坐标过滤。 */
 fun isPublicRankBand(centerY: Float): Boolean = centerY < 0.85f
@@ -344,7 +410,7 @@ class MidGameOpenDetector(private val requiredConsecutive: Int = DEFAULT_CONSECU
         handConfirmed: Boolean,
         outsidePlayedCount: Int,
         tableVisible: Boolean,
-        visibleZones: Map<PlayZone, Boolean>
+        zoneStates: Map<PlayZone, ZoneVisibility>
     ): MidGameCheckResult {
         if (!pending) return MidGameCheckResult.CLEAR
         if (handConfirmed || outsidePlayedCount > 0) {
@@ -356,19 +422,24 @@ class MidGameOpenDetector(private val requiredConsecutive: Int = DEFAULT_CONSECU
             consecutiveOutsideVisible = 0
             return MidGameCheckResult.PENDING
         }
-        val outsideVisible = PlayZone.entries.any {
-            it.source == PlaySource.OUTSIDE && visibleZones[it] == true
+        val outsideZones = PlayZone.entries.filter { it.source == PlaySource.OUTSIDE }
+        val anyCard = outsideZones.any { zoneStates[it] == ZoneVisibility.CARD }
+        if (anyCard) {
+            consecutiveOutsideVisible++
+            if (consecutiveOutsideVisible >= requiredConsecutive) {
+                pending = false
+                return MidGameCheckResult.SKIP
+            }
+            return MidGameCheckResult.PENDING
         }
-        if (!outsideVisible) {
+        val allEmpty = outsideZones.all { zoneStates[it] == ZoneVisibility.EMPTY }
+        if (allEmpty) {
             pending = false
             consecutiveOutsideVisible = 0
             return MidGameCheckResult.CLEAR
         }
-        consecutiveOutsideVisible++
-        if (consecutiveOutsideVisible >= requiredConsecutive) {
-            pending = false
-            return MidGameCheckResult.SKIP
-        }
+        // 存在 OCCLUDED（压暗面板等遮挡）且没有 CARD：不推进有牌计数，也不当成“全空桌”提前结束检查。
+        consecutiveOutsideVisible = 0
         return MidGameCheckResult.PENDING
     }
 

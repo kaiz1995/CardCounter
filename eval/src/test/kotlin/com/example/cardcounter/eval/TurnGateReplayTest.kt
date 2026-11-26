@@ -315,4 +315,62 @@ class TurnGateReplayTest {
             pipeline.audits.map { it.outcome }
         )
     }
+
+    @Test
+    fun otherSeatPlayRightAfterAFlashClearDoesNotUnlockTheReappearingOldCards() {
+        // 右下先出 5×3 入账 → 右下闪空清桌（约 300ms）→ 上家出 10×3 入账 → 右下 5×3 重现停稳：
+        // 清桌标记是粘性的，但清桌时间不足、不能被上家入账解锁，重现的旧牌必须判重复。
+        fun zone(zone: PlayZone, rank: Rank?) =
+            if (rank == null) {
+                ZoneObservation(zone, cardVisible = false, still = true, detections = emptyList())
+            } else {
+                ZoneObservation(
+                    zone, cardVisible = true, still = true,
+                    detections = List(3) { Detection(rank, 0.9f, 0.3f + 0.2f * it, 0.42f, 0.12f, 0.22f) }
+                )
+            }
+
+        fun both(count: Int, rightBottom: Rank?, top: Rank?) = List(count) {
+            clock += 100
+            FrameObservation(
+                clock, true,
+                mapOf(
+                    PlayZone.RIGHT_BOTTOM to zone(PlayZone.RIGHT_BOTTOM, rightBottom),
+                    PlayZone.TOP to zone(PlayZone.TOP, top)
+                )
+            )
+        }
+
+        val result = replayAudits(
+            both(3, Rank.FIVE, null) +
+                both(2, null, null) +
+                both(3, null, Rank.TEN) +
+                both(3, Rank.FIVE, null)
+        )
+        assertEquals(
+            listOf(LegacyOutcome.ACCEPTED, LegacyOutcome.ACCEPTED, LegacyOutcome.DUPLICATE_SUPPRESSED),
+            result.map { it.outcome }
+        )
+        assertEquals(listOf(PlayZone.RIGHT_BOTTOM, PlayZone.TOP, PlayZone.RIGHT_BOTTOM), result.map { it.zone })
+    }
+
+    @Test
+    fun occludedPanelOverOldCardsForTwoSecondsNeverUnlocksReappearingCards() {
+        // 旧牌在桌入账 → 面板盖住（tableVisible = false / OCCLUDED）2 秒（超过 1.5s 长清桌和 600ms 阈值）→ 面板撤走旧牌重现停稳：
+        // 遮挡期间不推进清桌也不计长清桌，旧牌重现后即使重新停稳交出也必须判 DUPLICATE_SUPPRESSED，绝不重复入账。
+        val occludedFrames = List(20) {
+            clock += 100
+            FrameObservation(clock, tableVisible = false, zones = mapOf(PlayZone.TOP to obs(false, 0)))
+        }
+        val result = replayAudits(
+            frames(3, obs(true, 1)) +
+                occludedFrames +
+                frames(1, obs(true, 1, still = false)) +
+                frames(2, obs(true, 1))
+        )
+        assertEquals(
+            listOf(LegacyOutcome.ACCEPTED, LegacyOutcome.DUPLICATE_SUPPRESSED),
+            result.map { it.outcome }
+        )
+    }
 }

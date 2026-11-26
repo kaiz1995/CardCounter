@@ -640,14 +640,14 @@ class CaptureProbeService : Service() {
         // 非采样帧不能推进清桌计数或中途打开计数，否则瞬时动画帧会误判。
         if (!takeSample) return
         lastRoiSampleAt = now
-        val visibleZones = if (tableVisible) playZoneVisibility(raster) else emptyMap()
+        val zoneStates = if (tableVisible) playZoneStates(raster) else emptyMap()
         val ledger = sessionLedger.state
-        when (midGameOpenDetector.observe(ledger.handConfirmed, ledger.outsidePlayedCount, tableVisible, visibleZones)) {
+        when (midGameOpenDetector.observe(ledger.handConfirmed, ledger.outsidePlayedCount, tableVisible, zoneStates)) {
             MidGameCheckResult.PENDING -> Unit
             MidGameCheckResult.CLEAR -> Unit
             MidGameCheckResult.SKIP -> {
                 val visibleOutside = PlayZone.entries.filter {
-                    it.source == PlaySource.OUTSIDE && visibleZones[it] == true
+                    it.source == PlaySource.OUTSIDE && zoneStates[it] == ZoneVisibility.CARD
                 }
                 val firstZone = visibleOutside.firstOrNull() ?: PlayZone.TOP
                 val evidenceBitmaps = visibleOutside.take(3).map { publicPlayBitmap(image, it) }
@@ -671,9 +671,14 @@ class CaptureProbeService : Service() {
                 return
             }
         }
-        val onTable = PlayZone.entries.filterTo(HashSet()) { tableVisible && isPlayVisible(visibleZones[it] == true) }
+        val onTable = PlayZone.entries.filterTo(HashSet()) {
+            tableVisible && isPlayVisible(zoneStates[it] == ZoneVisibility.CARD)
+        }
         PlayZone.entries.forEach { zone ->
-            val visible = tableVisible && isPlayVisible(visibleZones[zone] == true)
+            val state = if (tableVisible) zoneStates[zone] else null
+            // 局域被压暗面板等遮挡（OCCLUDED）时，按该区桌面不可见处理：不推进清桌、不交出兜底帧、空桌计时归零。
+            val zoneTableVisible = tableVisible && state != ZoneVisibility.OCCLUDED
+            val visible = zoneTableVisible && isPlayVisible(state == ZoneVisibility.CARD)
             val frame = if (visible && roiEventCache.needsFrame(zone, generation)) {
                 val probe = RoiFrame(null, RoiFingerprint.of(zone) { x, y -> pixelRgb(image, x, y) })
                 // 已交出且画面没变：只要指纹，不再截 320 图送识别；画面一变，这一帧是下一段静止的起点，要带图。
@@ -681,21 +686,21 @@ class CaptureProbeService : Service() {
             } else {
                 null
             }
-            roiEventCache.observe(zone, tableVisible, visible, frame, generation)?.let { finalized ->
+            roiEventCache.observe(zone, zoneTableVisible, visible, frame, generation)?.let { finalized ->
                 Log.i(TAG, "ROI_FINALIZED zone=${finalized.zone} frames=${finalized.frames.size}")
-                rankHandler.post { finalizeRoiEvent(finalized) }
+                rankHandler.post { finalizeRoiEvent(finalized, now) }
             }
             // “出牌”圆标和清桌计时放在交出之后看：清桌这次采样兜底交出的入账先 post，一定排在这次的信号前面。
-            // 牌桌被遮挡或切屏时也要采样（空桌计时和圆标连续计数在里面归零），圆标检测本身只在牌桌可见时做。
+            // 牌桌或本区被遮挡时也要采样（空桌计时和圆标连续计数在里面归零），圆标检测本身只在本区桌面可见时做。
             if (zone.source == PlaySource.OUTSIDE) {
-                val shown = tableVisible && TurnBadge.isShown(zone) { x, y -> pixelRgb(image, x, y) }
-                val zoneEmpty = !visible && !roiEventCache.hasUndelivered(zone, generation)
+                val shown = zoneTableVisible && TurnBadge.isShown(zone) { x, y -> pixelRgb(image, x, y) }
+                val zoneEmpty = zoneTableVisible && !visible && !roiEventCache.hasUndelivered(zone, generation)
                 val signals = zoneSignals.sample(
                     zone,
                     badgeShown = shown,
                     cleared = roiEventCache.isCleared(zone, generation),
                     zoneEmpty = zoneEmpty,
-                    tableVisible = tableVisible,
+                    tableVisible = zoneTableVisible,
                     nowMs = now
                 )
                 if (signals.any) {
@@ -706,14 +711,14 @@ class CaptureProbeService : Service() {
                         val retries = routeZoneSignals(
                             zone, signals, now, stablePlayGate, openingPlayGate, sessionLedger.state.handConfirmed
                         ) { it in onTable }
-                        replaySkippedPlays(retries)
+                        replaySkippedPlays(retries, now)
                     }
                 }
             }
         }
     }
 
-    private fun finalizeRoiEvent(finalized: RoiPlayEventCache.Finalized<RoiFrame>) {
+    private fun finalizeRoiEvent(finalized: RoiPlayEventCache.Finalized<RoiFrame>, sampleTimeMs: Long) {
         try {
             if (finalized.generation != captureGeneration || gameSkipped) return
             // 自己出的牌完全不管：不识别、不记、不显示。
@@ -754,10 +759,21 @@ class CaptureProbeService : Service() {
                 return
             }
             val ledgerState = sessionLedger.state
-            if (ledgerState.phase != SessionPhase.ACTIVE) return
+            if (ledgerState.phase != SessionPhase.ACTIVE) {
+                // 暂停期间交出的牌不入账，但要留诊断记录（与 eval 的 NOT_ACTIVE 一致）。
+                recordDiagnostics(
+                    null, finalized.zone,
+                    quantity = cards.total(),
+                    rankTotal = cards.total(),
+                    decision = DiagnosticsLog.Decision.RETRY,
+                    reason = "NOT_ACTIVE"
+                )
+                Log.i(TAG, "NOT_ACTIVE zone=${finalized.zone} cards=$cards")
+                return
+            }
             if (!openingPlayGate.isReady(ledgerState.handConfirmed)) {
                 // 记下这一手：开局门稍后因圆标打开时，桌上还摆着的会补记。
-                openingPlayGate.notePrePlaySkipped(finalized.zone, cards, SystemClock.elapsedRealtime())
+                openingPlayGate.notePrePlaySkipped(finalized.zone, cards, sampleTimeMs)
                 saveEvidence(finalized, voted, "PRE_PLAY_SKIPPED", cards, candidates)
                 recordDiagnostics(
                     null, finalized.zone,
@@ -769,7 +785,7 @@ class CaptureProbeService : Service() {
                 Log.i(TAG, "PRE_PLAY_SKIPPED zone=${finalized.zone} cards=$cards")
                 return
             }
-            admitPlay(finalized.zone, cards, voteOutcome.mergedFromDisagreement) { reason ->
+            admitPlay(finalized.zone, cards, voteOutcome.mergedFromDisagreement, sampleTimeMs) { reason ->
                 saveEvidence(finalized, voted, reason, cards, candidates)
             }
         } finally {
@@ -781,9 +797,14 @@ class CaptureProbeService : Service() {
      * 一手已经过规则校验、开局门放行的出牌入账：去重门检查 → 单写者账本 → 账本接受后提交去重门。
      * 正常交出和开局门因圆标打开后补记共用；补记时 [evidence] 什么都不存（那一手的截图早已回收）。
      */
-    private fun admitPlay(zone: PlayZone, cards: RankCounts, merged: Boolean, evidence: (String) -> Unit) {
-        val nowMs = SystemClock.elapsedRealtime()
-        val stable = when (val gateDecision = stablePlayGate.check(zone, cards, nowMs)) {
+    private fun admitPlay(
+        zone: PlayZone,
+        cards: RankCounts,
+        merged: Boolean,
+        sampleTimeMs: Long,
+        evidence: (String) -> Unit
+    ) {
+        val stable = when (val gateDecision = stablePlayGate.check(zone, cards, sampleTimeMs)) {
             is PlayGateDecision.Accept -> gateDecision.play
             is PlayGateDecision.Suppressed -> {
                 when (gateDecision.reason) {
@@ -831,7 +852,9 @@ class CaptureProbeService : Service() {
         )
         when (result) {
             is DispatchResult.Accepted -> {
-                stablePlayGate.commitAccepted(zone, stable.cards, nowMs)
+                stablePlayGate.commitAccepted(zone, stable.cards, sampleTimeMs) {
+                    roiEventCache.isCleared(it, captureGeneration)
+                }
                 OverlayService.refresh(this)
                 Log.i(
                     TAG,
@@ -856,11 +879,26 @@ class CaptureProbeService : Service() {
     }
 
     /** 开局门因圆标打开后，补记门控打开前交出过、牌还在桌上的几手：走和正常交出一样的去重门、账本。 */
-    private fun replaySkippedPlays(plays: List<OpeningPlayGate.SkippedPlay>) {
-        for (play in plays) {
-            if (gameSkipped || sessionLedger.state.phase != SessionPhase.ACTIVE) return
+    private fun replaySkippedPlays(plays: List<OpeningPlayGate.SkippedPlay>, sampleTimeMs: Long) {
+        for (i in plays.indices) {
+            if (gameSkipped) return
+            if (sessionLedger.state.phase != SessionPhase.ACTIVE) {
+                for (j in i until plays.size) {
+                    val skipped = plays[j]
+                    recordDiagnostics(
+                        null, skipped.zone,
+                        quantity = skipped.cards.total(),
+                        rankTotal = skipped.cards.total(),
+                        decision = DiagnosticsLog.Decision.RETRY,
+                        reason = "NOT_ACTIVE"
+                    )
+                    Log.i(TAG, "NOT_ACTIVE zone=${skipped.zone} cards=${skipped.cards}")
+                }
+                return
+            }
+            val play = plays[i]
             Log.i(TAG, "PRE_PLAY_REPLAYED zone=${play.zone} cards=${play.cards}")
-            admitPlay(play.zone, play.cards, merged = false) { }
+            admitPlay(play.zone, play.cards, merged = false, sampleTimeMs = sampleTimeMs) { }
         }
     }
 

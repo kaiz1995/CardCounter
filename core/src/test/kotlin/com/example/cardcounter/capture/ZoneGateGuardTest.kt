@@ -23,7 +23,7 @@ class ZoneGateGuardTest {
         val gate = StablePlayGate()
         val twoFours = counts(Rank.FOUR to 2)
         val threeFours = counts(Rank.FOUR to 3)
-        gate.commitAccepted(PlayZone.TOP, twoFours, 10_000L)
+        gate.commitAccepted(PlayZone.TOP, twoFours, 10_000L) { true }
 
         assertEquals(
             PlayGateDecision.Suppressed(PlaySuppressionReason.SUBSET_OR_SUPERSET),
@@ -43,7 +43,7 @@ class ZoneGateGuardTest {
         val gate = StablePlayGate()
         val oneJoker = counts(Rank.BIG_JOKER to 1)
         val twoJokers = counts(Rank.BIG_JOKER to 1, Rank.SMALL_JOKER to 1)
-        gate.commitAccepted(PlayZone.LEFT_TOP, oneJoker, 0L)
+        gate.commitAccepted(PlayZone.LEFT_TOP, oneJoker, 0L) { true }
         assertTrue(gate.check(PlayZone.LEFT_TOP, twoJokers, StablePlayGate.SUBSET_WINDOW_MS + 1) is PlayGateDecision.Accept)
     }
 
@@ -52,24 +52,55 @@ class ZoneGateGuardTest {
     @Test
     fun otherSeatAcceptedBeforeOwnClearDoesNotUnlock() {
         val gate = StablePlayGate()
-        gate.commitAccepted(PlayZone.TOP, king, 0L)
+        gate.commitAccepted(PlayZone.TOP, king, 0L) { true }
         // 他座先入账（本区的牌还没清走），之后本区被特效遮挡闪空一下，只算已清桌，不能解锁。
-        gate.commitAccepted(PlayZone.RIGHT_TOP, ace, 100L)
-        gate.noteZoneCleared(PlayZone.TOP)
+        gate.commitAccepted(PlayZone.RIGHT_TOP, ace, 100L) { true }
+        gate.noteZoneCleared(PlayZone.TOP, 200L)
         assertEquals(
             PlayGateDecision.Suppressed(PlaySuppressionReason.EXACT_DUPLICATE),
             gate.check(PlayZone.TOP, king, 5_000L)
         )
         // 本区清桌之后别家再入账，才解锁。
-        gate.commitAccepted(PlayZone.LEFT_TOP, ace, 6_000L)
+        gate.commitAccepted(PlayZone.LEFT_TOP, ace, 6_000L) { true }
         assertTrue(gate.check(PlayZone.TOP, king, 6_100L) is PlayGateDecision.Accept)
+    }
+
+    @Test
+    fun otherSeatAcceptedAfterClearButCardsCameBackDoesNotUnlock() {
+        val gate = StablePlayGate()
+        gate.commitAccepted(PlayZone.TOP, king, 0L) { true }
+        gate.noteZoneCleared(PlayZone.TOP, 100L)
+        // 清桌标记还在，但入账那一刻本区的牌已经回来（isStillCleared = false）：同手牌仍判 EXACT_DUPLICATE。
+        gate.commitAccepted(PlayZone.RIGHT_TOP, ace, 5_000L) { false }
+        assertEquals(
+            PlayGateDecision.Suppressed(PlaySuppressionReason.EXACT_DUPLICATE),
+            gate.check(PlayZone.TOP, king, 5_100L)
+        )
+    }
+
+    @Test
+    fun otherSeatAcceptedJustAfterClearBelowMinimumDurationDoesNotUnlock() {
+        val gate = StablePlayGate()
+        gate.commitAccepted(PlayZone.TOP, king, 0L) { true }
+        gate.noteZoneCleared(PlayZone.TOP, 1_000L)
+        gate.commitAccepted(
+            PlayZone.RIGHT_TOP, ace, 1_000L + StablePlayGate.OTHER_SEAT_UNLOCK_MIN_CLEAR_MS - 1
+        ) { true }
+        assertEquals(
+            PlayGateDecision.Suppressed(PlaySuppressionReason.EXACT_DUPLICATE),
+            gate.check(PlayZone.TOP, king, 2_000L)
+        )
+        gate.commitAccepted(
+            PlayZone.LEFT_TOP, ace, 1_000L + StablePlayGate.OTHER_SEAT_UNLOCK_MIN_CLEAR_MS
+        ) { true }
+        assertTrue(gate.check(PlayZone.TOP, king, 2_100L) is PlayGateDecision.Accept)
     }
 
     @Test
     fun clearAloneNeverUnlocksButLongClearDoes() {
         val gate = StablePlayGate()
-        gate.commitAccepted(PlayZone.TOP, king, 0L)
-        gate.noteZoneCleared(PlayZone.TOP)
+        gate.commitAccepted(PlayZone.TOP, king, 0L) { true }
+        gate.noteZoneCleared(PlayZone.TOP, 100L)
         assertEquals(
             PlayGateDecision.Suppressed(PlaySuppressionReason.EXACT_DUPLICATE),
             gate.check(PlayZone.TOP, king, 5_000L)
