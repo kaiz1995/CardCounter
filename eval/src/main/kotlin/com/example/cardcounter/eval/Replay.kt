@@ -91,6 +91,11 @@ object Replay {
         game: GameMeta,
         frames: List<FrameObservation>,
         pipeline: PlayPipeline,
+        /**
+         * 大于 0 时手牌不在开局就确认，而是第一帧时间 >= 它时才确认（全段回放开着开局门控时用：
+         * 0 秒就确认等于把门控关了）；0 表示开局立刻确认。
+         */
+        confirmHandAtMs: Long = 0L,
         /** 回放结束后才取：审计记录是回放过程中产生的。 */
         audits: () -> List<LegacyAudit> = { emptyList() }
     ): ReplayResult {
@@ -104,14 +109,22 @@ object Replay {
         var rejections = 0
         try {
             actor.post(LedgerCommand.NewSession("eval-session-${game.gameId}"))
-            if (game.selfHandComplete) {
+            var handPending = game.selfHandComplete
+            fun confirmHand(strict: Boolean) {
+                handPending = false
                 val confirmResult = actor.post(
                     LedgerCommand.ConfirmHand(game.selfHand, game.selfHand.total(), "eval-hand-${game.gameId}")
                 )
-                check(confirmResult is DispatchResult.Accepted) {
-                    "确认手牌失败: ${(confirmResult as? DispatchResult.Rejected)?.reason ?: confirmResult}"
+                if (strict) {
+                    check(confirmResult is DispatchResult.Accepted) {
+                        "确认手牌失败: ${(confirmResult as? DispatchResult.Rejected)?.reason ?: confirmResult}"
+                    }
+                } else {
+                    if (confirmResult is DispatchResult.Paused) pauses++
+                    if (confirmResult is DispatchResult.Rejected) rejections++
                 }
             }
+            if (handPending && confirmHandAtMs <= 0L) confirmHand(strict = true)
             fun commit(decision: PipelineDecision) {
                 val result = actor.post(decision.command)
                 if (result is DispatchResult.Paused) pauses++
@@ -122,6 +135,7 @@ object Replay {
                 }
             }
             for (frame in framesInPlay(game, frames)) {
+                if (handPending && frame.timestampMs >= confirmHandAtMs) confirmHand(strict = false)
                 if (pipeline is StepwisePlayPipeline) {
                     // 逐区读最新账本、逐区提交：同帧前一区暂停后，后一区按手机逻辑走“非 ACTIVE”分支，
                     // 不动去重门控，审计记 NOT_ACTIVE。
@@ -135,6 +149,7 @@ object Replay {
                     }
                 }
             }
+            if (handPending) confirmHand(strict = false)
         } finally {
             actor.shutdown()
         }

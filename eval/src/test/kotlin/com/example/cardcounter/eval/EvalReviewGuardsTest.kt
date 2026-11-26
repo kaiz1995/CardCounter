@@ -465,7 +465,13 @@ class EvalReviewGuardsTest {
         val pipeline = LegacyPipeline(stableSamples = 100, clearSamples = 1)
         val replay = Replay.run(
             unknown,
-            listOf(frameOf(0, 0, badge = true), frameOf(50, 2), frameOf(100, 2), frameOf(200, 0)),
+            listOf(
+                frameOf(0, 0, badge = true),
+                frameOf(50, 0, badge = true),
+                frameOf(100, 2),
+                frameOf(150, 2),
+                frameOf(250, 0)
+            ),
             pipeline
         ) {
             pipeline.audits

@@ -7,7 +7,8 @@ import com.example.cardcounter.capture.PlaySource
 import com.example.cardcounter.capture.PlayZone
 import com.example.cardcounter.capture.RoiPlayEventCache
 import com.example.cardcounter.capture.StablePlayGate
-import com.example.cardcounter.capture.TurnTracker
+import com.example.cardcounter.capture.ZoneSignalTracker
+import com.example.cardcounter.capture.routeZoneSignals
 import com.example.cardcounter.capture.isPlayVisible
 import com.example.cardcounter.capture.isPublicRankBand
 import com.example.cardcounter.domain.DispatchResult
@@ -66,9 +67,12 @@ class LegacyPipeline(
         isStill = { _, current -> current.still }
     )
     private val gate = StablePlayGate()
-    private val turns = TurnTracker()
+    private val signals = ZoneSignalTracker()
     private val openingGate = OpeningPlayGate()
     private var generation = 0L
+
+    /** 当前这一帧的采样时间：账本接受后提交去重门要用和检查时同一个时间。 */
+    private var currentNowMs = 0L
     private val auditLog = mutableListOf<LegacyAudit>()
 
     /** 本次回放的全部最终化尝试，按发生顺序。 */
@@ -97,6 +101,7 @@ class LegacyPipeline(
         commit: (PipelineDecision) -> Unit
     ) {
         val tableVisible = observation.tableVisible
+        currentNowMs = observation.timestampMs
         for (zone in PlayZone.entries) {
             // 自己那一区的出牌完全不管：不判定、不发命令。
             if (zone.source == PlaySource.SELF) continue
@@ -109,23 +114,24 @@ class LegacyPipeline(
                 // 用这一手最后一帧还在桌上的时间：清桌交出要再等 clearSamples 次采样，
                 // 若用交出时刻，延迟随采样间隔变化，会掉出真值对齐时间窗。
                 val evidenceMs = finalized.frames.lastOrNull()?.timestampMs ?: observation.timestampMs
-                finalize(finalized, evidenceMs, ledger())?.let(commit)
+                finalize(finalized, evidenceMs, observation.timestampMs, ledger())?.let(commit)
             }
-            // “出牌”圆标和清桌计时放在交出之后看（与手机一致）：清桌这次采样兜底交出的一手先入账，这次采样的圆标也能算上。
-            if (tableVisible) {
-                if (observed.turnBadge) openingGate.onOutsideTurnBadge(true)
-                if (cache.isCleared(zone, generation)) gate.noteZoneCleared(zone)
-            }
-            val zoneEmpty = !visible && !cache.hasUndelivered(zone, generation)
-            val turnUpdate = turns.track(
+            // “出牌”圆标和清桌计时放在交出之后看（与手机一致）：清桌这次采样兜底交出的一手先入账，这次采样的信号再生效。
+            // 牌桌被遮挡时也要采样，空桌计时和圆标连续计数在里面归零；手机和评测共用 [ZoneSignalTracker] 与 [routeZoneSignals]。
+            val signal = signals.sample(
                 zone,
-                observed.turnBadge,
-                zoneEmpty = zoneEmpty,
-                timestampMs = observation.timestampMs,
-                tableVisible = tableVisible
+                badgeShown = tableVisible && observed.turnBadge,
+                cleared = cache.isCleared(zone, generation),
+                zoneEmpty = !visible && !cache.hasUndelivered(zone, generation),
+                tableVisible = tableVisible,
+                nowMs = observation.timestampMs
             )
-            if (turnUpdate.turned) gate.noteTurn(zone)
-            if (turnUpdate.longCleared) gate.noteLongClear(zone)
+            if (signal.any) {
+                val retries = routeZoneSignals(
+                    zone, signal, observation.timestampMs, gate, openingGate, ledger().handConfirmed
+                ) { other -> isOnTable(observation, other) }
+                for (retry in retries) replaySkipped(retry, ledger())?.let(commit)
+            }
         }
     }
 
@@ -133,7 +139,7 @@ class LegacyPipeline(
         val zone = decision.zone ?: return
         val command = decision.command as? LedgerCommand.AcceptOutsidePlay ?: return
         if (result is DispatchResult.Accepted) {
-            gate.commitAccepted(zone, command.cards)
+            gate.commitAccepted(zone, command.cards, currentNowMs)
         }
     }
 
@@ -141,14 +147,18 @@ class LegacyPipeline(
         generation++
         cache.reset(generation, primeExistingTable = false)
         gate.reset()
-        turns.reset()
+        signals.reset()
         openingGate.reset(alreadyInPlay = !requireOpeningSignal)
         auditLog.clear()
     }
 
+    private fun isOnTable(observation: FrameObservation, zone: PlayZone): Boolean =
+        observation.tableVisible && (observation.zones[zone]?.let { isPlayVisible(it.cardVisible) } ?: false)
+
     private fun finalize(
         finalized: RoiPlayEventCache.Finalized<ZoneSample>,
         timestampMs: Long,
+        nowMs: Long,
         ledger: GameState
     ): PipelineDecision? {
         val frameDetections = finalized.frames
@@ -174,33 +184,54 @@ class LegacyPipeline(
             audit(LegacyAudit(finalized.zone, timestampMs, LegacyOutcome.NOT_ACTIVE, cards, finalized.frames.size))
             return null
         }
+        return admit(finalized.zone, cards, finalized.frames.size, timestampMs, nowMs, ledger)
+    }
+
+    /** 开局门因圆标打开后补记门控打开前交出过、牌还在桌上的一手：规则早已校验过，只重走账本状态、开局门和去重门（与手机一致）。 */
+    private fun replaySkipped(play: OpeningPlayGate.SkippedPlay, ledger: GameState): PipelineDecision? {
+        if (ledger.phase != SessionPhase.ACTIVE) {
+            audit(LegacyAudit(play.zone, play.atMs, LegacyOutcome.NOT_ACTIVE, play.cards, 0))
+            return null
+        }
+        return admit(play.zone, play.cards, 0, play.atMs, currentNowMs, ledger)
+    }
+
+    /** 开局门 → 去重门检查 → 生成账本命令；正常交出和补记共用。 */
+    private fun admit(
+        zone: PlayZone,
+        cards: RankCounts,
+        frameCount: Int,
+        timestampMs: Long,
+        nowMs: Long,
+        ledger: GameState
+    ): PipelineDecision? {
         if (requireOpeningSignal && !openingGate.isReady(ledger.handConfirmed)) {
+            // 记下这一手：开局门稍后因圆标打开时，桌上还摆着的会补记。
+            openingGate.notePrePlaySkipped(zone, cards, nowMs)
             audit(
                 LegacyAudit(
-                    finalized.zone, timestampMs, LegacyOutcome.PRE_PLAY_SKIPPED,
-                    cards, finalized.frames.size, reason = "PRE_PLAY_SKIPPED"
+                    zone, timestampMs, LegacyOutcome.PRE_PLAY_SKIPPED,
+                    cards, frameCount, reason = "PRE_PLAY_SKIPPED"
                 )
             )
             return null
         }
-        val stable = when (val decision = gate.check(finalized.zone, cards)) {
+        val stable = when (val decision = gate.check(zone, cards, nowMs)) {
             is PlayGateDecision.Accept -> decision.play
             is PlayGateDecision.Suppressed -> {
                 audit(
                     LegacyAudit(
-                        finalized.zone, timestampMs, LegacyOutcome.DUPLICATE_SUPPRESSED,
-                        cards, finalized.frames.size, reason = decision.reason.name
+                        zone, timestampMs, LegacyOutcome.DUPLICATE_SUPPRESSED,
+                        cards, frameCount, reason = decision.reason.name
                     )
                 )
                 return null
             }
         }
-        audit(LegacyAudit(finalized.zone, timestampMs, LegacyOutcome.ACCEPTED, stable.cards, finalized.frames.size))
+        audit(LegacyAudit(zone, timestampMs, LegacyOutcome.ACCEPTED, stable.cards, frameCount))
         val evidenceId = UUID.randomUUID().toString()
-        val command = LedgerCommand.AcceptOutsidePlay(
-            stable.cards, requireNotNull(finalized.zone.seat), evidenceId
-        )
-        return PipelineDecision(command, finalized.zone, timestampMs)
+        val command = LedgerCommand.AcceptOutsidePlay(stable.cards, requireNotNull(zone.seat), evidenceId)
+        return PipelineDecision(command, zone, timestampMs)
     }
 
     /** 只保留点数带内的框（[isPublicRankBand]，为兼容旧模型回放保留），换算到 320 画布像素。 */
