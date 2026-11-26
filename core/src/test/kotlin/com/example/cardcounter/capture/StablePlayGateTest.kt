@@ -143,6 +143,54 @@ class StablePlayGateTest {
     fun distinguishesGreenGameTableFromWhiteAppScreen() {
         assertTrue(isTableGreen(red = 30, green = 130, blue = 109))
         assertFalse(isTableGreen(red = 245, green = 245, blue = 245))
+        // 半透明下拉通知栏盖住绿桌时 green 仍在 70+，但红通道被垫高（green - red <= 46），必须判非牌桌绿。
+        assertFalse(isTableGreen(red = 31, green = 77, blue = 64))
+    }
+
+    @Test
+    fun notificationShadeOverlayDoesNotTriggerLongClearOrReAdmitSameHand() {
+        val cache = RoiPlayEventCache<Int>(isStill = { a, b -> a == b })
+        val tracker = ZoneSignalTracker()
+        val gate = StablePlayGate()
+        val opening = OpeningPlayGate().apply { reset(alreadyInPlay = true) }
+        val hand = RankCounts.of(mapOf(Rank.FOUR to 3))
+        var nowMs = 1_000L
+
+        // 1) 正常出牌 FOUR:3 停稳入账
+        repeat(16) {
+            val finalized = cache.observe(PlayZone.LEFT_BOTTOM, tableVisible = true, cardVisible = true, frame = 1, generation = 0L)
+            val sig = tracker.sample(
+                PlayZone.LEFT_BOTTOM, badgeShown = false, cleared = cache.isCleared(PlayZone.LEFT_BOTTOM, 0L),
+                zoneEmpty = false, tableVisible = true, nowMs = nowMs
+            )
+            routeZoneSignals(PlayZone.LEFT_BOTTOM, sig, nowMs, gate, opening, handConfirmed = true) { true }
+            if (finalized != null) {
+                assertTrue(gate.check(PlayZone.LEFT_BOTTOM, hand, nowMs) is PlayGateDecision.Accept)
+                gate.commitAccepted(PlayZone.LEFT_BOTTOM, hand, nowMs) { cache.isCleared(it, 0L) }
+            }
+            nowMs += 50L
+        }
+
+        // 2) 下拉通知栏半透明遮罩持续 2.5 秒（50 帧）：探针点绿度被拉低判为 tableVisible=false
+        val shadedVisible = isTableVisible { x, _ ->
+            val (r, g, b) = if (x < 300 || x > 1000) Triple(31, 77, 64) else Triple(34, 35, 38)
+            isTableGreen(r, g, b)
+        }
+        assertFalse(shadedVisible)
+        repeat(50) {
+            val finalized = cache.observe(PlayZone.LEFT_BOTTOM, tableVisible = shadedVisible, cardVisible = false, frame = null, generation = 0L)
+            assertNull(finalized)
+            val sig = tracker.sample(
+                PlayZone.LEFT_BOTTOM, badgeShown = false, cleared = cache.isCleared(PlayZone.LEFT_BOTTOM, 0L),
+                zoneEmpty = false, tableVisible = shadedVisible, nowMs = nowMs
+            )
+            assertFalse(sig.any)
+            nowMs += 50L
+        }
+
+        // 3) 收起通知栏，同一手 FOUR:3 仍在桌上，即使指纹微变再交出，去重门也必须拦住不重记
+        val suppressed = gate.check(PlayZone.LEFT_BOTTOM, hand, nowMs)
+        assertTrue(suppressed is PlayGateDecision.Suppressed)
     }
 
     @Test

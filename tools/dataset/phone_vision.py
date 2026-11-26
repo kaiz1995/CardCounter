@@ -162,12 +162,12 @@ class Screen:
 
 
 def is_table_visible(screen: Screen) -> bool:
-    """7 点绿布投票，至少命中 3 个。"""
+    """7 点绿布投票，至少命中 3 个（green - red >= 50 过滤半透明通知栏遮罩）。"""
     xs = [p[0] for p in TABLE_GREEN_PROBES]
     ys = [p[1] for p in TABLE_GREEN_PROBES]
     px = screen.rgb(xs, ys)
     r, g, b = px[:, 0], px[:, 1], px[:, 2]
-    green = (g >= 70) & (g - r >= 30) & (g - b >= 10)
+    green = (g >= 70) & (g - r >= 50) & (g - b >= 10)
     return int(green.sum()) >= TABLE_GREEN_MIN_HITS
 
 

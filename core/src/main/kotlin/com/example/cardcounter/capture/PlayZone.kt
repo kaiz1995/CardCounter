@@ -454,8 +454,12 @@ fun isPlayVisible(whiteAreaVisible: Boolean): Boolean = whiteAreaVisible
 fun hasVisibleCardArea(whiteSamples: Int, totalSamples: Int): Boolean =
     totalSamples > 0 && whiteSamples * 100 >= totalSamples * 10
 
+/**
+ * 牌桌绿点判定：实测 dev 2929 帧可见牌桌第 3 绿探针点的 green - red 均 >= 50；
+ * 半透明通知栏盖住牌桌时绿度被灰白底冲淡（green - red <= 46），收紧到 50 直接判牌桌不可见，防止误推清桌计时。
+ */
 fun isTableGreen(red: Int, green: Int, blue: Int): Boolean =
-    green >= 70 && green - red >= 30 && green - blue >= 10
+    green >= 70 && green - red >= 50 && green - blue >= 10
 
 /** 宽松绿桌：兼容烧牌/开点 0.55 倍压暗后的桌面（绿色通道仍在 48~72）。压暗面板（如 3, 18, 15）不算。 */
 fun isDimmedOrNormalTableGreen(red: Int, green: Int, blue: Int): Boolean =
