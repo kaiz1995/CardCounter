@@ -10,12 +10,12 @@
       "startMs": 3012,
       "endMs": 245505,
       "prePlayEndMs": 36011,
-      "firstPlayMs": 37011,
+      "firstPlayMs": 36463,
       "complete": true,
       "selfHand": "",
       "selfHandCount": null,
       "review": "AUTO",
-      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。"
+      "notes": "自动切分；画布 1280x578。firstPlay 取宣点结束后的第一个白区事件；prePlayEnd=宣点结束+0.5s。 firstPlayMs 37011->36463（第一手 LEFT_BOTTOM TEN:4 于 36563ms 出现，夹到出现前 100ms）。"
     },
     {
       "gameId": "g102658-2",

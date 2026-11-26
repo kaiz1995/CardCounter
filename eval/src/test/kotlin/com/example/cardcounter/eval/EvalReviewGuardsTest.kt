@@ -481,4 +481,96 @@ class EvalReviewGuardsTest {
         assertEquals(1, replay.accepted.size)
         assertEquals(2, replay.finalState.outsidePlayedCount)
     }
+
+    // ---- 第 1 类：已逐帧核实的 dev 真值漏标/错标与 firstPlayMs 边界 ----
+
+    @Test
+    fun fixedDevTruthMatchesVerifiedVideoFrames() {
+        val root = if (Files.exists(Path.of("datasets/games.json"))) Path.of(".") else Path.of("..")
+        val games = GamesJson.parse(Files.readString(root.resolve("datasets/games.json"), StandardCharsets.UTF_8))
+            .associateBy { it.gameId }
+        fun loadTruth(gameId: String): List<TruthPlay> =
+            TruthCsv.parse(Files.readString(root.resolve("datasets/truth/$gameId.csv"), StandardCharsets.UTF_8), gameId)
+
+        val g1Plays = loadTruth("g102658-1")
+        val g1First = g1Plays.minBy { it.appearMs }
+        assertTrue("g102658-1 首手 TEN:4 不应早于 firstPlayMs", g1First.appearMs >= games.getValue("g102658-1").firstPlayMs)
+        assertTrue(
+            "g102658-1 应包含 36563..38212 LEFT_BOTTOM TEN:4",
+            g1Plays.any { it.zone == PlayZone.LEFT_BOTTOM && it.appearMs == 36563L && it.cards == RankCounts.of(mapOf(Rank.TEN to 4)) }
+        )
+
+        val g2Plays = loadTruth("g102658-2")
+        assertTrue(
+            "g102658-2 应包含 364470..364722 RIGHT_TOP BIG_JOKER:1;TEN:4",
+            g2Plays.any {
+                it.zone == PlayZone.RIGHT_TOP && it.appearMs == 364470L && it.clearMs == 364722L &&
+                    it.cards == RankCounts.of(mapOf(Rank.BIG_JOKER to 1, Rank.TEN to 4))
+            }
+        )
+        assertTrue(
+            "g102658-2 应包含 374925..375170 LEFT_BOTTOM BIG_JOKER:1;EIGHT:3",
+            g2Plays.any {
+                it.zone == PlayZone.LEFT_BOTTOM && it.appearMs == 374925L && it.clearMs == 375170L &&
+                    it.cards == RankCounts.of(mapOf(Rank.BIG_JOKER to 1, Rank.EIGHT to 3))
+            }
+        )
+        assertTrue(
+            "g102658-2 LEFT_BOTTOM 375170 实为 BIG_JOKER:1;QUEEN:4（非 QUEEN:5）",
+            g2Plays.any {
+                it.zone == PlayZone.LEFT_BOTTOM && it.stableMs == 375170L &&
+                    it.cards == RankCounts.of(mapOf(Rank.BIG_JOKER to 1, Rank.QUEEN to 4))
+            }
+        )
+
+        val g3Plays = loadTruth("g102658-3")
+        assertTrue(
+            "g102658-3 应包含 520461..520708 RIGHT_TOP BIG_JOKER:1;TWO:1;TEN:2",
+            g3Plays.any {
+                it.zone == PlayZone.RIGHT_TOP && it.appearMs == 520461L && it.clearMs == 520708L &&
+                    it.cards == RankCounts.of(mapOf(Rank.BIG_JOKER to 1, Rank.TWO to 1, Rank.TEN to 2))
+            }
+        )
+        assertTrue(
+            "g102658-3 RIGHT_TOP 520708 实为 BIG_JOKER:1;KING:6（非 KING:7）",
+            g3Plays.any {
+                it.zone == PlayZone.RIGHT_TOP && it.stableMs == 520708L &&
+                    it.cards == RankCounts.of(mapOf(Rank.BIG_JOKER to 1, Rank.KING to 6))
+            }
+        )
+
+        val g5Plays = loadTruth("g102658-5")
+        assertTrue(
+            "g102658-5 RIGHT_BOTTOM 863308 实为 BIG_JOKER:1;TWO:1;NINE:4",
+            g5Plays.any {
+                it.zone == PlayZone.RIGHT_BOTTOM && it.appearMs == 863308L && it.clearMs == 863564L &&
+                    it.cards == RankCounts.of(mapOf(Rank.BIG_JOKER to 1, Rank.TWO to 1, Rank.NINE to 4))
+            }
+        )
+        assertTrue(
+            "g102658-5 应包含 863564..863809 RIGHT_BOTTOM SMALL_JOKER:1;JACK:4",
+            g5Plays.any {
+                it.zone == PlayZone.RIGHT_BOTTOM && it.appearMs == 863564L && it.clearMs == 863809L &&
+                    it.cards == RankCounts.of(mapOf(Rank.SMALL_JOKER to 1, Rank.JACK to 4))
+            }
+        )
+
+        val g141Plays = loadTruth("g143651-1")
+        assertTrue(
+            "g143651-1 应包含 177765..178017 TOP BIG_JOKER:1;SEVEN:2",
+            g141Plays.any {
+                it.zone == PlayZone.TOP && it.appearMs == 177765L && it.clearMs == 178017L &&
+                    it.cards == RankCounts.of(mapOf(Rank.BIG_JOKER to 1, Rank.SEVEN to 2))
+            }
+        )
+
+        val g145Plays = loadTruth("g143651-5")
+        assertTrue(
+            "g143651-5 应包含 852475..852724 LEFT_BOTTOM BIG_JOKER:1;QUEEN:2",
+            g145Plays.any {
+                it.zone == PlayZone.LEFT_BOTTOM && it.appearMs == 852475L && it.clearMs == 852724L &&
+                    it.cards == RankCounts.of(mapOf(Rank.BIG_JOKER to 1, Rank.QUEEN to 2))
+            }
+        )
+    }
 }
