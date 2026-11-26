@@ -164,10 +164,12 @@ class StablePlayGateTest {
     }
 
     @Test
-    fun probesHandOnlyWhenUnconfirmedAndPictureIsStable() {
-        assertFalse(shouldProbeHand(handConfirmed = false, stableHandSamples = 2))
-        assertTrue(shouldProbeHand(handConfirmed = false, stableHandSamples = 3))
-        assertFalse(shouldProbeHand(handConfirmed = true, stableHandSamples = 3))
+    fun probesHandOnlyWhenOnTableUnlockedAndPictureIsStable() {
+        assertFalse(shouldProbeHand(handLocked = false, onTable = true, stableHandSamples = 2))
+        assertTrue(shouldProbeHand(handLocked = false, onTable = true, stableHandSamples = 3))
+        assertFalse(shouldProbeHand(handLocked = true, onTable = true, stableHandSamples = 3))
+        // 竖屏、大厅、结算画面（牌桌不可见）不识别手牌。
+        assertFalse(shouldProbeHand(handLocked = false, onTable = false, stableHandSamples = 3))
     }
 
     @Test
@@ -481,15 +483,15 @@ class StablePlayGateTest {
     }
 
     @Test
-    fun openingPlayGateRequiresHandConfirmedOrOutsideBadge() {
+    fun openingPlayGateOnlyOpensOnOutsideBadge() {
         val gate = OpeningPlayGate()
         gate.reset(alreadyInPlay = false)
-        assertFalse(gate.isReady(handConfirmed = false))
-        assertTrue(gate.isReady(handConfirmed = true))
+        assertFalse(gate.isReady())
 
-        gate.reset(alreadyInPlay = false)
-        assertFalse(gate.isReady(handConfirmed = false))
         gate.onOutsideTurn(turned = true, nowMs = 0L, isOnTable = { false })
-        assertTrue(gate.isReady(handConfirmed = false))
+        assertTrue(gate.isReady())
+
+        gate.reset(alreadyInPlay = true)
+        assertTrue(gate.isReady())
     }
 }

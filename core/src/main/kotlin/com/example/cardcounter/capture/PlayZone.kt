@@ -484,9 +484,12 @@ fun isTableVisible(isGreenAt: (x: Int, y: Int) -> Boolean): Boolean =
 /** 只用于旧模型回放（eval 的 LegacyPipeline）；新模型的框只框点数，手机端不再按纵坐标过滤。 */
 fun isPublicRankBand(centerY: Float): Boolean = centerY < 0.85f
 
-/** 手牌识别在后台一直跑，只在手牌画面停稳后探测；手牌一旦确认，本局不再识别。 */
-fun shouldProbeHand(handConfirmed: Boolean, stableHandSamples: Int): Boolean =
-    !handConfirmed && stableHandSamples >= 3
+/**
+ * 手牌识别只在横屏、牌桌可见、手牌画面停稳、手牌还没锁定时跑；
+ * 竖屏、大厅、结算画面不识别，手牌一旦锁定（见 HandAutoLock），本局不再识别。
+ */
+fun shouldProbeHand(handLocked: Boolean, onTable: Boolean, stableHandSamples: Int): Boolean =
+    !handLocked && onTable && stableHandSamples >= 3
 
 enum class MidGameCheckResult { PENDING, CLEAR, SKIP }
 
@@ -552,14 +555,15 @@ fun shouldSkipOpenedGame(handConfirmed: Boolean, outsidePlayedCount: Int, visibl
 
 /**
  * 开局换牌期（发牌、交贡、还贡、买三买四、宣点）门控：
- * 直到（1）手牌已确认，或（2）任意 OUTSIDE 区的“出牌”圆标被 [TurnTracker] 连续帧确认轮到他（[onOutsideTurn]），
+ * 只认任意 OUTSIDE 区的“出牌”圆标被 [TurnTracker] 连续帧确认轮到他（[onOutsideTurn]），
  * 才认为已进入正式出牌阶段。不能只看单帧圆标颜色：换牌期特效闪一帧红黄像素就会永久放行；
  * 也不采信 SELF 圆标，因为宣点阶段中央红底“宣”按钮位于 SELF 圆标位会误触发。
+ * 手牌是否认出不影响门控：换牌期桌上摆的是交贡、还贡、买三买四的展示牌，不能当正式出牌记账。
  *
  * 首出的牌如果在门控打开前被丢掉（[notePrePlaySkipped]，常见于首出圆标漏判、下家圆标先亮），
  * 门控由圆标打开时会把仍摆在桌上、门控打开前 [RETRY_WINDOW_MS] 内交出的那几手交还给调用方补记，
- * 补记仍走去重门和规则校验。因确认手牌打开门控时不补记：确认手牌常发生在换牌期，桌上可能是交贡展示牌。
- * 本区清桌（[noteZoneCleared]）后，这一区被丢的牌不再补记。
+ * 补记仍走去重门和规则校验。本区清桌（[noteZoneCleared]）后，这一区被丢的牌不再补记。
+ * 手牌自动锁定也以门控打开的那一刻为锁定时刻（见 HandAutoLock）。
  */
 class OpeningPlayGate {
     /** 门控打开前被丢掉的一手：出牌区、点数和丢掉的时间（毫秒，与调用方其余时间同一时钟）。 */
@@ -592,14 +596,7 @@ class OpeningPlayGate {
     }
 
     @Synchronized
-    fun isReady(handConfirmed: Boolean): Boolean {
-        if (handConfirmed && !enteredPlayPhase) {
-            enteredPlayPhase = true
-            // 因确认手牌打开：换牌期桌上可能是交贡展示牌，丢掉的不补记。
-            skipped.clear()
-        }
-        return enteredPlayPhase
-    }
+    fun isReady(): Boolean = enteredPlayPhase
 
     /** 门控还没打开时丢掉了这一区的一手；同一区只记最近一手。 */
     @Synchronized

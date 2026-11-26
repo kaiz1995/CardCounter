@@ -169,16 +169,16 @@ class ZoneGateGuardTest {
         fun feed(badge: Boolean, nowMs: Long) = routeZoneSignals(
             PlayZone.RIGHT_BOTTOM,
             tracker.sample(PlayZone.RIGHT_BOTTOM, badge, cleared = false, zoneEmpty = true, tableVisible = true, nowMs = nowMs),
-            nowMs, stable, opening, handConfirmed = false
+            nowMs, stable, opening
         ) { false }
 
         feed(true, 0L)
         feed(false, 50L)
-        assertFalse(opening.isReady(handConfirmed = false))
+        assertFalse(opening.isReady())
 
         feed(true, 100L)
         feed(true, 150L)
-        assertTrue(opening.isReady(handConfirmed = false))
+        assertTrue(opening.isReady())
     }
 
     @Test
@@ -201,7 +201,7 @@ class ZoneGateGuardTest {
         routeZoneSignals(
             PlayZone.RIGHT_BOTTOM,
             tracker.sample(PlayZone.RIGHT_BOTTOM, false, cleared = true, zoneEmpty = false, tableVisible = true, nowMs = 2_000L),
-            2_000L, stable, opening, handConfirmed = false
+            2_000L, stable, opening
         ) { true }
         assertTrue(opening.onOutsideTurn(turned = true, nowMs = 3_000L) { true }.isEmpty())
 
@@ -224,17 +224,12 @@ class ZoneGateGuardTest {
     }
 
     @Test
-    fun gateOpenedByConfirmedHandNeverReplaysExchangeDisplayCards() {
-        // 先确认手牌、后圆标亮：换牌期桌上可能是交贡展示牌，丢掉的不补记。
+    fun exchangeDisplayCardsAreNeverRecordedBeforeTheOutsideBadgeOpensTheGate() {
+        // 换牌期（交贡、还贡、买三买四）桌上的展示牌：手牌认没认出来都不放行，只有圆标连续确认才放行。
         val opening = newOpeningGate()
-        val stable = StablePlayGate()
-        val tracker = ZoneSignalTracker()
+        assertFalse(opening.isReady())
         opening.notePrePlaySkipped(PlayZone.RIGHT_BOTTOM, king, 1_000L)
-        tracker.sample(PlayZone.RIGHT_BOTTOM, true, cleared = false, zoneEmpty = true, tableVisible = true, nowMs = 2_000L)
-        val signals = tracker.sample(PlayZone.RIGHT_BOTTOM, true, cleared = false, zoneEmpty = true, tableVisible = true, nowMs = 2_050L)
-        assertTrue(signals.turned)
-        val retries = routeZoneSignals(PlayZone.RIGHT_BOTTOM, signals, 2_050L, stable, opening, handConfirmed = true) { true }
-        assertTrue(retries.isEmpty())
+        assertFalse(opening.isReady())
     }
 
     @Test
@@ -256,7 +251,7 @@ class ZoneGateGuardTest {
 
         val opening = OpeningPlayGate()
         opening.reset(alreadyInPlay = reset.alreadyInPlay)
-        assertFalse(opening.isReady(handConfirmed = false))
+        assertFalse(opening.isReady())
     }
 
     @Test

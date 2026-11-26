@@ -146,7 +146,7 @@ class LegacyPipeline(
             )
             if (signal.any) {
                 val retries = routeZoneSignals(
-                    zone, signal, observation.timestampMs, gate, openingGate, ledger().handConfirmed
+                    zone, signal, observation.timestampMs, gate, openingGate
                 ) { other -> isOnTable(observation, other) }
                 for (retry in retries) replaySkipped(retry, ledger())?.let(commit)
             }
@@ -235,7 +235,7 @@ class LegacyPipeline(
         nowMs: Long,
         ledger: GameState
     ): PipelineDecision? {
-        if (requireOpeningSignal && !openingGate.isReady(ledger.handConfirmed)) {
+        if (requireOpeningSignal && !openingGate.isReady()) {
             // 记下这一手：开局门稍后因圆标打开时，桌上还摆着的会补记。
             openingGate.notePrePlaySkipped(zone, cards, nowMs)
             audit(

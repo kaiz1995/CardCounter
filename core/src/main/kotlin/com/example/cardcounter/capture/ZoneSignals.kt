@@ -48,8 +48,6 @@ class ZoneSignalTracker(
  * 把一个出牌区这次采样的信号交给去重门和开局门（手机在识别线程上调用，电脑评测在回放里直接调用）。
  * 顺序固定：清桌 → 轮到 → 长清桌。返回开局门因圆标打开时要补记的几手（没有就是空列表）；
  * 调用方对它们走正常入账流程（去重门、规则校验照常）。
- * [handConfirmed]：账本里手牌已确认。已确认的手牌会先把开局门打开（因确认手牌打开，不补记），
- * 之后圆标再亮也不会把换牌期丢掉的展示牌补记进账。
  */
 fun routeZoneSignals(
     zone: PlayZone,
@@ -57,11 +55,9 @@ fun routeZoneSignals(
     nowMs: Long,
     stableGate: StablePlayGate,
     openingGate: OpeningPlayGate,
-    handConfirmed: Boolean,
     isOnTable: (PlayZone) -> Boolean
 ): List<OpeningPlayGate.SkippedPlay> {
     var retries = emptyList<OpeningPlayGate.SkippedPlay>()
-    if (handConfirmed) openingGate.isReady(true)
     if (signals.clearedRose) {
         stableGate.noteZoneCleared(zone, nowMs)
         openingGate.noteZoneCleared(zone)
