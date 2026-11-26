@@ -1014,7 +1014,7 @@
   },
   {
    "id": "f17",
-   "source": "g102658-3@449363ms",
+   "source": "g102658-3@449411ms",
    "label": "静止对·前一帧",
    "table_visible": true,
    "zones": {
@@ -1027,7 +1027,7 @@
       82,
       70
      ],
-     "fp": "dfa75dc7431c2eb9"
+     "fp": "160e248725dd33a1"
     },
     "LEFT_TOP": {
      "state": "EMPTY",
@@ -1038,7 +1038,7 @@
       152,
       56
      ],
-     "fp": "645c1262ef5d2041"
+     "fp": "5dac79c4b34527e7"
     },
     "LEFT_BOTTOM": {
      "state": "EMPTY",
@@ -1049,7 +1049,7 @@
       181,
       70
      ],
-     "fp": "5563c14819db0987"
+     "fp": "5709630cb524ca66"
     },
     "RIGHT_TOP": {
      "state": "CARD",
@@ -1060,7 +1060,7 @@
       141,
       56
      ],
-     "fp": "4e0111cfbabc6d47"
+     "fp": "48aa431e6291c0f4"
     },
     "RIGHT_BOTTOM": {
      "state": "CARD",
@@ -1071,13 +1071,13 @@
       141,
       70
      ],
-     "fp": "e989575e6aaa76d2"
+     "fp": "49f0acc5a8b58a6f"
     }
    }
   },
   {
    "id": "f18",
-   "source": "g102658-3@449411ms",
+   "source": "g102658-3@449460ms",
    "label": "静止对",
    "prev": "f17",
    "table_visible": true,
@@ -1091,7 +1091,7 @@
       82,
       70
      ],
-     "fp": "160e248725dd33a1",
+     "fp": "3a073a43a96ee867",
      "still": true
     },
     "LEFT_TOP": {
@@ -1103,7 +1103,7 @@
       152,
       56
      ],
-     "fp": "5dac79c4b34527e7",
+     "fp": "292c4a23e348b507",
      "still": true
     },
     "LEFT_BOTTOM": {
@@ -1115,7 +1115,7 @@
       181,
       70
      ],
-     "fp": "5709630cb524ca66",
+     "fp": "d417e9fb7f607596",
      "still": true
     },
     "RIGHT_TOP": {
@@ -1139,7 +1139,7 @@
       141,
       70
      ],
-     "fp": "49f0acc5a8b58a6f",
+     "fp": "dd1d14a8f217bbfe",
      "still": true
     }
    }

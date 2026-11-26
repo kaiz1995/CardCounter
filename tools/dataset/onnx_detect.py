@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import sys
 import time
@@ -176,7 +177,12 @@ class GameSampler:
         still = pv.fingerprint_still(self.previous_fp[name], fingerprint)
         self.previous_fp[name] = fingerprint
         self.still_run[name] = self.still_run[name] + 1 if still else 0
-        zone: dict = {"card_visible": True, "still": still, "turn": turn}
+        zone: dict = {
+            "card_visible": True,
+            "still": still,
+            "turn": turn,
+            "fp": base64.b64encode(fingerprint.tobytes()).decode("ascii"),
+        }
         if self.still_run[name] <= INFER_STILL_RUN_LIMIT:
             crop = pv.expanded_crop(screen, spec)
             found = detector.detect(pv.play_zone_input(screen, crop))

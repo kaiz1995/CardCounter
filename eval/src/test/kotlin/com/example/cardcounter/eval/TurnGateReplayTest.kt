@@ -454,4 +454,23 @@ class TurnGateReplayTest {
             result.map { it.outcome }
         )
     }
+
+    @Test
+    fun fiveFrameFastPlayWithAnimationPrefixIsStillCountedWhenCovered() {
+        // 真牌停了 5 帧（~200ms）：前 3 帧受出牌动画干扰 still=false，末尾静止 2 次（共 5 帧）即被下一手不同牌直接盖上。
+        // 与 aHandThatWasOnlyStillTwiceBeforeBeingCoveredIsNotCounted（一共只有 3 帧 ~100ms 的滑入）不同，这里两手都应入账。
+        val result = replayAudits(
+            frames(3, obs(true, 5, still = false, rank = Rank.NINE)) +
+                frames(2, obs(true, 5, still = true, rank = Rank.NINE)) +
+                frames(3, obs(true, 5, still = false, rank = Rank.JACK)) +
+                frames(2, obs(true, 5, still = true, rank = Rank.JACK)) +
+                frames(1, obs(true, 1, still = false, rank = Rank.THREE)) +
+                frames(2, obs(true, 1, still = true, rank = Rank.THREE)) +
+                frames(3, obs(false, 0)),
+            stableSamples = 15
+        )
+        assertEquals(listOf(LegacyOutcome.ACCEPTED, LegacyOutcome.ACCEPTED, LegacyOutcome.ACCEPTED), result.map { it.outcome })
+        assertEquals(listOf(FinalizeReason.COVERED, FinalizeReason.COVERED, FinalizeReason.CLEARED), result.map { it.reason })
+        assertEquals(listOf(5, 5, 1), result.map { it.cards?.total() })
+    }
 }

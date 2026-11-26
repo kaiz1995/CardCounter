@@ -393,4 +393,43 @@ class RoiPlayEventCacheTest {
         assertNull(cache.empty())
         assertEquals(FinalizeReason.CLEARED, requireNotNull(cache.empty()).reason)
     }
+
+    @Test
+    fun fiveVisibleSamplesWithTwoTrailingStillsStillFinalizeAsCoveredAcrossBackToBackFastPlays() {
+        // 连续 5 帧快牌：前 3 帧带“5张”特效互不相同（still=false），末尾仅连续静止 2 次（第 4、5 帧）就被下一手直接盖掉；
+        // 且第二手同样只有 5 帧（3 帧特效 + 2 帧静止）随后被第三手盖掉。两手都应按 COVERED 交出，而不被当成 100ms 滑入扔掉。
+        val cache = cache(stableSamples = 15, clearSamples = 3, coveredStillSamples = 3)
+        // 第一手共 5 帧：fx1 -> fx2 -> a0 -> a1(st=1) -> a2(st=2)
+        assertNull(cache.see("fx1-0"))
+        assertNull(cache.see("fx2-0"))
+        assertNull(cache.see("a-0"))
+        assertNull(cache.see("a-1"))
+        assertNull(cache.see("a-2"))
+        // 第二手前 3 帧带特效，第 4 帧站稳触发 COVERED 交出第一手
+        assertNull(cache.see("fx3-0"))
+        assertNull(cache.see("fx4-0"))
+        assertNull(cache.see("b-0"))
+        val first = requireNotNull(cache.see("b-1"))
+        assertEquals(FinalizeReason.COVERED, first.reason)
+        assertEquals(listOf("a-0", "a-1", "a-2"), first.frames)
+        // 第二手第 5 帧静止后被第三手盖掉：也应按 COVERED 交出
+        assertNull(cache.see("b-2"))
+        assertNull(cache.see("c-0"))
+        val second = requireNotNull(cache.see("c-1"))
+        assertEquals(FinalizeReason.COVERED, second.reason)
+        assertEquals(listOf("b-0", "b-1", "b-2"), second.frames)
+    }
+
+    @Test
+    fun threeFrameSlideInWithOnlyTwoStillsIsStillRejectedOnCover() {
+        // 仅存在 3 帧（总 2 次静止、约 100ms）就被盖住的真滑入动画，仍按滑入放弃。
+        val discarded = mutableListOf<String>()
+        val cache = cache(stableSamples = 15, clearSamples = 2, coveredStillSamples = 3, discard = discarded::add)
+        cache.see("a-0")
+        cache.see("a-1")
+        cache.see("a-2")
+        cache.see("b-0")
+        assertNull(cache.see("b-1"))
+        assertTrue("a-2" in discarded)
+    }
 }

@@ -58,7 +58,8 @@ BADGE_REC_SHIFT = {
 # RoiFingerprint.kt
 FP_COLUMNS = 40
 FP_ROWS = 16
-FP_CHANNEL_DELTA = 12
+# dev 实测：5~7 张大牌/少于10张光效产生 13..60 的微扰，189 次真实 REPLACE_DIRECT 在 60 下全检出 (>=0.039)
+FP_CHANNEL_DELTA = 60
 FP_CHANGED_RATIO = 0.03
 
 CARD = "CARD"

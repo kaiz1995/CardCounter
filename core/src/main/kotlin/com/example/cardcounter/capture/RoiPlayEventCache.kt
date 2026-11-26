@@ -54,6 +54,10 @@ class RoiPlayEventCache<T>(
 
         /** [pending] 那一段静止过多少次。 */
         var pendingStill = 0
+        /** [pending] 所属的连续可见未交付采样总数（含开场特效尚未静止的前导帧）。 */
+        var pendingVisibleSamples = 0
+        /** 当前连续可见未交付段累积采样总数（新牌出现重置为 1；未静止前的动画前缀累加）。 */
+        var currentVisibleSamples = 0
         var last: T? = null
         var emptySamples = 0
         var stillCount = 0
@@ -160,11 +164,13 @@ class RoiPlayEventCache<T>(
                 while (state.frames.size >= maxFrames) discard(state.frames.removeFirst())
                 state.frames.addLast(frame)
                 state.stillCount++
+                state.currentVisibleSamples++
                 if (covered != null) return covered
                 if (state.stillCount < stableSamples) return null
                 val frames = state.frames.toList()
                 state.frames.clear()
                 state.stillCount = 0
+                state.currentVisibleSamples = 0
                 state.delivered = true
                 return Finalized(zone, frames, generation, FinalizeReason.STABLE)
             }
@@ -174,8 +180,11 @@ class RoiPlayEventCache<T>(
                 dropPending(state)
                 state.pending.addAll(state.frames)
                 state.pendingStill = state.stillCount
+                state.pendingVisibleSamples = state.currentVisibleSamples
+                state.currentVisibleSamples = 1
             } else {
                 state.frames.forEach(discard)
+                state.currentVisibleSamples = if (state.delivered) 1 else state.currentVisibleSamples + 1
             }
             state.frames.clear()
             state.frames.addLast(frame)
@@ -220,16 +229,20 @@ class RoiPlayEventCache<T>(
         return if (source != null) Finalized(zone, frames, generation, reason) else null
     }
 
-    /** 新画面第一次静止：留着的上一段静止够久就作为一手交出，不够就丢掉。 */
+    /** 新画面第一次静止：留着的上一段静止够久，或带出牌动画前缀共可见满 5 帧且末尾静止 >= 2 次，均作为一手交出，否则当滑入放弃。 */
     private fun takeCovered(zone: PlayZone, state: State<T>, generation: Long): Finalized<T>? {
         if (state.pending.isEmpty()) return null
-        if (state.pendingStill < coveredStillSamples) {
+        val isSustainedFastPlay =
+            state.pendingStill >= FAST_PLAY_MIN_STILL_SAMPLES &&
+                state.pendingVisibleSamples >= FAST_PLAY_MIN_VISIBLE_SAMPLES
+        if (state.pendingStill < coveredStillSamples && !isSustainedFastPlay) {
             dropPending(state)
             return null
         }
         val frames = state.pending.toList()
         state.pending.clear()
         state.pendingStill = 0
+        state.pendingVisibleSamples = 0
         return Finalized(zone, frames, generation, FinalizeReason.COVERED)
     }
 
@@ -237,6 +250,7 @@ class RoiPlayEventCache<T>(
         state.pending.forEach(discard)
         state.pending.clear()
         state.pendingStill = 0
+        state.pendingVisibleSamples = 0
     }
 
     private fun clear(state: State<T>) {
@@ -246,7 +260,14 @@ class RoiPlayEventCache<T>(
         state.last = null
         state.emptySamples = 0
         state.stillCount = 0
+        state.currentVisibleSamples = 0
         state.delivered = false
         state.cleared = false
+    }
+
+    private companion object {
+        // 5~7 张大牌出牌动画约占前 3 帧（still=false），末尾仅余 2 次静止；连续可见 >= 5 帧（约 200ms）已超过 ~100ms 3 帧滑入残影。
+        const val FAST_PLAY_MIN_VISIBLE_SAMPLES = 5
+        const val FAST_PLAY_MIN_STILL_SAMPLES = 2
     }
 }
