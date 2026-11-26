@@ -101,8 +101,11 @@ class MainActivity : Activity() {
         })
 
         addView(button("新局重置") {
-            CaptureProbeService.requestNewGame(this@MainActivity)
-            status.text = "正在识别自己手牌；成功后才会开始新局。"
+            status.text = if (CaptureProbeService.requestNewGame(this@MainActivity)) {
+                "已开新局，切回游戏后核对并确认手牌。"
+            } else {
+                "截屏没开，没有重置。"
+            }
         })
     }
 

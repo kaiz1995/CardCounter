@@ -114,15 +114,21 @@ class OverlayService : Service(), HandPanelView.Actions {
         renderAll()
     }
 
+    /** 最近一次画到屏幕上的手牌草稿版本：点“确认手牌”时带上它，草稿换了就不确认。 */
+    @Volatile private var renderedDraftVersion = -1L
+
     /** 按账本状态和手牌草稿重画所有悬浮窗内容，并决定哪几块手牌小窗显示。必须在主线程调用。 */
     private fun renderAll() {
         val state = SessionRepository.get(this).state
-        val status = HandPanelState.status(state)
+        // 草稿只取一次：显示的状态、改过标记和确认时认的版本必须是同一版。
+        val draft = HandPanelState.draft.snapshot()
+        renderedDraftVersion = draft.version
+        val status = HandPanelState.status(state, draft)
         if (status.mode != HandPanelMode.CONFIRMED) expanded = false
         counter?.render(state, status.handUnconfirmed)
         counter?.visibility = if (hidden) View.GONE else View.VISIBLE
         resetControl?.visibility = if (hidden) View.GONE else View.VISIBLE
-        val edited = HandPanelState.draft.snapshot().edited
+        val edited = draft.edited
         handViews.forEach { view ->
             if (view.kind == HandPanelView.Kind.STATUS) {
                 // 手牌确认后状态窗缩成小条，不再占着整块触摸区挡游戏操作。
@@ -162,7 +168,7 @@ class OverlayService : Service(), HandPanelView.Actions {
     }
 
     override fun confirm() {
-        CaptureProbeService.confirmHand(this)
+        CaptureProbeService.confirmHand(this, renderedDraftVersion)
     }
 
     override fun toggleExpanded() {

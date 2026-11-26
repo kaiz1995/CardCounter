@@ -2,7 +2,6 @@ package com.example.cardcounter.vision
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Canvas
 import android.os.SystemClock
 import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -12,7 +11,6 @@ import com.example.cardcounter.domain.Rank
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
-import kotlin.math.roundToInt
 
 /** 真机上的新模型冒烟：期望值 = 电脑端 eval_crops.SHOT_CASES（逐区肉眼确认）。 */
 @RunWith(AndroidJUnit4::class)
@@ -39,10 +37,9 @@ class DetectorSmokeTest {
         OnnxRankDetector(context).use { detector ->
             SHOT_CASES.forEach { (file, zones) ->
                 val shot = instrumentation.context.assets.open(file).use(BitmapFactory::decodeStream)
-                val frame = Bitmap.createScaledBitmap(shot, FRAME_W, FRAME_H, true)
                 try {
                     PlayZone.entries.forEach { zone ->
-                        val input = letterboxedZone(frame, zone)
+                        val input = letterboxedZone(shot, zone)
                         val ranks = try {
                             detector.detect(input).groupingBy { it.rank }.eachCount()
                         } finally {
@@ -53,27 +50,19 @@ class DetectorSmokeTest {
                         assertEquals("$file $zone", expected, ranks)
                     }
                 } finally {
-                    if (frame !== shot) frame.recycle()
                     shot.recycle()
                 }
             }
         }
     }
 
-    /** 与 CaptureProbeService.publicPlayBitmap 同一几何：等比缩放居中贴到 320×320，四周填 114 灰。 */
-    private fun letterboxedZone(frame: Bitmap, zone: PlayZone): Bitmap {
+    /** 与 CaptureProbeService.publicPlayBitmap 同一套：整屏区域平均缩到 1280×578，再等比缩放居中、四周填 114 灰（ScreenScale）。 */
+    private fun letterboxedZone(shot: Bitmap, zone: PlayZone): Bitmap {
+        val pixels = IntArray(shot.width * shot.height)
+        shot.getPixels(pixels, 0, shot.width, 0, 0, shot.width, shot.height)
         val crop = zone.yoloCrop(FRAME_W, FRAME_H)
-        val source = Bitmap.createBitmap(frame, crop.left, crop.top, crop.width, crop.height)
-        val scale = minOf(320f / crop.width, 320f / crop.height)
-        val scaled = Bitmap.createScaledBitmap(
-            source, (crop.width * scale).roundToInt(), (crop.height * scale).roundToInt(), true
-        )
-        val output = Bitmap.createBitmap(320, 320, Bitmap.Config.ARGB_8888)
-        output.eraseColor(0xff727272.toInt())
-        Canvas(output).drawBitmap(scaled, (320 - scaled.width) / 2f, (320 - scaled.height) / 2f, null)
-        if (scaled !== source) source.recycle()
-        scaled.recycle()
-        return output
+        val input = ScreenScale.playZoneInput(ArgbRaster(pixels, shot.width, shot.height), crop.left, crop.top, crop.width, crop.height)
+        return Bitmap.createBitmap(input, 320, 320, Bitmap.Config.ARGB_8888)
     }
 
     private companion object {

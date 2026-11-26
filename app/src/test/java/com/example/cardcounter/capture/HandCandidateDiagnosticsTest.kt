@@ -20,14 +20,23 @@ class HandCandidateDiagnosticsTest {
     fun showsTheModelWheneverItHasAResult() {
         val model = RankCounts.of(mapOf(Rank.TEN to 16, Rank.NINE to 15))
         val template = RankCounts.of(mapOf(Rank.TEN to 16, Rank.NINE to 14))
-        assertEquals(model, chooseHandCards(model, template))
+        assertEquals(model, chooseHandCards(modelLoaded = true, model = model) { template })
+    }
+
+    /** 模型已加载但这一帧没结果：本帧不刷新草稿，不拿模板顶替，也不白跑模板匹配。 */
+    @Test
+    fun loadedModelWithoutAResultSkipsTheFrameAndNeverRunsTheTemplate() {
+        var templateRuns = 0
+        val template = RankCounts.of(mapOf(Rank.TEN to 16, Rank.NINE to 14))
+        assertNull(chooseHandCards(modelLoaded = true, model = null) { templateRuns++; template })
+        assertNull(chooseHandCards(modelLoaded = true, model = RankCounts.zero()) { templateRuns++; template })
+        assertEquals(0, templateRuns)
     }
 
     @Test
-    fun showsTheTemplateOnlyWhenThereIsNoModelResult() {
+    fun usesTheTemplateOnlyWhenTheModelIsNotLoaded() {
         val template = RankCounts.of(mapOf(Rank.TEN to 16, Rank.NINE to 14))
-        assertEquals(template, chooseHandCards(null, template))
-        assertEquals(template, chooseHandCards(RankCounts.zero(), template))
+        assertEquals(template, chooseHandCards(modelLoaded = false, model = null) { template })
     }
 
     @Test

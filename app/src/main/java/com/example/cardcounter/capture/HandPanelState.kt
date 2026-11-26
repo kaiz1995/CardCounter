@@ -29,8 +29,9 @@ object HandPanelState {
         onChange?.invoke()
     }
 
-    fun status(state: GameState): HandPanelStatus =
-        handPanelStatus(state, draft.snapshot(), rejectReason, skipped)
+    /** [snapshot] 由调用方一次取好：悬浮窗要让显示的状态和“确认时认的版本”是同一版草稿。 */
+    fun status(state: GameState, snapshot: com.example.cardcounter.domain.HandDraft = draft.snapshot()): HandPanelStatus =
+        handPanelStatus(state, snapshot, rejectReason, skipped)
 
     /** 新局：草稿（含改过的标记）、被拒原因、中途打开标记全部清空。 */
     fun reset() {

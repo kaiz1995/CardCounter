@@ -29,18 +29,17 @@ class OnnxRankDetector(context: Context) : Closeable {
         inputName = session.inputNames.first()
     }
 
-    /** 输入是已经摆好的 320×320 画布（出牌区 letterbox、手牌 870×870 画布）；尺寸不对时直接缩放。 */
+    /**
+     * 输入是已经摆好的画布：出牌区是 320×320（letterbox），手牌是 870×870 手牌画布。
+     * 不是 320 见方时用 [ScreenScale.resizeLinear] 缩，和训练端的双线性逐像素一致（不用系统的 createScaledBitmap）。
+     */
     @Synchronized
     fun detect(bitmap: Bitmap): List<YoloDetection> {
         val size = RankModelContract.INPUT_SIZE
-        val prepared = if (bitmap.width == size && bitmap.height == size) bitmap
-            else Bitmap.createScaledBitmap(bitmap, size, size, true)
-        val pixels = IntArray(size * size)
-        try {
-            prepared.getPixels(pixels, 0, size, 0, 0, size, size)
-        } finally {
-            if (prepared !== bitmap) prepared.recycle()
-        }
+        val source = IntArray(bitmap.width * bitmap.height)
+        bitmap.getPixels(source, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+        val pixels = if (bitmap.width == size && bitmap.height == size) source
+            else ScreenScale.resizeLinear(source, bitmap.width, bitmap.height, size, size)
         val tensor = argbToRankTensor(pixels)
         val shape = longArrayOf(1, 3, size.toLong(), size.toLong())
         OnnxTensor.createTensor(environment, FloatBuffer.wrap(tensor), shape).use { input ->
