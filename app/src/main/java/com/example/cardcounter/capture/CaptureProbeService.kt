@@ -27,11 +27,9 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.example.cardcounter.R
 import com.example.cardcounter.domain.DispatchResult
-import com.example.cardcounter.domain.RejectNote
-import com.example.cardcounter.domain.resumePlan
-import com.example.cardcounter.domain.HandConfirmGate
-import com.example.cardcounter.domain.HandDraft
-import com.example.cardcounter.domain.gate
+import com.example.cardcounter.domain.HandAutoLock
+import com.example.cardcounter.domain.HandReading
+import com.example.cardcounter.domain.PauseReason
 import com.example.cardcounter.domain.Rank
 import com.example.cardcounter.domain.RankCounts
 import com.example.cardcounter.domain.SessionPhase
@@ -90,6 +88,12 @@ class CaptureProbeService : Service() {
     private val handMerger = HandFrameMerger()
     private val positionVoter = HandPositionVoter()
     private val handSampleThrottle = HandSampleThrottle()
+    /** 手牌自动锁定：识别结果只喂给它；开局门因圆标打开的那一刻锁定，之后不再接收（见 [lockHand]）。 */
+    private val handAutoLock = HandAutoLock()
+    /** 本局手牌已锁定（或接着上次记、不再认手牌）：不再做手牌识别。新局清掉。 */
+    @Volatile private var handLocked = false
+    /** 当前是否横屏且牌桌可见：手牌识别只在这时跑，竖屏、大厅、结算画面不识别。 */
+    @Volatile private var handProbeOnTable = false
     /** 中途打开：本局不记，等下一局；新局重置时清掉。 */
     @Volatile private var gameSkipped = false
     /** 中途打开连续多帧判定器：仅统计 OUTSIDE 区，连续 5 次采样可见才判中途打开。 */
@@ -129,16 +133,6 @@ class CaptureProbeService : Service() {
         startForegroundCompat()
         if (intent?.action == ACTION_REQUEST_NEW_GAME) {
             callbackHandler.post { startNewGame() }
-            return START_NOT_STICKY
-        }
-        if (intent?.action == ACTION_CONFIRM_HAND) {
-            val clickedVersion = intent.getLongExtra(EXTRA_DRAFT_VERSION, -1L)
-            callbackHandler.post { confirmHandFromPanel(clickedVersion) }
-            return START_NOT_STICKY
-        }
-        if (intent?.action == ACTION_RESUME) {
-            val revertLast = intent.getBooleanExtra(EXTRA_REVERT_LAST, false)
-            rankHandler.post { resumeSession(revertLast) }
             return START_NOT_STICKY
         }
         if (projection == null) startCapture(intent)
