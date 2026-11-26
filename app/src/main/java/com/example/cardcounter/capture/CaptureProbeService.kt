@@ -95,6 +95,8 @@ class CaptureProbeService : Service() {
     @Volatile private var handLocked = false
     /** 当前是否横屏且牌桌可见：手牌识别只在这时跑，竖屏、大厅、结算画面不识别。 */
     @Volatile private var handProbeOnTable = false
+    /** 上一帧是否处于横屏：用于仅在由横转竖那一刻重置出牌区信号，避免把竖屏时长算成空桌。 */
+    private var wasLandscape = false
     /** 中途打开：本局不记，等下一局；新局重置时清掉。 */
     @Volatile private var gameSkipped = false
     /** 中途打开连续多帧判定器：仅统计 OUTSIDE 区，连续 5 次采样可见才判中途打开。 */
@@ -192,8 +194,12 @@ class CaptureProbeService : Service() {
             @Suppress("DEPRECATION")
             (getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager)
                 .defaultDisplay.getRealMetrics(metrics)
-            val width = metrics.widthPixels.coerceAtLeast(1)
-            val height = metrics.heightPixels.coerceAtLeast(1)
+            val rawWidth = metrics.widthPixels.coerceAtLeast(1)
+            val rawHeight = metrics.heightPixels.coerceAtLeast(1)
+            // 截屏缓冲按横屏固定：即使授权回调时在竖屏，切横屏后图像宽高仍满足 width > height。
+            val width = maxOf(rawWidth, rawHeight)
+            val height = minOf(rawWidth, rawHeight)
+            wasLandscape = false
             frameCount = 0L
             firstFrameAt = 0L
             lastReportAt = 0L
@@ -242,6 +248,11 @@ class CaptureProbeService : Service() {
             val isLandscape = image.width > image.height &&
                 resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
             if (!isLandscape) {
+                // 刚由横转竖的那一刻清空出牌区信号（清桌计时与圆标计数），避免竖屏期间被算成空桌误清桌。
+                if (wasLandscape) {
+                    wasLandscape = false
+                    zoneSignals.reset()
+                }
                 // 竖屏时手牌识别和出牌识别都不做。
                 if (handProbeOnTable) {
                     handProbeOnTable = false
@@ -250,6 +261,7 @@ class CaptureProbeService : Service() {
                     OverlayProbeState.update { it.copy(tableVisible = false) }
                 }
             } else {
+                wasLandscape = true
                 captureRoiEvents(image)
                 if (!handLocked && handProbeOnTable && now - lastHandSampleAt >= HAND_SAMPLE_INTERVAL_MS) {
                     val signature = handSignature(image)
