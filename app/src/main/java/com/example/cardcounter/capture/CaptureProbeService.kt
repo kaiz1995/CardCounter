@@ -102,7 +102,7 @@ class CaptureProbeService : Service() {
     @Volatile private var gameSkipped = false
     /** 中途打开连续多帧判定器：仅统计 OUTSIDE 区，连续 5 次采样可见才判中途打开。 */
     private val midGameOpenDetector = MidGameOpenDetector()
-    /** 开局换牌期门控：确认手牌或见过任意 OUTSIDE 区出牌圆标之后才算进入正式出牌阶段。 */
+    /** 开局换牌期门控：只认任意 OUTSIDE 区“出牌”圆标被连续帧确认之后才算进入正式出牌阶段，同时触发手牌自动锁定。 */
     private val openingPlayGate = OpeningPlayGate()
     private lateinit var sessionLedger: SessionRepository
     private lateinit var sessionActor: SessionActor
