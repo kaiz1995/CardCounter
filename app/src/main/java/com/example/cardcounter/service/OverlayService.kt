@@ -27,6 +27,8 @@ import com.example.cardcounter.capture.HandPanelState
 import com.example.cardcounter.domain.HandPanelMode
 import com.example.cardcounter.domain.Rank
 import com.example.cardcounter.persistence.SessionRepository
+import com.example.cardcounter.storage.LedgerCommand
+import com.example.cardcounter.storage.SessionActor
 import com.example.cardcounter.ui.CounterOverlayView
 import com.example.cardcounter.ui.HandPanelView
 import com.example.cardcounter.ui.OverlayLayout
@@ -149,7 +151,7 @@ class OverlayService : Service(), HandPanelView.Actions {
                     HandPanelMode.CONFIRMED -> expanded
                     HandPanelMode.SKIPPED -> false
                 }
-                HandPanelView.Kind.CONTROL -> status.mode == HandPanelMode.EDITING
+                HandPanelView.Kind.CONTROL -> status.mode == HandPanelMode.EDITING || status.mode == HandPanelMode.PAUSED
                 HandPanelView.Kind.STATUS -> true
             }
             view.visibility = if (!hidden && shown) View.VISIBLE else View.GONE
@@ -173,6 +175,22 @@ class OverlayService : Service(), HandPanelView.Actions {
 
     override fun toggleExpanded() {
         expanded = !expanded
+        renderAll()
+    }
+
+    override fun undoAndResume() {
+        if (CaptureProbeService.revertLastAndResume(this)) return
+        // 截屏服务没在运行时，由独立单写者安全兜底执行撤销并恢复。
+        val repository = SessionRepository.get(this)
+        val actor = SessionActor(repository)
+        try {
+            repository.state.lastUnrevertedOutsidePlay()?.let { lastPlay ->
+                actor.post(LedgerCommand.Revert(lastPlay.id))
+            }
+            actor.post(LedgerCommand.Resume)
+        } finally {
+            actor.shutdown()
+        }
         renderAll()
     }
 

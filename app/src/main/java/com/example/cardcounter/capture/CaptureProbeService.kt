@@ -35,6 +35,8 @@ import com.example.cardcounter.domain.RankCounts
 import com.example.cardcounter.domain.SessionPhase
 import com.example.cardcounter.persistence.SessionRepository
 import com.example.cardcounter.persistence.SessionStore
+import com.example.cardcounter.recognition.GoujiPlayRules
+import com.example.cardcounter.recognition.PlayRuleCheck
 import com.example.cardcounter.service.OverlayService
 import com.example.cardcounter.storage.DiagnosticsLog
 import com.example.cardcounter.storage.LedgerCommand
@@ -88,8 +90,10 @@ class CaptureProbeService : Service() {
     private val handSampleThrottle = HandSampleThrottle()
     /** 中途打开：本局不记，等下一局；新局重置时清掉。 */
     @Volatile private var gameSkipped = false
-    /** 还没判断过“是不是中途打开”；牌桌第一次出现时判断一次。 */
-    @Volatile private var openCheckPending = true
+    /** 中途打开连续多帧判定器：仅统计 OUTSIDE 区，连续 5 次采样可见才判中途打开。 */
+    private val midGameOpenDetector = MidGameOpenDetector()
+    /** 开局换牌期门控：确认手牌或见过任意 OUTSIDE 区出牌圆标之后才算进入正式出牌阶段。 */
+    private val openingPlayGate = OpeningPlayGate()
     private lateinit var sessionLedger: SessionRepository
     private lateinit var sessionActor: SessionActor
     private lateinit var diagnosticsLog: DiagnosticsLog
@@ -128,6 +132,10 @@ class CaptureProbeService : Service() {
         if (intent?.action == ACTION_CONFIRM_HAND) {
             val clickedVersion = intent.getLongExtra(EXTRA_DRAFT_VERSION, -1L)
             callbackHandler.post { confirmHandFromPanel(clickedVersion) }
+            return START_NOT_STICKY
+        }
+        if (intent?.action == ACTION_REVERT_AND_RESUME) {
+            rankHandler.post { revertAndResume() }
             return START_NOT_STICKY
         }
         if (projection == null) startCapture(intent)
@@ -397,7 +405,7 @@ class CaptureProbeService : Service() {
             .notify(NOTIFICATION_ID, notification(text))
     }
 
-    /** 与 [rgb] 同一套换算，直接返回 0xRRGGBB，不分配数组（圆标和指纹每 50ms 要取几千个点）。 */
+    /** 与屏幕缩放同一套换算，直接返回 0xRRGGBB，不分配数组（圆标和指纹每 50ms 要取几千个点）。 */
     private fun pixelRgb(image: Image, canonicalX: Int, canonicalY: Int): Int {
         val plane = image.planes[0]
         val x = canonicalX * image.width / 1_280
@@ -409,12 +417,29 @@ class CaptureProbeService : Service() {
             (buffer.get(offset + 2).toInt() and 0xff)
     }
 
-    private fun rgb(image: Image, canonicalX: Int, canonicalY: Int): IntArray {
-        val plane = image.planes[0]
-        val x = canonicalX * image.width / 1_280
-        val y = canonicalY * image.height / 578
-        val offset = y * plane.rowStride + x * plane.pixelStride
-        return IntArray(3) { plane.buffer.get(offset + it).toInt() and 0xff }
+    /** 停记恢复：撤销上一手外面出牌并回到 ACTIVE（没有可撤出牌时仅恢复）。 */
+    private fun revertAndResume() {
+        val state = sessionLedger.state
+        val lastOutside = state.lastUnrevertedOutsidePlay()
+        if (lastOutside != null) {
+            val revertResult = sessionActor.post(LedgerCommand.Revert(lastOutside.id))
+            if (revertResult is DispatchResult.Accepted) {
+                stablePlayGate.noteReverted(lastOutside.seat)
+                val zone = PlayZone.entries.first { it.seat == lastOutside.seat }
+                recordDiagnostics(
+                    lastOutside.id,
+                    zone,
+                    quantity = lastOutside.cards.total(),
+                    rankTotal = lastOutside.cards.total(),
+                    decision = DiagnosticsLog.Decision.ACCEPTED,
+                    reason = "REVERT_LAST_OUTSIDE_PLAY"
+                )
+            }
+        }
+        val resumeResult = sessionActor.post(LedgerCommand.Resume)
+        Log.i(TAG, "REVERT_AND_RESUME reverted=${lastOutside?.id} resume=${outcomeOf(resumeResult)}")
+        HandPanelState.changed()
+        OverlayService.refresh(this)
     }
 
     /**
@@ -589,39 +614,51 @@ class CaptureProbeService : Service() {
     /** 截屏回调仅缓存小 ROI；牌面连续停稳后才推理，清桌是未停稳的兜底。 */
     private fun captureRoiEvents(image: Image) {
         if (gameSkipped) return
-        val tableVisible = gameTableVisible(image)
-        val visibleZones = if (tableVisible) playZoneVisibility(image) else emptyMap()
-        if (tableVisible && openCheckPending) {
-            openCheckPending = false
-            val ledger = sessionLedger.state
-            if (shouldSkipOpenedGame(
-                    ledger.handConfirmed,
-                    ledger.outsidePlayedCount,
-                    visibleZones.values.count { it }
-                )
-            ) {
-                gameSkipped = true
-                HandPanelState.skipped = true
-                HandPanelState.changed()
-                OverlayService.refresh(this)
-                Log.i(TAG, "OPENED_MID_GAME_SKIP visibleZones=${visibleZones.filterValues { it }.keys}")
-                return
-            }
-        }
+        val raster = image.toRaster()
+        val tableVisible = isTableVisible(raster)
         val generation = captureGeneration
         val now = SystemClock.elapsedRealtime()
         val takeSample = now - lastRoiSampleAt >= ROI_SAMPLE_INTERVAL_MS
-        if (!tableVisible && restartPrimeDeadlineAt > 0L &&
-            SystemClock.elapsedRealtime() >= restartPrimeDeadlineAt
-        ) {
+        if (!tableVisible && restartPrimeDeadlineAt > 0L && now >= restartPrimeDeadlineAt) {
             roiEventCache.releasePrime(generation)
             restartPrimeDeadlineAt = 0L
             Log.i(TAG, "PLAY_GATE_PRIME_RELEASED_OUTSIDE_TABLE")
         }
-        // 圆标、指纹、截图、清桌计数全按同一个采样节拍推进（与电脑回放“每条观察就是一次采样”一致）；
-        // 非采样帧不能推进清桌计数，否则一帧闪空就会打断停稳。
+        // 中途打开、圆标、指纹、截图、清桌计数全按同一个 50ms 采样节拍推进（与电脑回放一致）；
+        // 非采样帧不能推进清桌计数或中途打开计数，否则瞬时动画帧会误判。
         if (!takeSample) return
         lastRoiSampleAt = now
+        val visibleZones = if (tableVisible) playZoneVisibility(raster) else emptyMap()
+        val ledger = sessionLedger.state
+        when (midGameOpenDetector.observe(ledger.handConfirmed, ledger.outsidePlayedCount, tableVisible, visibleZones)) {
+            MidGameCheckResult.PENDING -> Unit
+            MidGameCheckResult.CLEAR -> Unit
+            MidGameCheckResult.SKIP -> {
+                val visibleOutside = PlayZone.entries.filter {
+                    it.source == PlaySource.OUTSIDE && visibleZones[it] == true
+                }
+                val firstZone = visibleOutside.firstOrNull() ?: PlayZone.TOP
+                val evidenceBitmaps = visibleOutside.take(3).map { publicPlayBitmap(image, it) }
+                try {
+                    issueSampleStore.saveEvidence(
+                        evidenceBitmaps, firstZone, "OPENED_MID_GAME_SKIP",
+                        generation, now, null, emptyList()
+                    )
+                } finally {
+                    evidenceBitmaps.forEach(Bitmap::recycle)
+                }
+                recordDiagnostics(
+                    null, firstZone, quantity = null, rankTotal = null,
+                    decision = DiagnosticsLog.Decision.PAUSED, reason = "OPENED_MID_GAME_SKIP"
+                )
+                gameSkipped = true
+                HandPanelState.skipped = true
+                HandPanelState.changed()
+                OverlayService.refresh(this)
+                Log.i(TAG, "OPENED_MID_GAME_SKIP visibleZones=$visibleOutside")
+                return
+            }
+        }
         PlayZone.entries.forEach { zone ->
             val visible = tableVisible && isPlayVisible(visibleZones[zone] == true)
             val frame = if (visible && roiEventCache.needsFrame(zone, generation)) {
@@ -635,15 +672,21 @@ class CaptureProbeService : Service() {
                 Log.i(TAG, "ROI_FINALIZED zone=${finalized.zone} frames=${finalized.frames.size}")
                 rankHandler.post { finalizeRoiEvent(finalized) }
             }
-            // “出牌”圆标放在交出之后看：清桌这次采样兜底交出的入账先 post，一定排在 noteTurn 前面，
-            // 这次采样的圆标也能算上。这一区牌已收走（且没有待兜底交出的牌）、圆标连续两次采样都亮才算轮到他；
-            // 之后再出一样的牌才算新的一手。
+            // “出牌”圆标和清桌计时放在交出之后看：清桌这次采样兜底交出的入账先 post，一定排在 noteTurn 前面。
             if (tableVisible && zone.source == PlaySource.OUTSIDE) {
                 val shown = TurnBadge.isShown(zone) { x, y -> pixelRgb(image, x, y) }
+                if (shown) openingPlayGate.onOutsideTurnBadge(true)
+                val cleared = roiEventCache.isCleared(zone, generation)
                 val zoneEmpty = !visible && !roiEventCache.hasUndelivered(zone, generation)
-                if (turnTracker.update(zone, shown, zoneEmpty = zoneEmpty)) {
-                    Log.i(TAG, "TURN_BADGE zone=$zone")
-                    rankHandler.post { stablePlayGate.noteTurn(zone) }
+                val turnUpdate = turnTracker.track(zone, shown, zoneEmpty = zoneEmpty, timestampMs = now, tableVisible = true)
+                if (cleared || turnUpdate.turned || turnUpdate.longCleared) {
+                    if (turnUpdate.turned) Log.i(TAG, "TURN_BADGE zone=$zone")
+                    if (turnUpdate.longCleared) Log.i(TAG, "LONG_CLEAR_UNLOCK zone=$zone")
+                    rankHandler.post {
+                        if (cleared) stablePlayGate.noteZoneCleared(zone)
+                        if (turnUpdate.turned) stablePlayGate.noteTurn(zone)
+                        if (turnUpdate.longCleared) stablePlayGate.noteLongClear(zone)
+                    }
                 }
             }
         }
@@ -661,18 +704,8 @@ class CaptureProbeService : Service() {
                     RankCountsCandidate(it.cards, it.minimumConfidence, it.detections)
                 }
             }
-            val winner = candidates
-                .filter { it.cards.total() > 0 }
-                .groupBy { it.cards }
-                .maxWithOrNull(
-                    compareBy<Map.Entry<RankCounts, List<RankCountsCandidate>>> { it.value.size }
-                        .thenBy { entry -> entry.value.minOf { it.minimumConfidence } }
-                )
-            val cards = winner?.let { entry ->
-                entry.key.takeIf {
-                    entry.value.size >= 2 || canFastConfirmPlay(it, entry.value.first().minimumConfidence)
-                }
-            }
+            val voteOutcome = PlayFrameVote.resolve(candidates.map { it.detections })
+            val cards = voteOutcome?.cards
             if (cards == null) {
                 saveEvidence(finalized, voted, "NO_CONSENSUS", null, candidates)
                 // 无共识留证据并记 RETRY，不静默丢弃。
@@ -686,11 +719,62 @@ class CaptureProbeService : Service() {
                 Log.w(TAG, "ROI_NO_CONSENSUS zone=${finalized.zone} candidates=$candidates")
                 return
             }
-            if (sessionLedger.state.phase != SessionPhase.ACTIVE) return
-            val stable = stablePlayGate.accept(finalized.zone, cards)
-            if (stable == null) {
-                Log.i(TAG, "PLAY_DUPLICATE_SUPPRESSED zone=${finalized.zone} cards=$cards")
+            val ruleCheck = GoujiPlayRules.check(cards)
+            if (ruleCheck is PlayRuleCheck.Suspicious) {
+                saveEvidence(finalized, voted, "RULE_${ruleCheck.code}", cards, candidates)
+                recordDiagnostics(
+                    null, finalized.zone,
+                    quantity = cards.total(),
+                    rankTotal = cards.total(),
+                    decision = DiagnosticsLog.Decision.RETRY,
+                    reason = "${ruleCheck.code}:${ruleCheck.detail}"
+                )
+                Log.w(TAG, "ROI_RULE_SUSPICIOUS zone=${finalized.zone} code=${ruleCheck.code} cards=$cards")
                 return
+            }
+            val ledgerState = sessionLedger.state
+            if (ledgerState.phase != SessionPhase.ACTIVE) return
+            if (!openingPlayGate.isReady(ledgerState.handConfirmed)) {
+                saveEvidence(finalized, voted, "PRE_PLAY_SKIPPED", cards, candidates)
+                recordDiagnostics(
+                    null, finalized.zone,
+                    quantity = cards.total(),
+                    rankTotal = cards.total(),
+                    decision = DiagnosticsLog.Decision.RETRY,
+                    reason = "PRE_PLAY_SKIPPED"
+                )
+                Log.i(TAG, "PRE_PLAY_SKIPPED zone=${finalized.zone} cards=$cards")
+                return
+            }
+            val stable = when (val gateDecision = stablePlayGate.check(finalized.zone, cards)) {
+                is PlayGateDecision.Accept -> gateDecision.play
+                is PlayGateDecision.Suppressed -> {
+                    when (gateDecision.reason) {
+                        PlaySuppressionReason.SUBSET_OR_SUPERSET -> {
+                            saveEvidence(finalized, voted, "PLAY_SUBSET_SUPERSET_SUPPRESSED", cards, candidates)
+                            recordDiagnostics(
+                                null, finalized.zone,
+                                quantity = cards.total(),
+                                rankTotal = cards.total(),
+                                decision = DiagnosticsLog.Decision.DUPLICATE,
+                                reason = "PLAY_SUBSET_SUPERSET_SUPPRESSED"
+                            )
+                            Log.i(TAG, "PLAY_SUBSET_SUPERSET_SUPPRESSED zone=${finalized.zone} cards=$cards")
+                        }
+                        PlaySuppressionReason.EXACT_DUPLICATE -> {
+                            recordDiagnostics(
+                                null, finalized.zone,
+                                quantity = cards.total(),
+                                rankTotal = cards.total(),
+                                decision = DiagnosticsLog.Decision.DUPLICATE,
+                                reason = "PLAY_DUPLICATE_SUPPRESSED"
+                            )
+                            Log.i(TAG, "PLAY_DUPLICATE_SUPPRESSED zone=${finalized.zone} cards=$cards")
+                        }
+                        PlaySuppressionReason.EMPTY -> Unit
+                    }
+                    return
+                }
             }
             recordDiagnostics(
                 null, finalized.zone,
@@ -709,6 +793,18 @@ class CaptureProbeService : Service() {
                 reason = reasonOf(result)
             )
             when (result) {
+                is DispatchResult.Accepted -> {
+                    stablePlayGate.commitAccepted(finalized.zone, stable.cards)
+                    OverlayService.refresh(this)
+                    Log.i(
+                        TAG,
+                        "FORMAL_PLAY source=${finalized.zone.source} zone=${finalized.zone} " +
+                            "cards=$cards merged=${voteOutcome.mergedFromDisagreement}"
+                    )
+                }
+                is DispatchResult.DuplicateIgnored -> {
+                    OverlayService.refresh(this)
+                }
                 is DispatchResult.Rejected -> {
                     saveEvidence(finalized, voted, "REDUCER_REJECTED", cards, candidates)
                     OverlayService.refresh(this)
@@ -718,14 +814,6 @@ class CaptureProbeService : Service() {
                     saveEvidence(finalized, voted, "PAUSED_${result.reason.name}", cards, candidates)
                     OverlayService.refresh(this)
                     Log.w(TAG, "PLAY_PAUSED zone=${finalized.zone} reason=${result.reason}")
-                }
-                else -> {
-                    OverlayService.refresh(this)
-                    Log.i(
-                        TAG,
-                        "FORMAL_PLAY source=${finalized.zone.source} zone=${finalized.zone} " +
-                            "cards=$cards decision=${DiagnosticsLog.Decision.forResult(result)}"
-                    )
                 }
             }
         } finally {
@@ -799,27 +887,6 @@ class CaptureProbeService : Service() {
         return Bitmap.createBitmap(pixels, ScreenScale.MODEL_SIZE, ScreenScale.MODEL_SIZE, Bitmap.Config.ARGB_8888)
     }
 
-    private fun playZoneVisibility(image: Image): Map<PlayZone, Boolean> = PlayZone.entries.associateWith { zone ->
-        val left = zone.left(1_280)
-        val right = zone.right(1_280)
-        val top = zone.rankY(578)
-        var white = 0
-        var samples = 0
-        for (y in top..(top + zone.visibilityHeight) step PLAY_VISIBILITY_STEP) {
-            for (x in left..right step PLAY_VISIBILITY_STEP) {
-                if (rgb(image, x, y).all { it >= PLAY_WHITE_LIMIT }) white++
-                samples++
-            }
-        }
-        hasVisibleCardArea(white, samples)
-    }
-
-    private fun gameTableVisible(image: Image): Boolean =
-        listOf(500 to 200, 800 to 200).all { (x, y) ->
-            val color = rgb(image, x, y)
-            isTableGreen(color[0], color[1], color[2])
-        }
-
     /**
      * 重置本局的识别跟踪。
      * [primeExistingTable]：接着上次的这一局记，桌上已有的牌当作旧牌，不重复记。
@@ -842,7 +909,8 @@ class CaptureProbeService : Service() {
         lastRankProbeAt = 0L
         lastRoiSampleAt = 0L
         gameSkipped = false
-        openCheckPending = checkMidOpen
+        midGameOpenDetector.reset(checkMidOpen)
+        openingPlayGate.reset(alreadyInPlay = primeExistingTable)
         rankHandler.post {
             stablePlayGate.reset()
             handMerger.reset()
@@ -876,14 +944,13 @@ class CaptureProbeService : Service() {
         private const val EXTRA_DATA = "projection_data"
         private const val ACTION_REQUEST_NEW_GAME = "com.example.cardcounter.REQUEST_NEW_GAME"
         private const val ACTION_CONFIRM_HAND = "com.example.cardcounter.CONFIRM_HAND"
+        private const val ACTION_REVERT_AND_RESUME = "com.example.cardcounter.REVERT_AND_RESUME"
         private const val REPORT_INTERVAL_MS = 1_000L
         private const val HAND_SAMPLE_INTERVAL_MS = 250L
         private const val STABLE_CHANGE_PERCENT = 1.5
         private const val HAND_SIGNATURE_COLUMNS = 12
         private const val HAND_SIGNATURE_ROWS = 8
         private const val RANK_PROBE_INTERVAL_MS = 250L
-        private const val PLAY_VISIBILITY_STEP = 8
-        private const val PLAY_WHITE_LIMIT = 190
         private const val ROI_SAMPLE_INTERVAL_MS = 50L
         private const val FINALIZE_FRAME_COUNT = 3
         private const val RESTART_TABLE_GRACE_MS = 2_000L
@@ -916,6 +983,16 @@ class CaptureProbeService : Service() {
                     .setAction(ACTION_CONFIRM_HAND)
                     .putExtra(EXTRA_DRAFT_VERSION, draftVersion)
             )
+        }
+
+        /** 停记时点“撤销这一手并继续记”；截屏没在运行时返回 false，由调用方直接恢复。 */
+        fun revertLastAndResume(context: Context): Boolean {
+            if (!CaptureProbeStatus.snapshot().running) return false
+            ContextCompat.startForegroundService(
+                context,
+                Intent(context, CaptureProbeService::class.java).setAction(ACTION_REVERT_AND_RESUME)
+            )
+            return true
         }
     }
 }

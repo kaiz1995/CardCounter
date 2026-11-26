@@ -32,6 +32,7 @@ class HandPanelView(
         fun toggleAddMode()
         fun confirm()
         fun toggleExpanded()
+        fun undoAndResume()
     }
 
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -80,9 +81,13 @@ class HandPanelView(
                 val index = (x / (rect.width.toFloat() / list.size)).toInt().coerceIn(0, list.size - 1)
                 actions.adjust(list[index], if (addMode) 1 else -1)
             }
-            Kind.CONTROL -> when ((y / ROW_HEIGHT).toInt()) {
-                1 -> if (current.canEdit) actions.toggleAddMode()
-                2 -> if (current.canConfirm) actions.confirm()
+            Kind.CONTROL -> when (current.mode) {
+                HandPanelMode.EDITING -> when ((y / ROW_HEIGHT).toInt()) {
+                    1 -> if (current.canEdit) actions.toggleAddMode()
+                    2 -> if (current.canConfirm) actions.confirm()
+                }
+                HandPanelMode.PAUSED -> if (y >= PAUSE_BUTTON_TOP) actions.undoAndResume()
+                else -> Unit
             }
             Kind.STATUS -> if (current.mode == HandPanelMode.CONFIRMED) actions.toggleExpanded()
         }
@@ -96,7 +101,11 @@ class HandPanelView(
         canvas.scale(width.toFloat() / rect.width, height.toFloat() / rect.height)
         when (kind) {
             Kind.RANKS_LEFT, Kind.RANKS_RIGHT -> drawRanks(canvas, current)
-            Kind.CONTROL -> drawControl(canvas, current)
+            Kind.CONTROL -> if (current.mode == HandPanelMode.PAUSED) {
+                drawPausedControl(canvas, current)
+            } else {
+                drawControl(canvas, current)
+            }
             Kind.STATUS -> drawStatus(canvas, current)
         }
         canvas.restore()
@@ -144,6 +153,28 @@ class HandPanelView(
             canvas, "确认手牌", w / 2f, ROW_HEIGHT * 2 + ROW_HEIGHT / 2f, 24f,
             if (enabled) COLOR_TEXT else COLOR_ZERO
         )
+    }
+
+    private fun drawPausedControl(canvas: Canvas, s: HandPanelStatus) {
+        val w = rect.width.toFloat()
+        val h = rect.height.toFloat()
+        fillBox(canvas, 0f, 0f, w, PAUSE_BUTTON_TOP, COLOR_FRAME)
+        val explanation = if (s.canRevertLastOutsidePlay) {
+            "记牌暂停：刚记的这一手和已知牌数对不上。点「撤销这一手」会去掉刚记的那一手并继续记牌"
+        } else {
+            "记牌暂停：没有可撤销的外面出牌。点「继续记牌」会恢复记牌，或长按「重置」开新局"
+        }
+        paint.textSize = 14f
+        var y = 6f
+        wrap(explanation, w - 12f).take(5).forEach { line ->
+            drawLabel(canvas, line, w / 2f, y + PAUSE_LINE_HEIGHT / 2f, 14f, COLOR_EDITED)
+            y += PAUSE_LINE_HEIGHT
+        }
+        fillBox(canvas, 0f, PAUSE_BUTTON_TOP, w, h - PAUSE_BUTTON_TOP, COLOR_OK)
+        val title = if (s.canRevertLastOutsidePlay) "撤销这一手" else "继续记牌"
+        val subtitle = if (s.canRevertLastOutsidePlay) "去掉刚记的一手并继续" else "恢复继续记牌"
+        drawLabel(canvas, title, w / 2f, PAUSE_BUTTON_TOP + 24f, 21f, COLOR_TEXT)
+        drawLabel(canvas, subtitle, w / 2f, PAUSE_BUTTON_TOP + 50f, 13f, COLOR_TEXT)
     }
 
     private fun drawStatus(canvas: Canvas, s: HandPanelStatus) {
@@ -222,6 +253,8 @@ class HandPanelView(
         const val ROW_HEIGHT = 60f
         const val HEADER_HEIGHT = 24f
         const val LINE_HEIGHT = 22f
+        const val PAUSE_BUTTON_TOP = 112f
+        const val PAUSE_LINE_HEIGHT = 19f
         val COLOR_FRAME = Color.rgb(9, 10, 11)
         val COLOR_HEADER = Color.rgb(59, 62, 64)
         val COLOR_VALUE = Color.rgb(53, 56, 58)
