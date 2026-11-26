@@ -121,13 +121,22 @@ class OverlayWindowParamsGuardTest {
     fun touchableWindowsAreRelaidOutWhenTheScreenRotates() {
         val body = functionBody(overlayService, "onConfigurationChanged")
         assertTrue("OverlayService 要重写 onConfigurationChanged：小窗按当时屏幕宽高算死像素，转屏后会错位", body.isNotEmpty())
-        val added = Regex("""(\w+)\s*=\s*control\(""").findAll(functionBody(overlayService, "attachIfNeeded"))
-            .map { it.groupValues[1] }.toList() + "handViews"
-        added.forEach { window ->
-            assertTrue(
-                "转屏后没重算 $window 的位置：在 onConfigurationChanged 里对它调用 updateViewLayout(..., controlParams(...))",
-                Regex("""\b$window\b[\s\S]*?updateViewLayout""").containsMatchIn(body)
-            )
+        // 加小窗的地方：attachIfNeeded 里每个 addView(..., controlParams(...)) 调用点（循环加的一组算一处）。
+        // 不靠小窗工厂函数名匹配，换了工厂函数名或新加小窗也能数到。
+        val addCall = Regex("""\baddView\s*\(""")
+        val attach = functionBody(overlayService, "attachIfNeeded")
+        val addedSites = addCall.findAll(attach).count { match ->
+            arguments(attach, match.range.last).getOrNull(1)?.startsWith("controlParams") == true
         }
+        // 转屏重算：每条语句形如 X?.let { …updateViewLayout(it, controlParams(…)) } 或 X.forEach { … }，按窗口名去重；
+        // 窗口名和 updateViewLayout 必须在同一个花括号里，不会被后面别的窗口的调用凑上。
+        val relaid = Regex("""\b(\w+)\s*(?:\?\.let|\.forEach)\s*\{[^{}]*?\bupdateViewLayout\s*\(\s*it\s*,\s*controlParams\s*\(""")
+            .findAll(body).map { it.groupValues[1] }.toSet()
+        assertTrue("attachIfNeeded 里没找到用 controlParams 加的小窗，守卫失效", addedSites > 0)
+        assertTrue(
+            "attachIfNeeded 加了 $addedSites 处可触摸小窗，onConfigurationChanged 只重算了 ${relaid.size} 个（$relaid）：" +
+                "每个小窗都要写成 X?.let { windowManager.updateViewLayout(it, controlParams(...)) } 或 X.forEach { ... }",
+            relaid.size >= addedSites
+        )
     }
 }

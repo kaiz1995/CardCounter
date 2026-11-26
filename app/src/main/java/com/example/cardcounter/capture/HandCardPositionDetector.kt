@@ -59,18 +59,34 @@ class HandCardPositionDetector {
     }
 
     /**
-     * 上排逐段数：相邻两条牌边的距离各自按平均错开间距取整，再加起来。
-     * 同点数相邻约 42px、不同点数约 50px；整排跨度一次除间距时，这些出入会一张张累积（16 张算成 16.7 张，数成 17），
-     * 逐段取整每段的出入都不到半张，不会累积。漏掉一条牌边时那一段约 78~92px，取整成 2 张，照样数对。
-     * 最右一条是最后一张牌的右边，先换算成它的左边。
+     * 上排逐段数：相邻两条牌边的距离在一张牌的正常间距 [SINGLE_GAP] 内就记 1 张，
+     * 连续几段不正常的（漏边、牌面图案上的假边）先合并成一整段，再按平均错开间距取整。
+     * 同点数相邻约 42px、不同点数约 50px；整排跨度一次除间距时，这些出入会一张张累积（16 张算成 16.7 张，数成 17）。
+     * 假边常常压掉旁边的真边、把两三张牌切成两段，两段分别取整会多数一张，合并后再取整就不会。
+     * 最右一条是最后一张牌的右边，先换算成它的左边；在这之后的边都在最后一张牌的牌面里，不算。
      * 下排不用这个办法：下排采样行常有离上一条只有 30px 左右的假牌边，逐段数会多数，下排仍按 [rowCount] 数。
      */
+    /** 按已找到的上排牌边数上排张数；只给测试喂人造牌边用。 */
+    internal fun topRowCount(edges: List<Int>): Int? = countByGaps(edges, TOP)
+
     private fun countByGaps(selected: List<Int>, geometry: RowGeometry): Int? {
         if (selected.size < 2) return null
         val sorted = selected.sorted()
         if (sorted.last() - sorted.first() < geometry.cardWidth) return null
-        val lefts = (sorted.dropLast(1) + (sorted.last() - geometry.cardWidth)).sorted()
-        val count = 1 + lefts.zipWithNext { left, next -> ((next - left) / geometry.cardPitch).roundToInt() }.sum()
+        val lastLeft = sorted.last() - geometry.cardWidth
+        val lefts = sorted.filter { it < lastLeft } + lastLeft
+        var count = 1
+        var unusual = 0
+        lefts.zipWithNext { left, next -> next - left }.forEach { gap ->
+            if (gap <= TINY_GAP || gap in SINGLE_GAP) {
+                // 牌宽比 90 略宽时，最后一张真左边离换算出的左边只差几像素，不多算一张。
+                count += (unusual / geometry.cardPitch).roundToInt() + if (gap > TINY_GAP) 1 else 0
+                unusual = 0
+            } else {
+                unusual += gap
+            }
+        }
+        count += (unusual / geometry.cardPitch).roundToInt()
         return count.takeIf { it > 0 }
     }
 
@@ -141,6 +157,12 @@ class HandCardPositionDetector {
         private const val EDGE_THRESHOLD = 40.0
         private const val NEIGHBORHOOD = 6
         private const val MIN_EDGE_GAP = 28
+
+        /** 上排相邻两张牌左边的正常间距（同点数约 42px、不同点数约 51px）；超出的段是漏边或假边，合并后再取整。 */
+        private val SINGLE_GAP = 38..55
+
+        /** 最后一张牌真左边和按牌宽换算出的左边之间的差，牌宽略大于 90 时只有几像素，不算一张。 */
+        private const val TINY_GAP = 10
 
         /** 跨度算出的张数离取整分界不到它时改看牌边条数；已核对样本里最近的是 145333 下排 16.517。 */
         private const val AMBIGUOUS_MARGIN = 0.15
