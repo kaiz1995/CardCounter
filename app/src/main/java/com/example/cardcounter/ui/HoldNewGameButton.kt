@@ -20,7 +20,7 @@ import android.view.View
 class HoldNewGameButton(
     context: Context,
     private val isCaptureRunning: () -> Boolean,
-    private val onConfirmedNewGame: () -> Unit
+    private val onConfirmedNewGame: () -> Boolean
 ) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
@@ -51,9 +51,12 @@ class HoldNewGameButton(
                 holding = false
                 triggered = true
                 progress = 0f
-                performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                onConfirmedNewGame()
-                showFlash("已开新局", confirmed = true, durationMs = CONFIRMED_FLASH_MS)
+                if (onConfirmedNewGame()) {
+                    performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                    showFlash("已开新局", confirmed = true, durationMs = CONFIRMED_FLASH_MS)
+                } else {
+                    showFlash("未开始记牌", confirmed = false, durationMs = CONFIRMED_FLASH_MS)
+                }
                 return
             }
             progress = next
@@ -92,12 +95,26 @@ class HoldNewGameButton(
                 invalidate()
                 return true
             }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+            MotionEvent.ACTION_MOVE -> {
+                if (holding && (event.x < 0f || event.x >= width || event.y < 0f || event.y >= height)) {
+                    cancelHold()
+                    invalidate()
+                }
+                return true
+            }
+            MotionEvent.ACTION_UP -> {
                 val wasHolding = holding && !triggered
                 cancelHold()
                 if (wasHolding) {
                     showFlash("请按住", confirmed = false, durationMs = HINT_FLASH_MS)
+                } else {
+                    invalidate()
                 }
+                return true
+            }
+            MotionEvent.ACTION_CANCEL -> {
+                cancelHold()
+                invalidate()
                 return true
             }
         }
