@@ -181,7 +181,7 @@ class GameSampler:
             "card_visible": True,
             "still": still,
             "turn": turn,
-            "fp": base64.b64encode(fingerprint.tobytes()).decode("ascii"),
+            "fp": base64.b64encode(fingerprint.astype(np.uint8).tobytes()).decode("ascii"),
         }
         if self.still_run[name] <= INFER_STILL_RUN_LIMIT:
             crop = pv.expanded_crop(screen, spec)
