@@ -39,6 +39,17 @@ def _yolo():
     return YOLO
 
 
+def _default_device() -> str:
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            return "0"
+    except Exception:
+        pass
+    return "cpu"
+
+
 def train(
     data: Path,
     epochs: int,
@@ -49,21 +60,24 @@ def train(
     patience: int = 15,
     lr0: float = 0.01,
     workers: int = 8,
+    device: str = "",
 ):
     YOLO = _yolo()
     model = YOLO(weights)
+    target_device = device or _default_device()
     started = time.time()
     model.train(
         data=str(data),
         epochs=epochs,
         imgsz=320,
         batch=batch,
-        device="cpu",
+        device=target_device,
         workers=workers,
         project=str(RUNS / project),
         name=name,
         exist_ok=True,
         patience=patience,
+        optimizer="SGD",
         lr0=lr0,
         lrf=0.05,
         warmup_epochs=1.0,
@@ -91,8 +105,8 @@ def train(
     return {"seconds": round(elapsed, 1), "best": str(best)}
 
 
-def speed_test(data: Path) -> dict:
-    result = train(data, epochs=3, project="speed", name="yolo11n_320", patience=0)
+def speed_test(data: Path, device: str = "") -> dict:
+    result = train(data, epochs=3, project="speed", name="yolo11n_320", patience=0, device=device)
     per_epoch = result["seconds"] / 3
     result.update(
         {
@@ -112,10 +126,11 @@ def main() -> int:
     parser.add_argument("--batch", type=int, default=32)
     parser.add_argument("--weights", default="")
     parser.add_argument("--workers", type=int, default=8)
+    parser.add_argument("--device", default="", help="e.g. 0 or cpu (default: auto CUDA if available)")
     args = parser.parse_args()
 
     if args.stage == "speed":
-        speed_test(C.SYNTH_DIR / "dataset" / "data.yaml")
+        speed_test(C.SYNTH_DIR / "dataset" / "data.yaml", device=args.device)
         return 0
 
     if args.stage == "synth":
@@ -128,6 +143,7 @@ def main() -> int:
             weights=weights,
             batch=args.batch,
             workers=args.workers,
+            device=args.device,
         )
     else:
         data = C.SYNTH_DIR / "dataset_align" / "data.yaml"
@@ -140,9 +156,10 @@ def main() -> int:
             name="stage_b",
             weights=args.weights or str(RUNS / "train" / "stage_a" / "weights" / "best.pt"),
             batch=args.batch,
-            patience=max(3, args.epochs // 4),
-            lr0=0.002,
+            patience=max(8, args.epochs // 2),
+            lr0=0.0008,
             workers=args.workers,
+            device=args.device,
         )
     C.save_json(RUNS / f"{args.stage}_result.json", result)
     print(json.dumps(result, indent=2))

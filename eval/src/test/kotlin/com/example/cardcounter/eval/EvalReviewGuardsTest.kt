@@ -334,6 +334,16 @@ class EvalReviewGuardsTest {
         val (mismatchCode, mismatchText) = cli(root)
         assertEquals(1, mismatchCode)
         assertTrue(mismatchText, mismatchText.contains(ObservationJsonl.VERSION_MISMATCH_MESSAGE))
+
+        Files.writeString(
+            obsFile,
+            "${ObservationJsonl.metaLine(modelSha256 = "stale-model-sha")}\n{\"ts_ms\":0,\"table_visible\":true,\"zones\":{}}\n",
+            StandardCharsets.UTF_8
+        )
+        val (modelMismatchCode, modelMismatchText) = cli(root)
+        assertEquals(1, modelMismatchCode)
+        assertTrue(modelMismatchText, modelMismatchText.contains(ObservationJsonl.VERSION_MISMATCH_MESSAGE))
+        assertTrue(modelMismatchText, modelMismatchText.contains("stale-model-sha"))
     }
 
     // ---- 真值 CSV ----
@@ -602,6 +612,34 @@ class EvalReviewGuardsTest {
                     it.cards == RankCounts.of(mapOf(Rank.BIG_JOKER to 1, Rank.QUEEN to 2))
             }
         )
+    }
+
+    @Test
+    fun selfHandPlusOutsidePlaysWithinStock() {
+        val root = if (Files.exists(Path.of("datasets/games.json"))) Path.of(".") else Path.of("..")
+        val games = GamesJson.parse(Files.readString(root.resolve("datasets/games.json"), StandardCharsets.UTF_8))
+        val problems = mutableListOf<String>()
+        for (meta in games.filter { it.split in setOf("dev", "tuning", "clip") }) {
+            val hand = meta.selfHand
+            if (hand.total() == 0) continue
+            if (meta.selfHandCount != null && hand.total() != meta.selfHandCount) {
+                problems += "${meta.gameId} 手牌点数合计 ${hand.total()} 不等于 selfHandCount ${meta.selfHandCount}"
+            }
+            val truthPath = root.resolve("datasets/truth/${meta.gameId}.csv")
+            val plays = if (Files.exists(truthPath)) {
+                TruthCsv.parse(Files.readString(truthPath, StandardCharsets.UTF_8), meta.gameId)
+            } else {
+                emptyList()
+            }
+            for (rank in Rank.entries) {
+                // 外家出的牌不可能来自自己手牌：自己手牌 + 外家累计出牌 <= 四副牌库存
+                val outside = plays.filter { it.zone != PlayZone.SELF }.sumOf { it.cards[rank] }
+                if (hand[rank] + outside > rank.initialCount) {
+                    problems += "${meta.gameId} ${rank.name} 手牌 ${hand[rank]} + 外家出牌 $outside 超过库存 ${rank.initialCount}，手牌真值或出牌真值有一处标错，请看截图核对"
+                }
+            }
+        }
+        assertTrue(problems.joinToString(" | "), problems.isEmpty())
     }
 
     @Test

@@ -12,6 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import common  # noqa: E402
+import check_isolation  # noqa: E402
 
 
 class WhitelistGateTest(unittest.TestCase):
@@ -83,6 +84,14 @@ class WhitelistGateTest(unittest.TestCase):
         self.assertFalse(overlap, f"empty play-zone eval must not use negative-source recordings: {overlap}")
         for name in common.EMPTY_ZONE_EVAL_VIDEOS:
             common.ensure_allowed(common.SOURCE / name)
+
+    def test_negative_sources_exclude_all_dev_tuning_blind_eval(self):
+        forbidden = check_isolation.build_forbidden_map()
+        for token in ("102658", "143651", "075639", "164333", "202234", "210429"):
+            self.assertIn(token, forbidden)
+        for name in common.NEGATIVE_SOURCE_VIDEOS:
+            src = check_isolation.vid(name)
+            self.assertNotIn(src, forbidden, f"NEGATIVE_SOURCE_VIDEOS must not include {name} ({forbidden.get(src)})")
 
     def test_train_split_excludes_eval_clips(self):
         names = [path.name for path in common.nine_games(train_only=True)]

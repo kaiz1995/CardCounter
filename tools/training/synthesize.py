@@ -56,11 +56,16 @@ class Assets:
             entry = dict(entry)
             entry["image"] = image
             self.tiles.setdefault((entry["scale"], entry["rank"]), []).append(entry)
-        self.negatives = [
-            cv2.imread(str(path))
-            for path in sorted((C.SPRITE_DIR / "_neg").glob("*.png"))
-        ]
-        self.negatives = [image for image in self.negatives if image is not None]
+        neg_paths = sorted((C.SPRITE_DIR / "_neg").glob("*.png"))
+        self.negatives = []
+        self.badges = []
+        for path in neg_paths:
+            image = cv2.imread(str(path))
+            if image is None:
+                continue
+            self.negatives.append(image)
+            if "_badge_" in path.name:
+                self.badges.append(image)
         self.pipneg = [
             image
             for image in (cv2.imread(str(path)) for path in sorted((C.SPRITE_DIR / "_pipneg").glob("*.png")))
@@ -167,7 +172,99 @@ def paste_cards(
     return placed
 
 
-def make_play_scene(assets: Assets, rng: random.Random, self_zone: bool):
+def _paste_circle_badge(canvas: np.ndarray, badge: np.ndarray, cx: float, top_y: int, scale: float = 1.0) -> None:
+    """Paste a real circular '出牌' badge using an elliptical mask so green felt corners are ignored."""
+    bh = max(12, int(round(badge.shape[0] * scale)))
+    bw = max(12, int(round(badge.shape[1] * scale)))
+    resized = cv2.resize(badge, (bw, bh), interpolation=cv2.INTER_AREA if scale < 1 else cv2.INTER_LINEAR)
+    x0 = int(round(cx - bw / 2.0))
+    y0 = int(round(top_y))
+    yy, xx = np.mgrid[0:bh, 0:bw]
+    mask = ((xx - (bw - 1) / 2.0) / max(1.0, bw * 0.48)) ** 2 + ((yy - (bh - 1) / 2.0) / max(1.0, bh * 0.48)) ** 2 <= 1.0
+    dx0, dy0 = max(0, x0), max(0, y0)
+    dx1, dy1 = min(canvas.shape[1], x0 + bw), min(canvas.shape[0], y0 + bh)
+    if dx1 <= dx0 or dy1 <= dy0:
+        return
+    m = mask[dy0 - y0:dy1 - y0, dx0 - x0:dx1 - x0]
+    src = resized[dy0 - y0:dy1 - y0, dx0 - x0:dx1 - x0]
+    canvas[dy0:dy1, dx0:dx1][m] = src[m]
+
+
+def _draw_synthetic_turn_badge(canvas: np.ndarray, cx: float, top_y: int, rng: random.Random) -> None:
+    """Draw a synthetic white-bordered red circular '出牌' badge with yellow strokes."""
+    radius = rng.randint(15, 22)
+    cy = int(round(top_y + radius))
+    ix = int(round(cx))
+    cv2.circle(canvas, (ix, cy), radius, (244, 244, 244), -1, lineType=cv2.LINE_AA)
+    cv2.circle(canvas, (ix, cy), max(6, radius - 2), (38, 36, 208), -1, lineType=cv2.LINE_AA)
+    # Yellow inner horizontal/vertical strokes mimicking "出牌" text
+    y_mid = cy
+    span = max(4, radius - 6)
+    cv2.line(canvas, (ix - span + 2, y_mid - 3), (ix + span - 2, y_mid - 3), (45, 215, 245), 2)
+    cv2.line(canvas, (ix - span + 1, y_mid + 2), (ix + span - 1, y_mid + 2), (45, 215, 245), 2)
+    cv2.line(canvas, (ix - 3, y_mid - 6), (ix - 3, y_mid + 6), (45, 215, 245), 2)
+    cv2.line(canvas, (ix + 4, y_mid - 6), (ix + 4, y_mid + 6), (45, 215, 245), 2)
+
+
+def _draw_count_effect_badge(canvas: np.ndarray, x0: int, y0: int, x1: int, y1: int, rng: random.Random) -> None:
+    """Draw green/blue '5张/6张' or yellow play-effect occlusion without labels."""
+    h, w = canvas.shape[:2]
+    x0, y0 = max(0, x0), max(0, y0)
+    x1, y1 = min(w, x1), min(h, y1)
+    if x1 - x0 < 6 or y1 - y0 < 6:
+        return
+    style = rng.choice(["green_pill", "blue_pill", "yellow_banner"])
+    if style == "yellow_banner":
+        cv2.rectangle(canvas, (x0, y0), (x1, y1), (48, 212, 242), -1)
+        cv2.rectangle(canvas, (x0, y0), (x1, y1), (242, 242, 242), 1)
+        cv2.line(canvas, (x0 + 3, (y0 + y1) // 2), (x1 - 3, (y0 + y1) // 2), (35, 35, 35), 2)
+    else:
+        fill = (65, 178, 72) if style == "green_pill" else (210, 140, 48)
+        cv2.rectangle(canvas, (x0, y0), (x1, y1), fill, -1)
+        cv2.rectangle(canvas, (x0, y0), (x1, y1), (242, 242, 242), 1)
+        digit = rng.choice(["5", "6", "7", "8"])
+        cv2.putText(canvas, digit, (x0 + 2, min(h - 2, y1 - 3)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (245, 245, 245), 1, cv2.LINE_AA)
+
+
+def _make_rightmost_big_pip_tile(plain_tile: dict, assets: Assets, rank: str, rng: random.Random) -> dict | None:
+    """Build an outside_top variant with wider face & varied big-pip placement (never labelled)."""
+    pipneg = getattr(assets, "pipneg", [])
+    if not pipneg:
+        return None
+    card = plain_tile["image"].copy()
+    extra_w = rng.randint(0, 7)
+    if extra_w > 0:
+        ext = np.full((card.shape[0], card.shape[1] + extra_w, 3), (252, 252, 250), np.uint8)
+        ext[:, :card.shape[1] - 1] = card[:, :-1]
+        ext[:, -1] = (214, 214, 214)
+        ext[0, :] = (214, 214, 214)
+        ext[-1, :] = (214, 214, 214)
+        card = ext
+    # Pick a large pip patch (prefer non-blank patches with real suit ink)
+    inked = [p for p in pipneg if (p.min(axis=2) < 180).mean() > 0.12] or pipneg
+    pip = rng.choice(inked)
+    zoom = 0.50 * 2.0 * rng.uniform(0.85, 1.22)
+    big = cv2.resize(
+        pip, (max(4, round(pip.shape[1] * zoom)), max(4, round(pip.shape[0] * zoom))),
+        interpolation=cv2.INTER_AREA if zoom < 1 else cv2.INTER_LINEAR,
+    )
+    bx = round(card.shape[1] * rng.uniform(0.50, 0.64) - big.shape[1] / 2)
+    by = plain_tile["off_y"] + round(rng.uniform(18.0, 24.5))
+    x0, y0 = max(0, bx), max(0, by)
+    x1, y1 = min(card.shape[1], bx + big.shape[1]), min(card.shape[0], by + big.shape[0])
+    if x1 > x0 and y1 > y0:
+        roi = card[y0:y1, x0:x1]
+        np.minimum(roi, big[y0 - by:y1 - by, x0 - bx:x1 - bx], out=roi)
+    return {
+        "image": card,
+        "off_x": plain_tile["off_x"],
+        "off_y": plain_tile["off_y"],
+        "glyph_w": plain_tile["glyph_w"],
+        "glyph_h": plain_tile["glyph_h"],
+    }
+
+
+def make_play_scene(assets: Assets, rng: random.Random, self_zone: bool, occlude_joker: bool = False):
     zone = "SELF" if self_zone else rng.choice(
         ["TOP", "LEFT_TOP", "LEFT_BOTTOM", "RIGHT_TOP", "RIGHT_BOTTOM"]
     )
@@ -180,10 +277,27 @@ def make_play_scene(assets: Assets, rng: random.Random, self_zone: bool):
         [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
         weights=[18, 22, 14, 12, 9, 8, 5, 4, 3, 2, 2, 1],
     )[0]
-    if rng.random() < 0.10 and count >= 2:
-        # joker attachment: 1-2 jokers plus wild 2s
+    joker_prob = 0.28 if not self_zone else 0.14
+    if rng.random() < joker_prob and count >= 2:
+        # 挂王炸弹真实牌局包括纯同点（大王+J*4）和带 2 混搭（大王+2+9*4）
         joker = "BIG_JOKER" if rng.random() < 0.6 else "SMALL_JOKER"
-        ranks = [joker] + ["TWO"] * (count - 1)
+        if count >= 3 and rng.random() < 0.45:
+            n_two = rng.randint(1, min(2, count - 2))
+            base_rank = rng.choice(C.RANKS[3:])
+            ranks = [joker] + ["TWO"] * n_two + [base_rank] * (count - 1 - n_two)
+        else:
+            base_rank = "TWO" if rng.random() < 0.25 else rng.choice(C.RANKS[3:])
+            ranks = [joker] + [base_rank] * (count - 1)
+    elif count >= 2 and rng.random() < 0.18:
+        # 常见带 2 出牌（2+9*4）或混点数序列，防止模型靠相邻牌猜测当前牌
+        if rng.random() < 0.75:
+            n_two = rng.randint(1, min(2, count - 1))
+            base_rank = rng.choice(C.RANKS[3:])
+            ranks = ["TWO"] * n_two + [base_rank] * (count - n_two)
+        else:
+            ranks = [rng.choice(C.RANKS[2:]) for _ in range(count)]
+    elif count == 1 and not self_zone and rng.random() < 0.08:
+        ranks = ["BIG_JOKER" if rng.random() < 0.6 else "SMALL_JOKER"]
     else:
         ranks = [rng.choice(C.RANKS)] * count
 
@@ -206,19 +320,90 @@ def make_play_scene(assets: Assets, rng: random.Random, self_zone: bool):
         count -= 1
     ranks, tiles = ranks[:count], tiles[:count]
     # Only the top card of a played stack shows the big centre pip.
-    top_pool = assets.tiles.get((scale_name + "_top", ranks[-1]))
-    if top_pool:
-        tiles[-1] = rng.choice(top_pool)
-    stacked_width = (count - 1) * step + card_w * card_scale
+    if not self_zone and ranks[-1] not in ("BIG_JOKER", "SMALL_JOKER") and rng.random() < 0.45:
+        varied = _make_rightmost_big_pip_tile(tiles[-1], assets, ranks[-1], rng)
+        if varied is not None:
+            tiles[-1] = varied
+        else:
+            top_pool = assets.tiles.get((scale_name + "_top", ranks[-1]))
+            if top_pool:
+                tiles[-1] = rng.choice(top_pool)
+    else:
+        top_pool = assets.tiles.get((scale_name + "_top", ranks[-1]))
+        if top_pool:
+            tiles[-1] = rng.choice(top_pool)
+    stacked_width = (count - 1) * step + tiles[-1]["image"].shape[1] * card_scale
     x0 = (w - stacked_width) / 2 + rng.uniform(-3, 3)
     x0 = min(max(x0, 0.0), max(0.0, w - last_glyph_right(count) - 1))
-    glyph_mid = h * (0.45 if self_zone else 0.57)
+    glyph_mid = h * (0.45 if self_zone else rng.uniform(0.54, 0.60))
     tile = tiles[0]
     y0 = glyph_mid - (tile["off_y"] + tile["glyph_h"] / 2) * card_scale + rng.uniform(-2, 2)
     alpha = 1.0
     if rng.random() < FADE_PROB:
         alpha = rng.uniform(0.55, 0.9)  # fade-in frame
     placed = paste_cards(background, tiles, (x0, y0), step, card_scale, alpha)
+
+    # 5+张外家出牌在右侧偶现“5张/6张”数字角标或黄色横幅特效（不打标签，教模型当背景忽略）
+    if not self_zone and occlude_joker and count >= 5 and placed and rng.random() < 0.35:
+        last_box = placed[-1][0]
+        bx0 = int(round(last_box[2] + rng.uniform(2, 10)))
+        by0 = max(0, int(round(last_box[1] - rng.uniform(0, 4))))
+        if bx0 + 18 < w and by0 + 16 < h:
+            _draw_count_effect_badge(background, bx0, by0, bx0 + rng.randint(16, 24), by0 + rng.randint(14, 18), rng)
+
+    # 模拟外家牌区左下/底部被“出牌”圆标、印章或“5张/6张”绿色特效遮住下半截的场景，保留王牌真值框
+    if (
+        occlude_joker
+        and not self_zone
+        and placed
+        and ranks[0] in ("BIG_JOKER", "SMALL_JOKER")
+        and alpha >= 0.85
+        and rng.random() < 0.55
+    ):
+        gbox = placed[0][0]
+        gw = gbox[2] - gbox[0]
+        gh = gbox[3] - gbox[1]
+        occ_y0 = max(0, min(h - 1, int(round(gbox[1] + gh * rng.uniform(0.42, 0.62)))))
+        occ_cx = gbox[0] + gw * rng.uniform(0.25, 1.15)
+        roll_occ = rng.random()
+        if roll_occ < 0.55:
+            badges = getattr(assets, "badges", [])
+            real_badge_prob = min(0.7, 0.25 + 0.45 * min(1.0, len(badges) / 16.0)) if badges else 0.0
+            if badges and rng.random() < real_badge_prob:
+                _paste_circle_badge(background, rng.choice(badges), occ_cx, occ_y0, rng.uniform(0.85, 1.15))
+            else:
+                _draw_synthetic_turn_badge(background, occ_cx, occ_y0, rng)
+        elif roll_occ < 0.80:
+            occ_x0 = max(0, int(round(gbox[0] - rng.uniform(2, 8))))
+            occ_x1 = min(w, int(round(gbox[0] + gw * rng.uniform(1.1, 2.2))))
+            _draw_count_effect_badge(background, occ_x0, occ_y0, occ_x1, h, rng)
+        else:
+            occ_x0 = max(0, int(round(gbox[0] - rng.uniform(2, 8))))
+            occ_x1 = min(w, int(round(gbox[0] + gw * rng.uniform(1.05, 1.8))))
+            if occ_y0 < h and occ_x1 > occ_x0:
+                if assets.negatives and rng.random() < 0.5:
+                    patch = rng.choice(assets.negatives)
+                    background[occ_y0:h, occ_x0:occ_x1] = cv2.resize(patch, (occ_x1 - occ_x0, h - occ_y0))
+                else:
+                    color = rng.choice([(45, 55, 220), (50, 210, 240), (70, 175, 70)])
+                    background[occ_y0:h, occ_x0:occ_x1] = color
+    elif (
+        occlude_joker
+        and not self_zone
+        and placed
+        and ranks[0] not in ("BIG_JOKER", "SMALL_JOKER")
+        and rng.random() < 0.12
+    ):
+        gbox = placed[0][0]
+        badges = getattr(assets, "badges", [])
+        top_y = int(round(gbox[3] + rng.uniform(1, 7)))
+        if top_y < h - 4:
+            real_badge_prob = min(0.7, 0.25 + 0.45 * min(1.0, len(badges) / 16.0)) if badges else 0.0
+            if badges and rng.random() < real_badge_prob:
+                _paste_circle_badge(background, rng.choice(badges), gbox[0] + 4, top_y, rng.uniform(0.85, 1.10))
+            else:
+                _draw_synthetic_turn_badge(background, gbox[0] + 4, top_y, rng)
+
     boxes = [box for box, _ in placed]
     classes = [C.RANK_TO_ID[ranks[index]] for _, index in placed]
     return background, boxes, classes
@@ -238,10 +423,12 @@ def make_hand_scene(assets: Assets, rng: random.Random):
     boxes: list[list[float]] = []
     classes: list[int] = []
     for row, row_top in enumerate(HAND_ROW_TOPS):
-        count = rng.randint(12, 18)
+        count = rng.randint(12, 20)
         ranks = [rng.choice(C.RANKS) for _ in range(count)]
+        if rng.random() < 0.6:
+            ranks.sort(key=C.RANK_TO_ID.__getitem__)
         pitch = (HAND_STRIP_W - 52) / max(1, count - 1)
-        pitch = max(40.0, min(pitch, 52.0))
+        pitch = max(38.0, min(pitch, 52.0))
         row_width = (count - 1) * pitch + 52
         start_x = (HAND_STRIP_W - row_width) / 2 + rng.uniform(-3, 3)
         # 17-18 cards fill the strip edge to edge: keep the whole row inside it.
@@ -277,17 +464,26 @@ def make_pip_scene(assets: Assets, rng: random.Random):
     """Suit-only scene: 1-3 pips on a white card face, no rank glyph.
 
     No boxes and no labels: the model only learns that a suit pip is background
-    (a small club under a 3 used to be read as THREE).
+    (a small club under a 3 used to be read as THREE, and large red diamond/heart tips
+    near the bottom edge of LEFT_TOP used to be read as ACE).
     """
 
-    if not assets.pipneg:
+    pipneg = getattr(assets, "pipneg", [])
+    if not pipneg:
         return make_negative_scene(assets, rng)
     zone = rng.choice(["SELF", "TOP", "LEFT_TOP", "LEFT_BOTTOM", "RIGHT_TOP", "RIGHT_BOTTOM"])
     _, _, w, h = C.zone_crop_rect(zone)
     canvas = zone_background(zone, w, h, assets, rng)
-    for _ in range(rng.randint(1, 3)):
-        patch = rng.choice(assets.pipneg)
-        zoom = rng.uniform(0.9, 1.15)
+    if rng.random() < 0.65:
+        # 铺一张半截白色牌面到底部，模拟外家最右大牌露出白色牌身和大号花色
+        face_x0 = rng.randrange(0, max(1, w // 3))
+        face_x1 = rng.randrange(min(w, face_x0 + max(30, w // 3)), w + 1)
+        face_y0 = rng.randrange(max(1, h // 5), max(2, h * 2 // 3))
+        canvas[face_y0:h, face_x0:face_x1] = (250, 250, 248)
+        cv2.rectangle(canvas, (face_x0, face_y0), (face_x1 - 1, h), (214, 214, 214), 1)
+    for idx in range(rng.randint(1, 3)):
+        patch = rng.choice(pipneg)
+        zoom = rng.uniform(0.85, 2.0)
         patch = cv2.resize(
             patch, None, fx=zoom, fy=zoom,
             interpolation=cv2.INTER_AREA if zoom < 1 else cv2.INTER_LINEAR,
@@ -295,9 +491,19 @@ def make_pip_scene(assets: Assets, rng: random.Random):
         ph, pw = patch.shape[:2]
         if ph >= h or pw >= w:
             continue
-        x = rng.randrange(0, w - pw + 1)
-        y = rng.randrange(0, h - ph + 1)
-        canvas[y:y + ph, x:x + pw] = patch
+        x = rng.randrange(0, max(1, w - pw // 3))
+        # 一半概率贴近或越过底边（y > h - ph），专门覆盖被底边裁成红三角的大方块/红桃
+        if idx == 0 and rng.random() < 0.6:
+            y_min = max(0, h - ph)
+            y_max = max(y_min + 1, h - max(5, ph // 3))
+            y = rng.randrange(y_min, y_max)
+        else:
+            y = rng.randrange(0, max(1, h - max(4, ph // 2)))
+        dy = min(ph, h - y)
+        dx = min(pw, w - x)
+        if dy > 0 and dx > 0:
+            roi = canvas[y:y + dy, x:x + dx]
+            np.minimum(roi, patch[:dy, :dx], out=roi)
     return canvas, [], []
 
 
@@ -336,8 +542,8 @@ def render(assets: Assets, rng: random.Random, kind: str | None = None):
     if kind is None:
         roll = rng.random()
         kind = (
-            "outside" if roll < 0.45 else "self" if roll < 0.62 else "hand" if roll < 0.89
-            else "neg" if roll < 0.94 else "pip"
+            "outside" if roll < 0.42 else "self" if roll < 0.54 else "hand" if roll < 0.80
+            else "neg" if roll < 0.85 else "pip"
         )
     if kind == "hand":
         strip, boxes, classes = make_hand_scene(assets, rng)
@@ -349,7 +555,7 @@ def render(assets: Assets, rng: random.Random, kind: str | None = None):
                  for x, y, x2, y2 in boxes]
         return image, boxes, classes
     if kind == "outside":
-        raw, boxes, classes = make_play_scene(assets, rng, self_zone=False)
+        raw, boxes, classes = make_play_scene(assets, rng, self_zone=False, occlude_joker=True)
     elif kind == "self":
         raw, boxes, classes = make_play_scene(assets, rng, self_zone=True)
     elif kind == "pip":
@@ -413,14 +619,16 @@ def build_dataset(n_train: int, n_val: int, seed: int = 20261124, clean: bool = 
     return yaml_path
 
 
-def build_align_dataset(real_repeat: int = 15) -> Path:
+def build_align_dataset(real_repeat: int = 10) -> Path:
     """Stage B list file: synthetic train tiles + over-sampled real hand frames.
 
-    A list file avoids duplicating the 5000 synthetic images on disk.
+    A list file avoids duplicating the synthetic images on disk and passes check_isolation.py.
     """
 
     root = C.SYNTH_DIR / "dataset"
     out = C.SYNTH_DIR / "dataset_align"
+    shutil.rmtree(out / "images", ignore_errors=True)
+    shutil.rmtree(out / "labels", ignore_errors=True)
     out.mkdir(parents=True, exist_ok=True)
     lines = [str(path).replace("\\", "/") for path in sorted((root / "images" / "train").glob("*.png"))]
     real = C.SYNTH_DIR / "real_hand" / "images"
@@ -455,7 +663,7 @@ def main() -> int:
     parser.add_argument("--val", type=int, default=800)
     parser.add_argument("--seed", type=int, default=20261124)
     parser.add_argument("--align", action="store_true", help="build the stage-B list file")
-    parser.add_argument("--real-repeat", type=int, default=15)
+    parser.add_argument("--real-repeat", type=int, default=10)
     args = parser.parse_args()
     if args.align:
         path = build_align_dataset(args.real_repeat)

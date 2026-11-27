@@ -38,14 +38,16 @@ class HandCardPositionDetector {
     fun detect(luma: IntArray): Int? = detect(rowCounts(luma))
 
     /**
-     * 两排合计张数。游戏是下排先排满，已知样本里 下排−上排 只会是 0 或 1；
+     * 两排合法张数对（上排 to 下排）。游戏是下排先排满，已知样本里 下排−上排 只会是 0 或 1；
      * 差值不在 {0,1}、或某排没数出来，说明有一排数错了或正在发牌，当作没数出来（null）。
      */
-    fun detect(rows: Pair<Int?, Int?>): Int? {
+    fun validRowCounts(rows: Pair<Int?, Int?>): Pair<Int, Int>? {
         val (top, bottom) = rows
         if (top == null || bottom == null || top <= 0 || bottom <= 0) return null
-        return if (bottom - top in 0..1) top + bottom else null
+        return if (bottom - top in 0..1) top to bottom else null
     }
+
+    fun detect(rows: Pair<Int?, Int?>): Int? = validRowCounts(rows)?.let { it.first + it.second }
 
     /** 上、下两排各自数出来的张数；某一排没数出来为 null（不会是 0）。 */
     internal fun rowCounts(luma: IntArray): Pair<Int?, Int?> {
@@ -110,24 +112,29 @@ class HandCardPositionDetector {
         return count.takeIf { it > 0 }
     }
 
-    /** 下排两端的牌面都要在 y≈452 往下有一道由暗变亮的白色顶边；上排外沿在那里是变暗的。 */
+    /** 下排两端的牌面都要在 y≈452..458 之间呈现出下排自己的白色顶边：要么比 y=452 显著变亮，要么上下排同宽时先经过 y=453..454 交界暗影再回升到白牌面。 */
     private fun hasOwnTopBorder(luma: IntArray, bottom: List<Int>): Boolean {
         if (bottom.size < 2) return false
         val left = bottom.min()
         val right = bottom.max()
-        return borderStep(luma, left + BORDER_INSET_NEAR, left + BORDER_INSET_FAR) >= BORDER_STEP &&
-            borderStep(luma, right - BORDER_INSET_FAR, right - BORDER_INSET_NEAR) >= BORDER_STEP
+        return hasBorderAt(luma, left + BORDER_INSET_NEAR, left + BORDER_INSET_FAR) &&
+            hasBorderAt(luma, right - BORDER_INSET_FAR, right - BORDER_INSET_NEAR)
     }
 
-    private fun borderStep(luma: IntArray, fromX: Int, untilX: Int): Double {
+    private fun hasBorderAt(luma: IntArray, fromX: Int, untilX: Int): Boolean {
         val area = HandRegions.bottomBorderRows
         val x0 = fromX.coerceIn(area.left, area.right)
         val x1 = untilX.coerceIn(x0, area.right)
-        if (x1 <= x0) return 0.0
+        if (x1 <= x0) return false
         fun rowMean(y: Int): Double = (x0 until x1).sumOf { luma[y * WIDTH + it] }.toDouble() / (x1 - x0)
-        val above = rowMean(area.top)
-        val brightest = (area.top + 2 until area.bottom).maxOf(::rowMean)
-        return brightest - above
+        val y452 = rowMean(area.top)
+        val oldBrightest = (area.top + 2 until area.top + 5).maxOf(::rowMean)
+        if (oldBrightest - y452 >= BORDER_STEP) return true
+        // 上下排同宽对齐时，y=452 已经是上排白牌面，y=453..454 出现交界暗影谷底，随后 y=455..458 回升为纯白牌面。
+        if (y452 < EQUAL_TOP_LUMA) return false
+        val dip = minOf(rowMean(area.top + 1), rowMean(area.top + 2))
+        val peak = (area.top + 3 until area.bottom).maxOf(::rowMean)
+        return peak >= EQUAL_PEAK_LUMA && peak - dip >= EQUAL_REBOUND
     }
 
     private fun edgePositions(luma: IntArray, rows: IntRange): List<Int> {
@@ -164,15 +171,19 @@ class HandCardPositionDetector {
         /** 最后一张牌真左边和按牌宽换算出的左边之间的差，牌宽略大于 90 时只有几像素，不算一张。 */
         private const val TINY_GAP = 10
 
-        /** 跨度算出的张数离取整分界不到它时改看牌边条数；已核对样本里最近的是 145333 下排 16.517。 */
-        private const val AMBIGUOUS_MARGIN = 0.15
+        /** 跨度算出的张数离取整分界不到它时改看牌边条数；覆盖同牌密集时（如 16.345）的消歧区。 */
+        private const val AMBIGUOUS_MARGIN = 0.18
 
         /** 白色顶边要比上方亮出的最小幅度；已核对样本里真下排最小 +55，上排外沿都是变暗。 */
         private const val BORDER_STEP = 15.0
+        /** 上下排同宽时，y=452 在上排白面上，经过交界暗影（453..454）后在 455..458 回升到下排白面。 */
+        private const val EQUAL_TOP_LUMA = 180.0
+        private const val EQUAL_PEAK_LUMA = 220.0
+        private const val EQUAL_REBOUND = 3.5
         private const val BORDER_INSET_NEAR = 2
         private const val BORDER_INSET_FAR = 12
 
         private val TOP = RowGeometry(HandRegions.topEdgeRow, cardWidth = 90, cardPitch = 44.7)
-        private val BOTTOM = RowGeometry(HandRegions.bottomEdgeRow, cardWidth = 90, cardPitch = 46.4)
+        private val BOTTOM = RowGeometry(HandRegions.bottomEdgeRow, cardWidth = 90, cardPitch = 46.0)
     }
 }

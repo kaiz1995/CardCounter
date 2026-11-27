@@ -46,6 +46,8 @@ class StubAssets:
             self.tiles[("outside", rank)] = [make_tile(i, 40, 34, off=(3, 3), glyph=(10, 13))]
             self.tiles[("self", rank)] = [make_tile(i, 60, 46, off=(4, 4), glyph=(15, 19))]
         self.negatives: list[np.ndarray] = []
+        self.badges: list[np.ndarray] = []
+        self.pipneg: list[np.ndarray] = []
         self.felt = [np.full((120, 160, 3), (40, 110, 50), np.uint8)]
 
 
@@ -303,6 +305,43 @@ class PipSceneTest(unittest.TestCase):
                 gap = dark[y1 - 1:y1 + 3, cols].mean(axis=1).min()
                 self.assertLess(gap, 0.2, f"seed {seed}: box {box} reaches the pip")
         self.assertGreater(checked, 500)
+
+    def test_undersized_glyph_gate_and_adjacent_pip_detection(self):
+        self.assertTrue(E.is_undersized_glyph(10, 29, 20.0, 29.0))
+        self.assertTrue(E.is_undersized_glyph(20, 16, 20.0, 29.0))
+        self.assertFalse(E.is_undersized_glyph(18, 28, 20.0, 29.0))
+
+        # 模拟 Q 的斜撇紧贴花色（间隔 0~1px）：find_pip 必须能识别出花色。
+        tile = np.full((E.HAND_ROW1_H, 56, 3), 250, np.uint8)
+        tile[3:33, 4:20] = 30
+        tile[33:51, 6:18] = 30  # start=0 紧贴字形下沿
+        self.assertIsNotNone(E.find_pip(tile, (4, 3), (16, 30)))
+        self.assertEqual(E.ink_color(tile[3:33, 4:20]), "black")
+
+        red_tile = tile.copy()
+        red_tile[3:33, 4:20] = (30, 30, 210)
+        self.assertEqual(E.ink_color(red_tile[3:33, 4:20]), "red")
+
+    def test_occluded_joker_and_bottom_clipped_pip_scenes(self):
+        assets = StubAssets()
+        # Add synthetic pipneg & badge to test both paths
+        pip = np.full((18, 16, 3), 250, np.uint8)
+        pip[2:16, 3:13] = (20, 20, 210)
+        assets.pipneg = [pip]
+        assets.badges = [np.full((44, 48, 3), (40, 40, 220), np.uint8)]
+        joker_occluded_count = 0
+        for seed in range(300):
+            rng = random.Random(5000 + seed)
+            img, boxes, classes = S.make_play_scene(assets, rng, self_zone=False, occlude_joker=True)
+            self.assertEqual(len(boxes), len(classes))
+            if classes and classes[0] in (0, 1):
+                joker_occluded_count += 1
+                self.assertGreater(boxes[0][3] - boxes[0][1], 5)
+            pip_img, pip_boxes, pip_classes = S.make_pip_scene(assets, rng)
+            self.assertEqual(pip_boxes, [])
+            self.assertEqual(pip_classes, [])
+            self.assertEqual(pip_img.ndim, 3)
+        self.assertGreater(joker_occluded_count, 30)
 
 
 if __name__ == "__main__":

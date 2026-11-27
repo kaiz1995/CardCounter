@@ -1,17 +1,27 @@
 package com.example.cardcounter.domain
 
+import com.example.cardcounter.vision.YoloDetection
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class HandAutoLockTest {
     private val k = HandAutoLock.STABLE_FRAMES
 
-    private fun reading(vararg pairs: Pair<Rank, Int>, position: Int? = pairs.sumOf { it.second }) =
-        HandReading(RankCounts.of(mapOf(*pairs)), position)
+    private fun det(rank: Rank, cx: Float, cy: Float) =
+        YoloDetection(rank, rank.name, 0.8f, cx, cy, 7f, 11f)
 
-    private fun HandAutoLock.feed(reading: HandReading, times: Int) = repeat(times) { observe(reading) }
+    private fun reading(
+        vararg pairs: Pair<Rank, Int>,
+        position: Int? = pairs.sumOf { it.second },
+        structureValid: Boolean = true
+    ) = HandReading(RankCounts.of(mapOf(*pairs)), position, structureValid)
+
+    private fun HandAutoLock.feed(reading: HandReading, times: Int, selfCardVisible: Boolean = false) =
+        repeat(times) { observe(reading, selfCardVisible) }
 
     @Test
     fun locksTheStableReadingWhenTheFightPhaseStarts() {
@@ -92,8 +102,28 @@ class HandAutoLockTest {
         val lock = HandAutoLock()
         val full = reading(Rank.KING to 2, Rank.ACE to 1)
         lock.feed(full, k)
-        lock.feed(reading(Rank.KING to 2), k + 2)
+        lock.feed(reading(Rank.KING to 2), k + 2, selfCardVisible = true)
         assertEquals(full.cards, requireNotNull(lock.lock()).cards)
+    }
+
+    @Test
+    fun aSubsetWithEmptySelfZoneMeansPostTributeReturnAndReplacesQualified() {
+        // 收到进贡临时 39 张合格，还贡后变回 38 张且面前 SELF 出牌区为空：必须替换为最终 38 张。
+        val lock = HandAutoLock()
+        val withTribute = reading(Rank.KING to 2, Rank.SIX to 1)
+        lock.feed(withTribute, k)
+        val afterReturn = reading(Rank.KING to 2)
+        lock.feed(afterReturn, k, selfCardVisible = false)
+        assertEquals(afterReturn.cards, requireNotNull(lock.lock()).cards)
+    }
+
+    @Test
+    fun filterHandDetectionsDropsTopButtonFalsePositivesBelowRowMargin() {
+        val topButtonNoise = det(Rank.FOUR, 167f, 202f)
+        val poppedTopCard = det(Rank.TWO, 171f, 212f)
+        val normalBottomCard = det(Rank.FIVE, 220f, 244f)
+        val filtered = HandLockGuard.filterHandDetections(listOf(topButtonNoise, poppedTopCard, normalBottomCard))
+        assertEquals(listOf(poppedTopCard, normalBottomCard), filtered)
     }
 
     @Test
@@ -105,5 +135,123 @@ class HandAutoLockTest {
         assertNull(lock.latest())
         lock.feed(reading(Rank.ACE to 1), k)
         assertEquals(RankCounts.of(mapOf(Rank.ACE to 1)), requireNotNull(lock.lock()).cards)
+    }
+
+    @Test
+    fun structureGuardBlocksNonMonotonicRankMisclassificationEvenWithMatchingTotal() {
+        // Q 认成 9 且排在 J 左边：总张数对上 4==4，但从左到右不单调，独立防线拦截。
+        val dets = listOf(
+            det(Rank.KING, 20f, 222f),
+            det(Rank.QUEEN, 36f, 222f),
+            det(Rank.NINE, 15f, 244f), // 黑桃 Q 认成 9
+            det(Rank.JACK, 31f, 244f)
+        )
+        assertFalse(HandLockGuard.isStructureValid(dets, 2 to 2))
+
+        val lock = HandAutoLock()
+        val cards = RankCounts.of(mapOf(Rank.KING to 1, Rank.QUEEN to 1, Rank.JACK to 1, Rank.NINE to 1))
+        val badReading = HandLockGuard.buildReading(cards, dets, 2 to 2)
+        lock.feed(badReading, k + 2)
+        assertNull(lock.lock())
+    }
+
+    @Test
+    fun structureGuardChecksPerRowCountsAndAllowsPoppedBottomCards() {
+        // 下排有牌点中弹起（cy=235），仍在 ROW_SPLIT_Y(229) 下方且保持单调不增，不应误伤。
+        val dets = listOf(
+            det(Rank.KING, 20f, 222f),
+            det(Rank.QUEEN, 36f, 222f),
+            det(Rank.JACK, 15f, 244f),
+            det(Rank.FIVE, 31f, 235f)
+        )
+        assertTrue(HandLockGuard.isStructureValid(dets, 2 to 2))
+        assertFalse("分排张数不一致（上2下2 != 上1下3）必须拦住", HandLockGuard.isStructureValid(dets, 1 to 3))
+    }
+
+    @Test
+    fun staleQualifiedIsClearedWhenPostExchangeHandAddsNewCardsButFailsGuards() {
+        // 换牌前 554s 形成旧 qualified，换牌后多了 1 张 TWO 但把 Q 认成 9 致防线失败：必须作废旧 qualified，宁可停记绝不错锁。
+        val lock = HandAutoLock()
+        val preExchange = reading(Rank.TWO to 4, Rank.QUEEN to 4, Rank.JACK to 4)
+        lock.feed(preExchange, k)
+
+        val postExchangeBad = reading(
+            Rank.TWO to 5, Rank.QUEEN to 3, Rank.JACK to 4, Rank.NINE to 1,
+            position = 13,
+            structureValid = false
+        )
+        lock.feed(postExchangeBad, k)
+        assertNull(lock.lock())
+    }
+
+    @Test
+    fun partialOccludedFrameWithoutPositionDoesNotClearQualified() {
+        // 出牌/动画/遮挡期间如果张数未检出或与牌框数不齐，不能清掉之前已合格的完整手牌。
+        val lock = HandAutoLock()
+        val prePlay = reading(Rank.TWO to 3, Rank.QUEEN to 4)
+        lock.feed(prePlay, k)
+
+        val occludedNoPos = reading(Rank.TWO to 4, Rank.ACE to 1, position = null, structureValid = false)
+        lock.feed(occludedNoPos, k + 2)
+        assertEquals(prePlay.cards, requireNotNull(lock.lock()).cards)
+    }
+
+    @Test
+    fun staleQualifiedIsClearedWhenNewRankAppearsEvenIfTotalsMismatch() {
+        // 换牌后出现旧手牌没有的 NINE，且漏检一张导致模型总数 12 != 边缘张数 13：仍必须作废旧 qualified。
+        val lock = HandAutoLock()
+        val preExchange = reading(Rank.TWO to 4, Rank.QUEEN to 4, Rank.JACK to 4)
+        lock.feed(preExchange, k)
+
+        val postExchangeMismatch = reading(
+            Rank.TWO to 4, Rank.QUEEN to 3, Rank.JACK to 4, Rank.NINE to 1,
+            position = 13,
+            structureValid = false
+        )
+        lock.feed(postExchangeMismatch, k)
+        assertNull(lock.lock())
+    }
+
+    @Test
+    fun staleQualifiedIsClearedWhenPositionCountChangesWithoutSelfPlayEvenWithoutNewRank() {
+        // 自己桌面空空（selfCardVisible=false），边缘张数从 12 稳定变成 13（如买牌/进贡后），
+        // 即使未检出新点数且结构未通过，也必须作废旧 12 张 qualified，宁可停记绝不错锁。
+        val lock = HandAutoLock()
+        val preExchange = reading(Rank.TWO to 4, Rank.QUEEN to 4, Rank.JACK to 4)
+        lock.feed(preExchange, k)
+
+        val postExchangeChangedPos = reading(
+            Rank.TWO to 4, Rank.QUEEN to 3, Rank.JACK to 4,
+            position = 13,
+            structureValid = false
+        )
+        lock.feed(postExchangeChangedPos, k, selfCardVisible = false)
+        assertNull(lock.lock())
+    }
+
+    @Test
+    fun postTributeReturnDoesNotSpuriouslyInvalidateQualified() {
+        // 进贡形成 13 张合格，还贡过渡帧（未满 k 帧、或张数未变但偶发漏帧）不误伤，
+        // 随后还贡完成（12 张、selfCardVisible=false）正常替换并锁定最终 12 张。
+        val lock = HandAutoLock()
+        val withTribute = reading(Rank.TWO to 4, Rank.QUEEN to 4, Rank.JACK to 4, Rank.SIX to 1)
+        lock.feed(withTribute, k)
+
+        // 过渡期不足 k 帧的张数变化不作废
+        lock.feed(reading(Rank.TWO to 4, Rank.QUEEN to 4, Rank.JACK to 4, position = 12, structureValid = false), k - 1, selfCardVisible = false)
+        // 还贡后稳定合格
+        val returned = reading(Rank.TWO to 4, Rank.QUEEN to 4, Rank.JACK to 4)
+        lock.feed(returned, k, selfCardVisible = false)
+        val locked = requireNotNull(lock.lock())
+        assertEquals(returned.cards, locked.cards)
+        assertEquals(12, locked.handCount)
+    }
+
+    @Test
+    fun readingWithStructureValidFalseNeverQualifiesEvenWhenTotalMatchesPosition() {
+        // 模板回退分支显式传 structureValid=false：即使点数合计与张数一致也绝不允许自动锁定。
+        val lock = HandAutoLock()
+        lock.feed(reading(Rank.KING to 2, Rank.ACE to 1, position = 3, structureValid = false), k + 5)
+        assertNull(lock.lock())
     }
 }

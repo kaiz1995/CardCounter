@@ -391,7 +391,7 @@ def metrics(tp: Counter, fp: Counter, fn: Counter) -> list[dict]:
     return rows
 
 
-def evaluate_hand_set(new: OnnxModel, old: OldModel, details: dict) -> tuple[list[dict], dict]:
+def evaluate_hand_set(new: OnnxModel, old: OldModel | None, details: dict) -> tuple[list[dict], dict]:
     """Score every distinct hand frame once. Returns (per_clip, end_to_end_ms)."""
 
     truth = C.load_rank_truth()
@@ -400,9 +400,11 @@ def evaluate_hand_set(new: OnnxModel, old: OldModel, details: dict) -> tuple[lis
     warm = np.zeros((C.HAND_BOTTOM - C.HAND_TOP, C.HAND_RIGHT - C.HAND_LEFT, 3), np.uint8)
     for _ in range(3):  # warm-up, not timed
         new.detect_hand(warm)
-        old.detect_hand(warm)
+        if old is not None:
+            old.detect_hand(warm)
     new.pure_ms.clear()
-    old.pure_ms.clear()
+    if old is not None:
+        old.pure_ms.clear()
 
     scale = C.MODEL_INPUT / (C.HAND_RIGHT - C.HAND_LEFT)
     for clip in C.EVAL_HAND_CLIPS:
@@ -444,6 +446,8 @@ def evaluate_hand_set(new: OnnxModel, old: OldModel, details: dict) -> tuple[lis
                 for g, rank in zip(clusters, ranks)
             ]
             for name, model in (("new", new), ("old", old)):
+                if model is None:
+                    continue
                 started = time.perf_counter()
                 detections = model.detect_hand(strip)
                 end_to_end[name].append((time.perf_counter() - started) * 1000.0)
@@ -465,7 +469,7 @@ def evaluate_hand_set(new: OnnxModel, old: OldModel, details: dict) -> tuple[lis
     return per_clip, end_to_end
 
 
-def evaluate_screenshots(new: OnnxModel, old: OldModel) -> list[dict]:
+def evaluate_screenshots(new: OnnxModel, old: OldModel | None) -> list[dict]:
     """Real app screenshots, all six zones each, both models letterboxed."""
 
     base = C.ROOT / "app" / "src" / "androidTest" / "assets"
@@ -481,7 +485,7 @@ def evaluate_screenshots(new: OnnxModel, old: OldModel) -> list[dict]:
             expected = dict(zones[zone])
             crop = C.zone_crop(frame, zone)
             new_counts = dict(Counter(C.RANKS[d["class"]] for d in new.detect_crop(crop)))
-            old_counts = dict(Counter(C.RANKS[d["class"]] for d in old.detect_crop(crop)))
+            old_counts = dict(Counter(C.RANKS[d["class"]] for d in old.detect_crop(crop))) if old is not None else {}
             rows.append(
                 {
                     "file": name,
@@ -490,7 +494,7 @@ def evaluate_screenshots(new: OnnxModel, old: OldModel) -> list[dict]:
                     "new": new_counts,
                     "new_ok": new_counts == expected,
                     "old": old_counts,
-                    "old_ok": old_counts == expected,
+                    "old_ok": old_counts == expected if old is not None else None,
                 }
             )
     return rows
@@ -499,6 +503,8 @@ def evaluate_screenshots(new: OnnxModel, old: OldModel) -> list[dict]:
 def summarize_screenshots(rows: list[dict]) -> dict:
     summary = {}
     for model in ("new", "old"):
+        if rows and rows[0][f"{model}_ok"] is None:
+            continue
         empty = [r for r in rows if not r["expected"]]
         with_cards = [r for r in rows if r["expected"]]
         summary[model] = {
@@ -512,7 +518,7 @@ def summarize_screenshots(rows: list[dict]) -> dict:
     return summary
 
 
-def evaluate_empty_play_zones(new: OnnxModel, old: OldModel, limit: int = 200) -> dict:
+def evaluate_empty_play_zones(new: OnnxModel, old: OldModel | None, limit: int = 200) -> dict:
     """False positives on real play-zone crops that contain no cards.
 
     A crop is "empty" when under 2% of its pixels look like card white, which is
@@ -543,7 +549,7 @@ def evaluate_empty_play_zones(new: OnnxModel, old: OldModel, limit: int = 200) -
                 if white >= 0.02:
                     continue
                 det_new = new.detect_crop(crop)
-                det_old = old.detect_crop(crop)
+                det_old = old.detect_crop(crop) if old is not None else []
                 crops += 1
                 per_video[C.clip_key(video)] += 1
                 if det_new:
@@ -552,7 +558,7 @@ def evaluate_empty_play_zones(new: OnnxModel, old: OldModel, limit: int = 200) -
                 if det_old:
                     old_crops_with_det += 1
                     old_hits.update(C.RANKS[d["class"]] for d in det_old)
-    return {
+    out = {
         "crops": crops,
         "per_video": dict(per_video),
         "new": {
@@ -560,17 +566,20 @@ def evaluate_empty_play_zones(new: OnnxModel, old: OldModel, limit: int = 200) -
             "detections": dict(new_hits),
             "ace_detections": new_hits["ACE"],
         },
-        "old": {
+    }
+    if old is not None:
+        out["old"] = {
             "crops_with_detection": old_crops_with_det,
             "detections": dict(old_hits),
             "ace_detections": old_hits["ACE"],
-        },
-    }
+        }
+    return out
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--onnx", default=str(C.ROOT / "models" / "poker_rank15_yolo11n_320.onnx"))
+    parser.add_argument("--no-old", action="store_true")
     args = parser.parse_args()
 
     onnx_path = Path(args.onnx)
@@ -578,19 +587,22 @@ def main() -> int:
         raise SystemExit(f"onnx not found: {onnx_path}")
 
     new = OnnxModel(onnx_path)
-    old = OldModel(O.OldDetector(threads=1))
+    use_old = (not args.no_old) and O.MODEL_PATH.is_file()
+    old = OldModel(O.OldDetector(threads=1)) if use_old else None
     details = {
         "new": {"tp": Counter(), "fp": Counter(), "fn": Counter()},
         "old": {"tp": Counter(), "fp": Counter(), "fn": Counter()},
     }
 
     per_clip, end_to_end = evaluate_hand_set(new, old, details)
-    pure = {"new": list(new.pure_ms), "old": list(old.pure_ms)}
+    pure = {"new": list(new.pure_ms), "old": list(old.pure_ms) if old is not None else []}
     new.pure_ms.clear()
-    old.pure_ms.clear()
+    if old is not None:
+        old.pure_ms.clear()
+    active_models = ("new", "old") if old is not None else ("new",)
     latency = {
         name: {"inference_only": latency_stats(pure[name]), "end_to_end": latency_stats(end_to_end[name])}
-        for name in ("new", "old")
+        for name in active_models
     }
     scored = sum(item["scored_frames"] for item in per_clip)
     hands = sum(1 for item in per_clip if item["scored_frames"] > 0)
@@ -612,7 +624,7 @@ def main() -> int:
             "per_clip": per_clip,
         },
         "new": {"per_class": metrics(details["new"]["tp"], details["new"]["fp"], details["new"]["fn"])},
-        "old": {"per_class": metrics(details["old"]["tp"], details["old"]["fp"], details["old"]["fn"])},
+        **({"old": {"per_class": metrics(details["old"]["tp"], details["old"]["fp"], details["old"]["fn"])}} if old is not None else {}),
         "latency_ms": latency,
         "latency_samples": len(end_to_end["new"]),
         "screenshots": shots,
@@ -625,24 +637,29 @@ def main() -> int:
           f"{scored} unique scored frames, {hands} independent hands")
     for item in per_clip:
         print("  ", item)
-    print(f"{'rank':12s} {'new P':>6s} {'new R':>6s} {'old P':>6s} {'old R':>6s}")
-    for new_row, old_row in zip(payload["new"]["per_class"], payload["old"]["per_class"]):
-        print(
-            f"{new_row['rank']:12s} {str(new_row['precision']):>6s} {str(new_row['recall']):>6s} "
-            f"{str(old_row['precision']):>6s} {str(old_row['recall']):>6s}"
-        )
+    if old is not None:
+        print(f"{'rank':12s} {'new P':>6s} {'new R':>6s} {'old P':>6s} {'old R':>6s}")
+        for new_row, old_row in zip(payload["new"]["per_class"], payload["old"]["per_class"]):
+            print(
+                f"{new_row['rank']:12s} {str(new_row['precision']):>6s} {str(new_row['recall']):>6s} "
+                f"{str(old_row['precision']):>6s} {str(old_row['recall']):>6s}"
+            )
+    else:
+        print(f"{'rank':12s} {'new P':>6s} {'new R':>6s}")
+        for new_row in payload["new"]["per_class"]:
+            print(f"{new_row['rank']:12s} {str(new_row['precision']):>6s} {str(new_row['recall']):>6s}")
     print(f"latency (ms, {len(end_to_end['new'])} identical hand samples):")
-    for name in ("new", "old"):
+    for name in active_models:
         print(f"  {name}: {latency[name]}")
     for row in shots:
         print(
             f"shot {row['file']:38s} {row['zone']:13s} expect {row['expected']} | "
-            f"new {row['new']} {'OK' if row['new_ok'] else 'WRONG'} | "
-            f"old {row['old']} {'OK' if row['old_ok'] else 'WRONG'}"
+            f"new {row['new']} {'OK' if row['new_ok'] else 'WRONG'}"
+            + (f" | old {row['old']} {'OK' if row['old_ok'] else 'WRONG'}" if old is not None else "")
         )
     print("screenshot summary:", shot_summary)
     print("empty play zones:", empty_zones["crops"], "crops; new:", empty_zones["new"],
-          "old:", empty_zones["old"])
+          ("old: " + str(empty_zones["old"])) if old is not None else "")
     return 0
 
 

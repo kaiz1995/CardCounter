@@ -20,7 +20,8 @@ import hashlib
 import cv2
 import numpy as np
 
-VISION_RULE_VERSION = "v3-5d6b86cacc34"
+MODEL_SHA256 = "27391b7d826db83d988a48825c36707e9fac852aa06c97a7019a204dcaa39203"
+VISION_RULE_VERSION = "v4-49c1fa4a2d34"
 
 CANVAS_W = 1280
 CANVAS_H = 578
@@ -442,8 +443,18 @@ def refine_narrow_left_joker(
     return out
 
 
+def model_sha256(repo_root: Path) -> str:
+    """计算 app/src/main/assets/poker_rank15_yolo11n_320.onnx 的 SHA-256。"""
+    model_path = repo_root / "app" / "src" / "main" / "assets" / "poker_rank15_yolo11n_320.onnx"
+    digest = hashlib.sha256()
+    with model_path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def compute_vision_rule_version(repo_root: Path) -> str:
-    """机械计算 RankDecoder.kt 与 phone_vision.py 视觉规则代码的 SHA-256 前 12 位版本标识。"""
+    """机械计算 RankDecoder.kt、phone_vision.py 与 ONNX 模型文件的 SHA-256 前 12 位版本标识。"""
     def normalized_slice(path: Path, marker: str) -> str:
         text = path.read_text(encoding="utf-8").replace("\r\n", "\n")
         start = text.index(marker)
@@ -458,16 +469,23 @@ def compute_vision_rule_version(repo_root: Path) -> str:
         repo_root / "tools" / "dataset" / "phone_vision.py",
         "CANVAS_W =",
     )
-    digest = hashlib.sha256(f"{rank_part}\n---\n{vision_part}".encode("utf-8")).hexdigest()[:12]
-    return f"v3-{digest}"
+    actual_model_sha = model_sha256(repo_root)
+    digest = hashlib.sha256(f"{rank_part}\n---\n{vision_part}\n---\n{actual_model_sha}".encode("utf-8")).hexdigest()[:12]
+    return f"v4-{digest}"
 
 
 def verify_vision_rule_version(repo_root: Path) -> str:
-    """校验当前声明的 VISION_RULE_VERSION 与代码内容哈希一致，防止改了规则却忘了升版本。"""
+    """校验当前声明的 MODEL_SHA256 与 VISION_RULE_VERSION 与磁盘模型和代码完全一致。"""
+    actual_model_sha = model_sha256(repo_root)
+    if MODEL_SHA256 != actual_model_sha:
+        raise RuntimeError(
+            f"ONNX 模型 SHA-256 与代码声明不一致：当前声明={MODEL_SHA256}，磁盘模型={actual_model_sha}，"
+            "请同步更新 RankDecoder.kt 与 phone_vision.py 的 MODEL_SHA256 和 VISION_RULE_VERSION"
+        )
     expected = compute_vision_rule_version(repo_root)
     if VISION_RULE_VERSION != expected:
         raise RuntimeError(
-            f"视觉规则版本与代码不一致：当前声明={VISION_RULE_VERSION}，代码计算={expected}，"
+            f"视觉规则版本与代码/模型不一致：当前声明={VISION_RULE_VERSION}，实际计算={expected}，"
             "请同步更新 RankDecoder.kt 与 phone_vision.py 的 VISION_RULE_VERSION"
         )
     return VISION_RULE_VERSION

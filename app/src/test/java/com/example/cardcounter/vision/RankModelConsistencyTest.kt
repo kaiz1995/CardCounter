@@ -54,6 +54,7 @@ class RankModelConsistencyTest {
     @Test
     fun modelAssetIsTheExpectedFile() {
         assertEquals(MODEL_SIZE, modelFile.length())
+        assertEquals(RankModelContract.MODEL_SHA256, MODEL_SHA256)
         val digest = MessageDigest.getInstance("SHA-256").digest(modelFile.readBytes())
         assertEquals(MODEL_SHA256, digest.joinToString("") { "%02x".format(it) })
     }
@@ -144,7 +145,7 @@ class RankModelConsistencyTest {
     }
 
     private companion object {
-        const val MODEL_SHA256 = "95f84f5e88d2190f42d189103bce047c605f402073a731a240de3d5a785ca444"
+        const val MODEL_SHA256 = "27391b7d826db83d988a48825c36707e9fac852aa06c97a7019a204dcaa39203"
         const val MODEL_SIZE = 10_450_050L
     }
 }
