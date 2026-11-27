@@ -45,6 +45,7 @@ import com.example.cardcounter.storage.DiagnosticsLog
 import com.example.cardcounter.storage.LedgerCommand
 import com.example.cardcounter.storage.SessionActor
 import com.example.cardcounter.vision.OnnxRankDetector
+import com.example.cardcounter.vision.Raster
 import com.example.cardcounter.vision.ScreenScale
 import com.example.cardcounter.vision.YoloDetection
 import java.util.UUID
@@ -52,6 +53,10 @@ import java.util.UUID
 /** MediaProjection 采集服务：取帧、手牌锁定、六区出牌识别并经 SessionActor 入账。W5 会把识别与状态机拆进 :core。 */
 class CaptureProbeService : Service() {
     private var projection: MediaProjection? = null
+    private var projectionCallback: MediaProjection.Callback? = null
+
+    /** 上一次写进日志的牌桌可见性；只在翻转时记一条 TABLE_VISIBLE_CHANGED。 */
+    private var lastLoggedTableVisible: Boolean? = null
     private var display: VirtualDisplay? = null
     private var reader: ImageReader? = null
     private val callbackThread = HandlerThread("capture-probe")
@@ -152,6 +157,9 @@ class CaptureProbeService : Service() {
     override fun onDestroy() {
         display?.release()
         reader?.close()
+        // 先摘掉回调：自己停投屏不能被当成“系统停止”而进入暂停态。
+        projectionCallback?.let { runCatching { projection?.unregisterCallback(it) } }
+        projectionCallback = null
         projection?.stop()
         display = null
         reader = null
@@ -192,6 +200,8 @@ class CaptureProbeService : Service() {
         }
         try {
             CaptureProbeStatus.started()
+            OverlayService.refresh(this)
+            lastLoggedTableVisible = null
             val manager = getSystemService(Context.MEDIA_PROJECTION_SERVICE)
                 as MediaProjectionManager
             projection = requireNotNull(manager.getMediaProjection(resultCode, data)) {
@@ -218,14 +228,19 @@ class CaptureProbeService : Service() {
             reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 3).also {
                 it.setOnImageAvailableListener(::onImageAvailable, callbackHandler)
             }
-            projection!!.registerCallback(object : MediaProjection.Callback() {
+            val callback = object : MediaProjection.Callback() {
                 override fun onStop() {
+                    if (destroyed) return
                     Log.w(TAG, "CAPTURE_STOPPED_BY_SYSTEM")
-                    // 用户从系统下拉栏停止投屏后已经没法记牌，悬浮窗和常驻通知一起收掉，不留停在旧数字上的记牌框。
-                    OverlayService.stop(this@CaptureProbeService)
+                    // 用户从系统下拉栏停止投屏后已经没法记牌：采集服务收掉，悬浮窗留着并进入“已暂停”，
+                    // 用户点“继续记牌”就能在游戏里重新授权，不用回主界面。
+                    CaptureProbeStatus.systemStopped()
+                    OverlayService.refresh(this@CaptureProbeService)
                     stopSelf()
                 }
-            }, callbackHandler)
+            }
+            projectionCallback = callback
+            projection!!.registerCallback(callback, callbackHandler)
             display = projection!!.createVirtualDisplay(
                 "CardCounterProbe",
                 width,
@@ -694,6 +709,18 @@ class CaptureProbeService : Service() {
         return HandFrames(area, canvas)
     }
 
+    /** tableVisible 翻转时记一条（不逐帧记）：命中数和每个探针点的 RGB，“+”判绿、“-”不绿。 */
+    private fun logTableVisibleFlip(raster: Raster, tableVisible: Boolean) {
+        if (lastLoggedTableVisible == tableVisible) return
+        lastLoggedTableVisible = tableVisible
+        val readings = tableProbeReadings(raster)
+        Log.i(
+            TAG,
+            "TABLE_VISIBLE_CHANGED visible=$tableVisible hits=${readings.count { it.green }}/${readings.size} " +
+                "need=$TABLE_GREEN_MIN_HITS probes=${readings.joinToString(" ") { it.describe() }}"
+        )
+    }
+
     /**
      * 截屏回调仅缓存小 ROI；牌面连续停稳后才推理。没停稳的一手在被新牌直接盖上、牌桌被挡住、
      * 清桌时也会交出推理（交出规则见 RoiPlayEventCache）。
@@ -701,6 +728,7 @@ class CaptureProbeService : Service() {
     private fun captureRoiEvents(image: Image) {
         val raster = image.toRaster()
         val tableVisible = isTableVisible(raster)
+        logTableVisibleFlip(raster, tableVisible)
         handProbeOnTable = tableVisible
         if (!tableVisible) {
             stableHandSamples = 0

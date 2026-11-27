@@ -14,6 +14,11 @@ class OverlayLayoutTest {
     private val width = OverlayLayout.DESIGN_WIDTH
     private val height = OverlayLayout.DESIGN_HEIGHT
 
+    private companion object {
+        /** 选中的牌上抬的最大像素（8385 录屏里约 20）。 */
+        const val SELECTED_CARD_LIFT_PX = 20
+    }
+
     @Test
     fun fiveSeatPanelsMatchFiveOutsideZonesAndDoNotCoverVisibilityBands() {
         val outsideZones = PlayZone.entries.filter { it.source == PlaySource.OUTSIDE }
@@ -166,6 +171,26 @@ class OverlayLayoutTest {
                     probe.overlaps(zoneRect)
                 )
             }
+        }
+    }
+
+    /**
+     * 牌桌绿布探针不许落在手牌带上：手牌摆开后牌面会一直压住探针点，命中数掉到阈值以下，
+     * 记牌面板就会被误收起（8385 录屏的老问题）。选中的牌会上抬约 [SELECTED_CARD_LIFT_PX] 像素，所以界线从手牌取图区顶边再往上留出这一截；
+     * 手牌亮度指纹取样区的顶边更高时以它为准。
+     */
+    @Test
+    fun tableGreenProbesStayAboveHandBand() {
+        val handTop = minOf(
+            HandRegions.yoloArea().top - SELECTED_CARD_LIFT_PX,
+            HandRegions.signatureArea(width, height).top
+        )
+        TABLE_GREEN_PROBES.forEach { (x, y) ->
+            assertTrue(
+                "牌桌绿布探针点 ($x, $y) 不在手牌带上方（要求 y < $handTop）：手牌摆开或选中的牌会压住它，" +
+                    "请把 TABLE_GREEN_PROBES 里这个点挪到牌桌上半部",
+                y < handTop
+            )
         }
     }
 

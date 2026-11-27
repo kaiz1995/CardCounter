@@ -19,6 +19,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.provider.Settings
 import android.util.DisplayMetrics
+import android.util.Log
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
@@ -31,13 +32,18 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.example.cardcounter.MainActivity
 import com.example.cardcounter.R
+import com.example.cardcounter.ResumeCaptureActivity
 import com.example.cardcounter.capture.CaptureProbeService
 import com.example.cardcounter.capture.CaptureProbeStatus
 import com.example.cardcounter.capture.OverlayProbeState
 import com.example.cardcounter.persistence.SessionRepository
 import com.example.cardcounter.ui.CounterOverlayView
 import com.example.cardcounter.ui.HoldNewGameButton
+import com.example.cardcounter.ui.IconTapAction
+import com.example.cardcounter.ui.LeaveTableTimer
+import com.example.cardcounter.ui.OverlayIconState
 import com.example.cardcounter.ui.OverlayLayout
+import com.example.cardcounter.ui.OverlayPanelState
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -49,21 +55,23 @@ class OverlayService : Service() {
     private var iconMenuView: LinearLayout? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    /** 面板展开/收起状态机（纯逻辑，见 OverlayPanelState）。 */
+    private val panel = OverlayPanelState()
+
     /** 离开牌桌后延迟约 3 秒收起，避免牌桌特效一闪就收。 */
-    private var effectiveOnTable = false
-    private var leaveTablePending = false
     private val leaveTableRunnable = Runnable {
-        leaveTablePending = false
-        effectiveOnTable = false
-        manualCollapsed = false
+        panel.onLeaveTableTimeout()
         renderAll()
     }
 
     /** 手牌锁定后 2 秒确认提示到点收起。 */
     private val bannerRefreshRunnable = Runnable { renderAll() }
 
-    /** 横屏在牌桌上时点击小图标手动收起/展开。 */
-    private var manualCollapsed = false
+    /** 小菜单左边的按钮：平时是“打开记牌器”，系统停掉截屏后是“继续记牌”。 */
+    private var menuPrimary: TextView? = null
+
+    /** 上一次渲染时是否处于“系统停止截屏”的暂停态，只在翻转时记日志。 */
+    private var lastPaused = false
 
     /** 点击小图标弹出的两项菜单是否可见。 */
     private var menuVisible = false
@@ -168,19 +176,23 @@ class OverlayService : Service() {
         val probe = OverlayProbeState.snapshot()
         val state = SessionRepository.get(this).state
 
-        if (mainForeground || !isLandscape || !captureRunning) {
-            cancelLeaveTableTimer()
-            effectiveOnTable = false
-            manualCollapsed = false
-        } else if (probe.tableVisible) {
-            cancelLeaveTableTimer()
-            if (!effectiveOnTable) {
-                effectiveOnTable = true
-                manualCollapsed = false
-            }
-        } else if (effectiveOnTable && !leaveTablePending) {
-            leaveTablePending = true
-            mainHandler.postDelayed(leaveTableRunnable, LEAVE_TABLE_DELAY_MS)
+        val capture = CaptureProbeStatus.snapshot()
+        val pausedBySystem = capture.pausedBySystem && !capture.running
+        if (pausedBySystem != lastPaused) {
+            lastPaused = pausedBySystem
+            Log.i(
+                TAG,
+                if (pausedBySystem) "OVERLAY_PAUSED reason=system_stop" else "OVERLAY_RESUMED captureRunning=${capture.running}"
+            )
+        }
+        when (panel.update(mainForeground, isLandscape, captureRunning, probe.tableVisible)) {
+            LeaveTableTimer.START -> mainHandler.postDelayed(leaveTableRunnable, LEAVE_TABLE_DELAY_MS)
+            LeaveTableTimer.CANCEL -> mainHandler.removeCallbacks(leaveTableRunnable)
+            LeaveTableTimer.NONE -> Unit
+        }
+        menuPrimary?.apply {
+            text = if (pausedBySystem) "继续记牌" else "打开记牌器"
+            setTextColor(if (pausedBySystem) Color.rgb(96, 200, 132) else Color.WHITE)
         }
 
         mainHandler.removeCallbacks(bannerRefreshRunnable)
@@ -208,7 +220,7 @@ class OverlayService : Service() {
             counterView.visibility = View.GONE
             holdButton.visibility = View.GONE
             icon.visibility = View.VISIBLE
-            updateIconAppearance(icon, expanded = false)
+            updateIconAppearance(icon, panel.iconState(false, captureRunning, pausedBySystem))
             if (!iconDragging) {
                 windowManager.updateViewLayout(icon, controlParams(iconPixelRect(config)))
             }
@@ -219,25 +231,18 @@ class OverlayService : Service() {
             return
         }
 
-        val showExpanded = effectiveOnTable && !manualCollapsed
+        val showExpanded = panel.showExpanded()
         counterView.render(state, probe, showConfirmedBanner)
         counterView.visibility = if (showExpanded) View.VISIBLE else View.GONE
         holdButton.visibility = if (showExpanded) View.VISIBLE else View.GONE
         icon.visibility = View.VISIBLE
-        updateIconAppearance(icon, expanded = showExpanded)
+        updateIconAppearance(icon, panel.iconState(true, captureRunning, pausedBySystem))
         if (!iconDragging) {
             windowManager.updateViewLayout(icon, controlParams(iconPixelRect(config)))
         }
         menu.visibility = if (menuVisible) View.VISIBLE else View.GONE
         if (menuVisible) {
             windowManager.updateViewLayout(menu, controlParams(menuPixelRect(config)))
-        }
-    }
-
-    private fun cancelLeaveTableTimer() {
-        if (leaveTablePending) {
-            leaveTablePending = false
-            mainHandler.removeCallbacks(leaveTableRunnable)
         }
     }
 
@@ -254,15 +259,17 @@ class OverlayService : Service() {
         }
     }
 
-    private fun updateIconAppearance(icon: TextView, expanded: Boolean) {
+    /** 描边色区分四种状态：展开=绿，自己手动收起=金，自动收起=蓝，系统停止截屏后暂停=红。 */
+    private fun updateIconAppearance(icon: TextView, state: OverlayIconState) {
         val drawable = icon.background as? GradientDrawable ?: return
-        drawable.setColor(
-            if (expanded) Color.argb(228, 42, 62, 48) else Color.argb(228, 30, 34, 38)
-        )
-        drawable.setStroke(
-            dp(2),
-            if (expanded) Color.rgb(96, 200, 132) else Color.rgb(212, 175, 95)
-        )
+        val (fill, stroke) = when (state) {
+            OverlayIconState.EXPANDED -> Color.argb(228, 42, 62, 48) to Color.rgb(96, 200, 132)
+            OverlayIconState.COLLAPSED -> Color.argb(228, 30, 34, 38) to Color.rgb(212, 175, 95)
+            OverlayIconState.COLLAPSED_AUTO -> Color.argb(228, 30, 40, 52) to Color.rgb(110, 170, 230)
+            OverlayIconState.PAUSED -> Color.argb(228, 58, 30, 32) to Color.rgb(230, 90, 90)
+        }
+        drawable.setColor(fill)
+        drawable.setStroke(dp(2), stroke)
     }
 
     private fun createIconMenuView(): LinearLayout = LinearLayout(this).apply {
@@ -277,13 +284,17 @@ class OverlayService : Service() {
         addView(menuButton("打开记牌器", Color.WHITE) {
             menuVisible = false
             renderAll()
-            val intent = Intent(this@OverlayService, MainActivity::class.java).addFlags(
-                Intent.FLAG_ACTIVITY_NEW_TASK or
-                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                    Intent.FLAG_ACTIVITY_CLEAR_TOP
-            )
-            startActivity(intent)
-        })
+            if (isPausedBySystem()) {
+                resumeCapture()
+            } else {
+                val intent = Intent(this@OverlayService, MainActivity::class.java).addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP
+                )
+                startActivity(intent)
+            }
+        }.also { menuPrimary = it })
         addView(View(context).apply {
             setBackgroundColor(Color.rgb(65, 70, 76))
             layoutParams = LinearLayout.LayoutParams(dp(1), LinearLayout.LayoutParams.MATCH_PARENT).apply {
@@ -316,7 +327,7 @@ class OverlayService : Service() {
         var startY = 0
         var longPressed = false
         val longPressRunnable = Runnable {
-            if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE && effectiveOnTable) {
+            if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
                 longPressed = true
                 view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
                 menuVisible = !menuVisible
@@ -338,7 +349,7 @@ class OverlayService : Service() {
                     startY = currentRect.top
                     iconDragging = false
                     longPressed = false
-                    if (isLandscape && effectiveOnTable) {
+                    if (isLandscape) {
                         mainHandler.postDelayed(
                             longPressRunnable,
                             ViewConfiguration.getLongPressTimeout().toLong()
@@ -403,13 +414,20 @@ class OverlayService : Service() {
     }
 
     private fun onIconTap(isLandscape: Boolean) {
-        if (isLandscape && effectiveOnTable) {
-            manualCollapsed = !manualCollapsed
-            menuVisible = false
-        } else {
-            menuVisible = !menuVisible
+        when (panel.onIconTap(isLandscape, CaptureProbeStatus.snapshot().running)) {
+            IconTapAction.PANEL_CHANGED -> menuVisible = false
+            IconTapAction.TOGGLE_MENU -> menuVisible = !menuVisible
         }
         renderAll()
+    }
+
+    private fun isPausedBySystem(): Boolean =
+        CaptureProbeStatus.snapshot().let { it.pausedBySystem && !it.running }
+
+    /** 从悬浮窗打开透明授权页补发截屏授权，用户留在游戏里。 */
+    private fun resumeCapture() {
+        Log.i(TAG, "OVERLAY_RESUME_REQUESTED")
+        ResumeCaptureActivity.launch(this)
     }
 
     private fun screenSize(): Pair<Int, Int> {
@@ -546,6 +564,7 @@ class OverlayService : Service() {
         private const val CHANNEL_ID = "card_counter_overlay"
         private const val NOTIFICATION_ID = 1001
         private const val LEAVE_TABLE_DELAY_MS = 3_000L
+        private const val TAG = "OverlayService"
         private const val CONFIRMED_BANNER_MS = 2_000L
         private const val PORTRAIT_EDGE_MARGIN_DP = 6
         private const val PORTRAIT_VERTICAL_MARGIN_DP = 36
@@ -570,10 +589,12 @@ class OverlayService : Service() {
         /**
          * 停掉悬浮窗服务。先把 [isRunning] 置 false、断开状态回调，再停服务：服务真正销毁前，
          * 识别线程或回调线程调 [refresh] 就不会再发启动请求，把刚停掉的悬浮窗和常驻通知重新拉起来。
-         * 所有停悬浮窗的入口（主界面、小图标菜单、截屏被系统停止）都走这里。
+         * 所有停悬浮窗的入口（主界面、小图标菜单）都走这里，并清掉“系统停止截屏”的暂停标记；
+         * 截屏被系统停止时不走这里：悬浮窗留着并进入暂停态，由用户点“继续记牌”恢复。
          */
         fun stop(context: Context) {
             isRunning = false
+            CaptureProbeStatus.clearPause()
             OverlayProbeState.onChange = null
             context.stopService(Intent(context, OverlayService::class.java))
         }
