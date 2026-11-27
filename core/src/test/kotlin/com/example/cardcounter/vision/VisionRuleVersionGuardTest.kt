@@ -31,23 +31,43 @@ class VisionRuleVersionGuardTest {
         val root = repoRoot()
         val rankPath = root.resolve("core/src/main/kotlin/com/example/cardcounter/vision/RankDecoder.kt")
         val visionPath = root.resolve("tools/dataset/phone_vision.py")
+        val modelPath = root.resolve("app/src/main/assets/poker_rank15_yolo11n_320.onnx")
+
+        val actualModelSha = MessageDigest.getInstance("SHA-256")
+            .digest(Files.readAllBytes(modelPath))
+            .joinToString("") { "%02x".format(it) }
+        assertEquals(
+            "ONNX 模型文件已更新，请同步更新 RankModelContract.MODEL_SHA256 与 VISION_RULE_VERSION 并重跑全部 dev+tuning 观察",
+            actualModelSha,
+            RankModelContract.MODEL_SHA256
+        )
 
         val payload = normalizedSlice(rankPath, "object RankModelContract") +
             "\n---\n" +
-            normalizedSlice(visionPath, "CANVAS_W =")
+            normalizedSlice(visionPath, "CANVAS_W =") +
+            "\n---\n" +
+            actualModelSha
         val digest = MessageDigest.getInstance("SHA-256")
             .digest(payload.toByteArray(StandardCharsets.UTF_8))
             .joinToString("") { "%02x".format(it) }
             .substring(0, 12)
-        val expected = "v3-$digest"
+        val expected = "v4-$digest"
 
         assertEquals(
-            "RankDecoder.kt 或 phone_vision.py 的视觉规则已改，请更新 RankModelContract.VISION_RULE_VERSION 为 $expected 并重跑全部 dev+tuning 观察",
+            "RankDecoder.kt、phone_vision.py 或 ONNX 模型已改，请更新 RankModelContract.VISION_RULE_VERSION 为 $expected 并重跑全部 dev+tuning 观察",
             expected,
             RankModelContract.VISION_RULE_VERSION
         )
 
         val pyText = Files.readString(visionPath, StandardCharsets.UTF_8)
+        val shaMatch = Regex("""MODEL_SHA256\s*=\s*"([^"]+)"""").find(pyText)
+            ?: error("tools/dataset/phone_vision.py 缺少 MODEL_SHA256")
+        assertEquals(
+            "tools/dataset/phone_vision.py 的 MODEL_SHA256 与 Kotlin 不一致",
+            RankModelContract.MODEL_SHA256,
+            shaMatch.groupValues[1]
+        )
+
         val match = Regex("""VISION_RULE_VERSION\s*=\s*"([^"]+)"""").find(pyText)
             ?: error("tools/dataset/phone_vision.py 缺少 VISION_RULE_VERSION")
         assertEquals(

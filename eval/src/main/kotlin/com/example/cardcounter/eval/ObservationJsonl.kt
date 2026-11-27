@@ -12,19 +12,23 @@ import org.json.JSONObject
 import java.util.Base64
 
 /**
- * 逐帧观察 JSONL：首行必须是元数据对象 `{"_meta":true,"vision_rule_version":"..."}`，
+ * 逐帧观察 JSONL：首行必须是元数据对象 `{"_meta":true,"vision_rule_version":"...","model_sha256":"..."}`，
  * 之后每行一个 FrameObservation，格式见 DATA-FORMATS 第 5 节。
  * 行间不保证按时间排序，回放前由调用方排序。
  * 字段类型严格校验：不接受字符串布尔、浮点时间戳、NaN，也不接受一行里拼两个对象；
- * 视觉规则版本缺失或与 [RankModelContract.VISION_RULE_VERSION] 不一致时直接报错退出。
+ * 视觉规则版本或模型 SHA-256 缺失、与 [RankModelContract] 不一致时直接报错退出。
  */
 object ObservationJsonl {
     const val META_KEY = "_meta"
     const val VERSION_KEY = "vision_rule_version"
-    const val VERSION_MISMATCH_MESSAGE = "视觉规则已改，请用 onnx_detect.py 全量重新生成 dev+tuning 观察"
+    const val MODEL_SHA256_KEY = "model_sha256"
+    const val VERSION_MISMATCH_MESSAGE = "视觉规则或模型已改，请用 onnx_detect.py 全量重新生成 dev+tuning 观察"
 
-    fun metaLine(version: String = RankModelContract.VISION_RULE_VERSION): String =
-        """{"$META_KEY":true,"$VERSION_KEY":"$version"}"""
+    fun metaLine(
+        version: String = RankModelContract.VISION_RULE_VERSION,
+        modelSha256: String = RankModelContract.MODEL_SHA256
+    ): String =
+        """{"$META_KEY":true,"$VERSION_KEY":"$version","$MODEL_SHA256_KEY":"$modelSha256"}"""
 
     fun parse(text: String, source: String = "obs.jsonl"): List<FrameObservation> {
         val errors = mutableListOf<String>()
@@ -36,10 +40,11 @@ object ObservationJsonl {
             val line = index + 1
             if (!metaChecked) {
                 metaChecked = true
-                val metaVersion = readMetaVersion(raw)
-                if (metaVersion != RankModelContract.VISION_RULE_VERSION) {
+                val (metaVersion, metaModelSha) = readMeta(raw)
+                if (metaVersion != RankModelContract.VISION_RULE_VERSION || metaModelSha != RankModelContract.MODEL_SHA256) {
                     throw DataFormatException(
-                        "$source: $VERSION_MISMATCH_MESSAGE（观察版本=${metaVersion ?: "缺失"}，当前代码版本=${RankModelContract.VISION_RULE_VERSION}）"
+                        "$source: $VERSION_MISMATCH_MESSAGE（观察版本=${metaVersion ?: "缺失"}, 模型=${metaModelSha ?: "缺失"}；" +
+                            "当前代码版本=${RankModelContract.VISION_RULE_VERSION}, 模型=${RankModelContract.MODEL_SHA256}）"
                     )
                 }
                 continue
@@ -53,17 +58,20 @@ object ObservationJsonl {
         }
         if (!metaChecked) {
             throw DataFormatException(
-                "$source: $VERSION_MISMATCH_MESSAGE（观察版本=缺失，当前代码版本=${RankModelContract.VISION_RULE_VERSION}）"
+                "$source: $VERSION_MISMATCH_MESSAGE（观察版本=缺失, 模型=缺失；" +
+                    "当前代码版本=${RankModelContract.VISION_RULE_VERSION}, 模型=${RankModelContract.MODEL_SHA256}）"
             )
         }
         if (errors.isNotEmpty()) fail(errors, source)
         return frames
     }
 
-    private fun readMetaVersion(raw: String): String? {
-        val json = runCatching { JsonFields.parseObject(raw) }.getOrNull() ?: return null
-        if (json.opt(META_KEY) != true) return null
-        return runCatching { JsonFields.string(json, VERSION_KEY) }.getOrNull()
+    private fun readMeta(raw: String): Pair<String?, String?> {
+        val json = runCatching { JsonFields.parseObject(raw) }.getOrNull() ?: return null to null
+        if (json.opt(META_KEY) != true) return null to null
+        val version = runCatching { JsonFields.string(json, VERSION_KEY) }.getOrNull()
+        val modelSha = runCatching { JsonFields.string(json, MODEL_SHA256_KEY) }.getOrNull()
+        return version to modelSha
     }
 
     fun parseLine(raw: String): FrameObservation {

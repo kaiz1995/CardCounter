@@ -6,8 +6,11 @@ import com.example.cardcounter.domain.Rank
 object RankModelContract {
     const val INPUT_SIZE = 320
 
-    /** 视觉后处理规则版本标识（由 VisionRuleVersionGuardTest 机械校验 RankDecoder.kt 与 phone_vision.py 内容哈希一致）。 */
-    const val VISION_RULE_VERSION = "v3-5d6b86cacc34"
+    /** 当前打包模型（app/src/main/assets/poker_rank15_yolo11n_320.onnx）的 SHA-256。 */
+    const val MODEL_SHA256 = "d206890df69e44673e8392f90e1211fdc5a66fe45f864840fff62e4bd5df5bf3"
+
+    /** 视觉后处理规则与模型版本标识（由 VisionRuleVersionGuardTest 机械校验代码与 ONNX 模型 SHA-256 一致）。 */
+    const val VISION_RULE_VERSION = "v4-1c5edc6dc66c"
 
     /** 类别号 = Rank.entries 的顺序（0 BIG_JOKER … 14 THREE）。 */
     const val CLASS_COUNT = 15

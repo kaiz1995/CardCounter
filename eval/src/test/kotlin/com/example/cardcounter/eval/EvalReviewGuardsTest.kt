@@ -334,6 +334,16 @@ class EvalReviewGuardsTest {
         val (mismatchCode, mismatchText) = cli(root)
         assertEquals(1, mismatchCode)
         assertTrue(mismatchText, mismatchText.contains(ObservationJsonl.VERSION_MISMATCH_MESSAGE))
+
+        Files.writeString(
+            obsFile,
+            "${ObservationJsonl.metaLine(modelSha256 = "stale-model-sha")}\n{\"ts_ms\":0,\"table_visible\":true,\"zones\":{}}\n",
+            StandardCharsets.UTF_8
+        )
+        val (modelMismatchCode, modelMismatchText) = cli(root)
+        assertEquals(1, modelMismatchCode)
+        assertTrue(modelMismatchText, modelMismatchText.contains(ObservationJsonl.VERSION_MISMATCH_MESSAGE))
+        assertTrue(modelMismatchText, modelMismatchText.contains("stale-model-sha"))
     }
 
     // ---- 真值 CSV ----

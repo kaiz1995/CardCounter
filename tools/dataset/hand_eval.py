@@ -203,7 +203,11 @@ class HandGameRunner:
             self.obs_tmp_path = obs_path.with_suffix(".jsonl.tmp")
             self.obs_handle = self.obs_tmp_path.open("w", encoding="utf-8", newline="\n")
             self.obs_handle.write(
-                json.dumps({"_meta": True, "vision_rule_version": vision_rule_version}, ensure_ascii=False, separators=(",", ":"))
+                json.dumps(
+                    {"_meta": True, "vision_rule_version": vision_rule_version, "model_sha256": pv.MODEL_SHA256},
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
                 + "\n"
             )
 
@@ -474,17 +478,24 @@ class HandGameRunner:
 
 
 def load_obs_checked(path: Path, expected_version: str) -> list[dict]:
-    """读取观察 JSONL，强校验首行 _meta.vision_rule_version，与 ObservationJsonl.kt 同口径。"""
+    """读取观察 JSONL，强校验首行 _meta.vision_rule_version 与 model_sha256，与 ObservationJsonl.kt 同口径。"""
     if not path.is_file():
         raise SystemExit(f"找不到观察文件: {path}")
     lines = [ln for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
     if not lines:
         raise SystemExit(f"{path}: 观察文件为空，缺少 vision_rule_version")
     first = json.loads(lines[0])
-    if not isinstance(first, dict) or first.get("_meta") is not True or first.get("vision_rule_version") != expected_version:
-        got = first.get("vision_rule_version") if isinstance(first, dict) else None
+    if (
+        not isinstance(first, dict)
+        or first.get("_meta") is not True
+        or first.get("vision_rule_version") != expected_version
+        or first.get("model_sha256") != pv.MODEL_SHA256
+    ):
+        got_v = first.get("vision_rule_version") if isinstance(first, dict) else None
+        got_m = first.get("model_sha256") if isinstance(first, dict) else None
         raise SystemExit(
-            f"{path}: 视觉规则版本不一致（观察={got or '缺失'}，当前={expected_version}），请重跑 hand_eval.py（不加 --from-obs）"
+            f"{path}: 视觉规则或模型不一致（观察={got_v or '缺失'}/{got_m or '缺失'}，"
+            f"当前={expected_version}/{pv.MODEL_SHA256}），请重跑 hand_eval.py（不加 --from-obs）"
         )
     return [json.loads(ln) for ln in lines[1:]]
 

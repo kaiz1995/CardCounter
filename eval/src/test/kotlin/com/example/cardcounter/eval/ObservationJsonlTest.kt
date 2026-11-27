@@ -113,6 +113,17 @@ class ObservationJsonlTest {
         assertTrue(staleErr is DataFormatException)
         assertTrue(staleErr!!.message.orEmpty().contains(ObservationJsonl.VERSION_MISMATCH_MESSAGE))
         assertTrue(staleErr.message.orEmpty().contains("v2-stale"))
+
+        val staleModel = "${ObservationJsonl.metaLine(modelSha256 = "0000oldmodel")}\n$missing"
+        val staleModelErr = runCatching { ObservationJsonl.parse(staleModel) }.exceptionOrNull()
+        assertTrue(staleModelErr is DataFormatException)
+        assertTrue(staleModelErr!!.message.orEmpty().contains(ObservationJsonl.VERSION_MISMATCH_MESSAGE))
+        assertTrue(staleModelErr.message.orEmpty().contains("0000oldmodel"))
+
+        val legacyMetaNoModel = """{"_meta":true,"vision_rule_version":"${com.example.cardcounter.vision.RankModelContract.VISION_RULE_VERSION}"}""" + "\n$missing"
+        val legacyErr = runCatching { ObservationJsonl.parse(legacyMetaNoModel) }.exceptionOrNull()
+        assertTrue(legacyErr is DataFormatException)
+        assertTrue(legacyErr!!.message.orEmpty().contains(ObservationJsonl.VERSION_MISMATCH_MESSAGE))
     }
 
     @Test

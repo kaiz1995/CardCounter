@@ -138,7 +138,7 @@ class GameSampler:
         self.handle = self.tmp_path.open("w", encoding="utf-8", newline="\n")
         self.handle.write(
             json.dumps(
-                {"_meta": True, "vision_rule_version": vision_rule_version},
+                {"_meta": True, "vision_rule_version": vision_rule_version, "model_sha256": pv.MODEL_SHA256},
                 ensure_ascii=False,
                 separators=(",", ":"),
             )
