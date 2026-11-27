@@ -7,10 +7,10 @@ object RankModelContract {
     const val INPUT_SIZE = 320
 
     /** 当前打包模型（app/src/main/assets/poker_rank15_yolo11n_320.onnx）的 SHA-256。 */
-    const val MODEL_SHA256 = "f330379a5468ae300276c693da7e3146c516276ccd8a2627ea20ce7b7de2d5f6"
+    const val MODEL_SHA256 = "4bca34678b569d806227431a3c7252c64c9e13a58cfbf2bb0fc6209ffcd2630a"
 
     /** 视觉后处理规则与模型版本标识（由 VisionRuleVersionGuardTest 机械校验代码与 ONNX 模型 SHA-256 一致）。 */
-    const val VISION_RULE_VERSION = "v4-037e56d4b60d"
+    const val VISION_RULE_VERSION = "v4-a6531e1d39c6"
 
     /** 类别号 = Rank.entries 的顺序（0 BIG_JOKER … 14 THREE）。 */
     const val CLASS_COUNT = 15
