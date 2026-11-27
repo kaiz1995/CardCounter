@@ -9,7 +9,7 @@ import com.example.cardcounter.vision.YoloDetection
 data class HandReading(
     val cards: RankCounts,
     val positionCount: Int?,
-    val structureValid: Boolean = true
+    val structureValid: Boolean
 )
 
 /** 锁进账本的手牌：点数向量和数出来的张数。合格的手牌张数一定数出来了，所以不会是 null。 */
@@ -84,8 +84,8 @@ class HandAutoLock(private val stableFrames: Int = STABLE_FRAMES) {
         if (!isQualified(reading)) {
             if (current != null &&
                 reading.positionCount != null &&
-                reading.cards.total() == reading.positionCount &&
-                !reading.cards.fitsWithin(current.cards)
+                (!reading.cards.fitsWithin(current.cards) ||
+                    (!selfCardVisible && reading.positionCount != current.handCount))
             ) {
                 qualified = null
             }

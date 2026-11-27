@@ -342,7 +342,7 @@ class CaptureProbeService : Service() {
                                 val reading = if (merge != null) {
                                     HandLockGuard.buildReading(cards, merge.slotDetections, votedRows)
                                 } else {
-                                    HandReading(cards, votedPosition)
+                                    HandReading(cards, votedPosition, structureValid = false)
                                 }
                                 handAreaKept = publishHandProbe(
                                     revision, reading,
@@ -572,7 +572,7 @@ class CaptureProbeService : Service() {
                 val metadata = handAutoLockEvidenceJson(
                     reason = HAND_CONFIRM_FAILED,
                     timeMs = SystemClock.elapsedRealtime(),
-                    latest = HandReading(data.cards, data.handCount),
+                    latest = HandReading(data.cards, data.handCount, structureValid = true),
                     topRowCount = frozenProbe?.rows?.first,
                     bottomRowCount = frozenProbe?.rows?.second,
                     model = frozenProbe?.model,

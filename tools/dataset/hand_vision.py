@@ -483,14 +483,14 @@ def is_structure_valid(
 class HandReading:
     cards: tuple[tuple[str, int], ...]  # 按 RANK_ORDER 的不可变表示，便于相等比较
     position_count: int | None
-    structure_valid: bool = True
+    structure_valid: bool
 
     @classmethod
     def from_dict(
         cls,
         cards: dict[str, int],
         position_count: int | None,
-        structure_valid: bool = True,
+        structure_valid: bool,
     ) -> "HandReading":
         return cls(tuple((r, cards.get(r, 0)) for r in ds.RANK_ORDER), position_count, structure_valid)
 
@@ -530,8 +530,10 @@ class HandAutoLock:
             if (
                 self.qualified is not None
                 and reading.position_count is not None
-                and counts_total(cards_dict) == reading.position_count
-                and not fits_within(cards_dict, self.qualified[0])
+                and (
+                    not fits_within(cards_dict, self.qualified[0])
+                    or (not self_card_visible and reading.position_count != self.qualified[1])
+                )
             ):
                 self.qualified = None
                 self.qualified_at_ms = None
