@@ -128,8 +128,9 @@ def check_align_list(
     forbidden: dict[str, str],
     problems: list[str],
 ) -> tuple[int, Counter]:
-    synth_dir = norm(C.SYNTH_DIR / "dataset" / "images" / "train")
-    real_dir = norm(C.SYNTH_DIR / "real_hand" / "images")
+    synth_root = path.parent.parent
+    synth_dir = norm(synth_root / "dataset" / "images" / "train")
+    real_dir = norm(synth_root / "real_hand" / "images")
     synthetic, real = 0, Counter()
     for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
@@ -149,9 +150,9 @@ def check_align_list(
     return synthetic, real
 
 
-def check_data_yaml(problems: list[str]) -> None:
-    dataset = C.SYNTH_DIR / "dataset"
-    align = C.SYNTH_DIR / "dataset_align"
+def check_data_yaml(synth_root: Path, problems: list[str]) -> None:
+    dataset = synth_root / "dataset"
+    align = synth_root / "dataset_align"
     expected = {
         dataset / "data.yaml": {"path": dataset, "train": dataset / "images" / "train", "val": dataset / "images" / "val"},
         align / "data.yaml": {"path": align, "train": align / "train_list.txt", "val": dataset / "images" / "val"},
@@ -207,7 +208,7 @@ def run_check(root: Path = C.DATA_ROOT) -> tuple[int, str]:
     synthetic, found["align list (real)"] = check_align_list(
         root / "synth" / "dataset_align" / "train_list.txt", allowed, forbidden, problems
     )
-    check_data_yaml(problems)
+    check_data_yaml(root / "synth", problems)
 
     report: list[str] = []
     for kind, counter in found.items():
