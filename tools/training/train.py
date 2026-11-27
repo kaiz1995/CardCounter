@@ -141,8 +141,8 @@ def main() -> int:
             name="stage_b",
             weights=args.weights or str(RUNS / "train" / "stage_a" / "weights" / "best.pt"),
             batch=args.batch,
-            patience=max(3, args.epochs // 4),
-            lr0=0.002,
+            patience=max(6, args.epochs // 2),
+            lr0=0.0012,
             workers=args.workers,
         )
     C.save_json(RUNS / f"{args.stage}_result.json", result)

@@ -97,6 +97,8 @@ class CaptureProbeService : Service() {
     @Volatile private var handLocked = false
     /** 当前是否横屏且牌桌可见：手牌识别只在这时跑，竖屏、大厅、结算画面不识别。 */
     @Volatile private var handProbeOnTable = false
+    /** 最近一次 50ms 采样时自己出牌区（SELF）是否摆着牌，用于区分“还贡变少”与“自己首出变少”。 */
+    @Volatile private var selfCardOnTable = false
     /** 上一帧是否处于横屏：用于仅在由横转竖那一刻重置出牌区信号，避免把竖屏时长算成空桌。 */
     private var wasLandscape = false
     /** 中途打开：本局不记，等下一局；新局重置时清掉。 */
@@ -296,6 +298,7 @@ class CaptureProbeService : Service() {
                         val yoloFrame = frames.canvas.also { handYoloFrame = it }
                         val revision = handRevision
                         val scene = handScene
+                        val selfCardVisible = handProbeOnTable && selfCardOnTable
                         posted = rankHandler.post {
                             var handAreaKept = false
                             try {
@@ -303,7 +306,19 @@ class CaptureProbeService : Service() {
                                 val rowCounts = handCardPositionDetector.rowCounts(luma)
                                 val validRows = handCardPositionDetector.validRowCounts(rowCounts)
                                 val positionCount = validRows?.let { it.first + it.second }
-                                val yoloCards = yoloFrame?.let(::detectYoloCards)
+                                val rawYoloCards = yoloFrame?.let(::detectYoloCards)
+                                val yoloCards = rawYoloCards?.let { cardsResult ->
+                                    val kept = HandLockGuard.filterHandDetections(cardsResult.detections)
+                                    if (kept.size == cardsResult.detections.size) cardsResult
+                                    else {
+                                        val counts = Rank.entries.associateWith { r -> kept.count { it.rank == r } }
+                                        cardsResult.copy(
+                                            cards = RankCounts.of(counts),
+                                            minimumConfidence = kept.minOfOrNull { it.confidence } ?: 0f,
+                                            detections = kept
+                                        )
+                                    }
+                                }
                                 // 模型已加载但这一帧出错或 0 个框：本帧不进合并、不刷新结果，也不拿模板顶替。
                                 val usable = yoloCards?.takeIf { it.detections.isNotEmpty() }
                                 // 手牌画面停稳期间把每一帧的检测框累积起来：把握度低的牌时有时无，只取最新一帧会漏牌。
@@ -326,7 +341,8 @@ class CaptureProbeService : Service() {
                                 }
                                 handAreaKept = publishHandProbe(
                                     revision, reading,
-                                    HandProbe(area, rowCounts, merge?.merged, merge?.slotDetections.orEmpty(), templateCards)
+                                    HandProbe(area, rowCounts, merge?.merged, merge?.slotDetections.orEmpty(), templateCards),
+                                    selfCardVisible
                                 )
                                 if (!handAreaKept) return@post
                                 Log.i(
@@ -622,9 +638,9 @@ class CaptureProbeService : Service() {
      * 新局重置也拿这把锁，上一局的结果就写不进新局。写回了返回 true（截图归 handProbe 管）。
      */
     @Synchronized
-    private fun publishHandProbe(revision: Long, reading: HandReading, probe: HandProbe): Boolean {
+    private fun publishHandProbe(revision: Long, reading: HandReading, probe: HandProbe, selfCardVisible: Boolean): Boolean {
         if (destroyed || revision != handRevision || handLocked || sessionLedger.state.handConfirmed) return false
-        handAutoLock.observe(reading)
+        handAutoLock.observe(reading, selfCardVisible)
         replaceHandProbe(probe)
         val latestCards = handAutoLock.latest()?.cards
         OverlayProbeState.update { it.copy(latestHandCards = latestCards) }
@@ -636,6 +652,7 @@ class CaptureProbeService : Service() {
     private fun resetHandProbe(alreadyLocked: Boolean) {
         handRevision += 1
         handLocked = alreadyLocked
+        selfCardOnTable = false
         handAutoLock.reset()
         // 上一局的手牌截图不能留给新局当证据，也别一直占着内存。
         replaceHandProbe(null)
@@ -683,6 +700,7 @@ class CaptureProbeService : Service() {
         if (!tableVisible) {
             stableHandSamples = 0
             lastHandSignature = null
+            selfCardOnTable = false
         }
         OverlayProbeState.update { it.copy(tableVisible = tableVisible) }
         if (gameSkipped) return
@@ -699,6 +717,7 @@ class CaptureProbeService : Service() {
         if (!takeSample) return
         lastRoiSampleAt = now
         val zoneStates = if (tableVisible) playZoneStates(raster) else emptyMap()
+        selfCardOnTable = tableVisible && zoneStates[PlayZone.SELF] == ZoneVisibility.CARD
         val ledger = sessionLedger.state
         when (midGameOpenDetector.observe(ledger.handConfirmed, ledger.outsidePlayedCount, tableVisible, zoneStates)) {
             MidGameCheckResult.PENDING -> Unit

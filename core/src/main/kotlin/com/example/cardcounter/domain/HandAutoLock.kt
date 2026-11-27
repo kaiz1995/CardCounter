@@ -21,8 +21,14 @@ data class HandConfirmData(val cards: RankCounts, val handCount: Int)
  * 2. 扇形单调不增：上排从左到右接下排从左到右，点数按 [Rank] 从大到小（ordinal 单调不减）。
  */
 object HandLockGuard {
+    /** 320×320 手牌画布中上排顶外缘下限：手牌真实框中心均 ≥211.9，按钮/倒计时误检集中在 ≤204.2。 */
+    const val MIN_HAND_CENTER_Y = 207f
+
     /** 320×320 手牌画布中上下两排的纵向分界线（上排 ≤224，下排（含选中弹起牌）≥234）。 */
     const val ROW_SPLIT_Y = 229f
+
+    fun filterHandDetections(detections: List<YoloDetection>): List<YoloDetection> =
+        detections.filter { it.centerY >= MIN_HAND_CENTER_Y }
 
     fun isStructureValid(detections: List<YoloDetection>, votedRows: Pair<Int, Int>?): Boolean {
         val (expectedTop, expectedBottom) = votedRows ?: return false
@@ -67,9 +73,9 @@ class HandAutoLock(private val stableFrames: Int = STABLE_FRAMES) {
     private var qualified: HandConfirmData? = null
     private var locked = false
 
-    /** 收一次识别结果；已锁定后忽略。 */
+    /** 收一次识别结果；已锁定后忽略。[selfCardVisible] 表示抓这一帧时自己面前的出牌区（SELF）正摆着牌。 */
     @Synchronized
-    fun observe(reading: HandReading) {
+    fun observe(reading: HandReading, selfCardVisible: Boolean = false) {
         if (locked) return
         streak = if (reading == latest) streak + 1 else 1
         latest = reading
@@ -86,7 +92,11 @@ class HandAutoLock(private val stableFrames: Int = STABLE_FRAMES) {
             return
         }
         val position = reading.positionCount ?: return
-        val playedAway = current != null && reading.cards != current.cards && reading.cards.fitsWithin(current.cards)
+        // 只有自己桌面此时正摆着已出之牌，新合格手牌变成真子集才是“已经首出变少”；桌面空空的变少是还贡回归。
+        val playedAway = selfCardVisible &&
+            current != null &&
+            reading.cards != current.cards &&
+            reading.cards.fitsWithin(current.cards)
         if (!playedAway) qualified = HandConfirmData(reading.cards, position)
     }
 

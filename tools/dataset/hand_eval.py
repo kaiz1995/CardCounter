@@ -193,6 +193,7 @@ class HandGameRunner:
         self.table_visible_frames = 0
         self.total_frames = 0
         self.last_reading_dict: dict | None = None
+        self.self_card_on_table = False
 
         self.obs_handle = None
         self.obs_tmp_path = None
@@ -225,8 +226,14 @@ class HandGameRunner:
             self.stable_hand_samples = 0
             self.last_hand_sig = None
 
+        if not table_vis:
+            self.self_card_on_table = False
+
         if not self.gate_tracker.mid_skipped and (ts_ms - self.last_roi_sample_at >= hv.ROI_SAMPLE_INTERVAL_MS):
             self.last_roi_sample_at = ts_ms
+            self.self_card_on_table = table_vis and (
+                pv.zone_visibility(screen, pv.SPEC_BY_NAME["SELF"]) == pv.CARD
+            )
             opened_now = self.gate_tracker.observe_50ms(screen, ts_ms)
             roi_event = {
                 "table_visible": table_vis,
@@ -266,10 +273,12 @@ class HandGameRunner:
             self.last_rank_probe_at = ts_ms
             pos_rows, pos_count = hv.detect_hand_positions(bgr)
             dets = hv.detect_hand_boxes(detector, screen)
+            self_card_visible = table_vis and self.self_card_on_table
             probe_obs = {
                 "scene": self.hand_scene,
                 "pos_rows": [pos_rows[0], pos_rows[1]],
                 "pos_count": pos_count,
+                "self_card_visible": self_card_visible,
                 "dets": [
                     {
                         "rank": ds.RANK_ORDER[c],
@@ -285,7 +294,7 @@ class HandGameRunner:
             if hand_event is None:
                 hand_event = {}
             hand_event["probe"] = probe_obs
-            self._apply_probe(ts_ms, self.hand_scene, pos_rows, pos_count, dets)
+            self._apply_probe(ts_ms, self.hand_scene, pos_rows, pos_count, dets, self_card_visible)
 
         if roi_event is not None or hand_event is not None:
             self._write_obs(ts_ms, roi=roi_event, hand=hand_event)
@@ -308,12 +317,19 @@ class HandGameRunner:
         hand = row.get("hand")
         if hand is not None and "probe" in hand:
             p = hand["probe"]
-            dets = [
+            dets = hv.filter_hand_boxes([
                 (ds.RANK_INDEX[d["rank"]], float(d["conf"]), float(d["cx"]), float(d["cy"]), float(d["w"]), float(d["h"]))
                 for d in p["dets"]
-            ]
+            ])
             pos_rows = (p["pos_rows"][0], p["pos_rows"][1])
-            self._apply_probe(ts_ms, int(p["scene"]), pos_rows, p["pos_count"], dets)
+            self._apply_probe(
+                ts_ms,
+                int(p["scene"]),
+                pos_rows,
+                p["pos_count"],
+                dets,
+                bool(p.get("self_card_visible", False)),
+            )
 
     def _apply_probe(
         self,
@@ -322,6 +338,7 @@ class HandGameRunner:
         pos_rows: tuple[int | None, int | None],
         pos_count: int | None,
         dets: list[tuple[int, float, float, float, float, float]],
+        self_card_visible: bool = False,
     ) -> None:
         if not dets:
             self.skipped_zero_box_frames += 1
@@ -331,7 +348,7 @@ class HandGameRunner:
         voted_rows = self.position_voter.add(scene, valid_rows)
         reading = hv.build_hand_reading(merge.merged, merge.slot_detections, voted_rows)
         voted_pos = reading.position_count
-        self.hand_auto_lock.observe(reading, ts_ms=ts_ms)
+        self.hand_auto_lock.observe(reading, ts_ms=ts_ms, self_card_visible=self_card_visible)
         self.last_reading_dict = {
             "cards": hv.counts_to_str(merge.merged),
             "mergedTotal": hv.counts_total(merge.merged),

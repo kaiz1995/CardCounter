@@ -77,6 +77,7 @@ HAND_MERGE_ROW_TOLERANCE = 8.0
 
 # HandAutoLock.kt
 HAND_LOCK_STABLE_FRAMES = 4
+HAND_MIN_CENTER_Y = 207.0
 HAND_ROW_SPLIT_Y = 229.0
 
 # Rank.kt 4副牌 198张库存（按 Rank 顺序）
@@ -198,13 +199,20 @@ def hand_input_320(hand_canvas: np.ndarray) -> np.ndarray:
     )
 
 
+def filter_hand_boxes(
+    detections: list[tuple[int, float, float, float, float, float]],
+) -> list[tuple[int, float, float, float, float, float]]:
+    """对应 HandLockGuard.filterHandDetections：过滤掉上沿外按钮/倒计时数字误检。"""
+    return [d for d in detections if d[3] >= HAND_MIN_CENTER_Y]
+
+
 def detect_hand_boxes(
     detector: od.RankDetector, screen: pv.Screen
 ) -> list[tuple[int, float, float, float, float, float]]:
     """手机同口径手牌 YOLO 检测（refineOutsideJoker=False）。"""
     canvas870 = hand_canvas_from_screen(screen)
     rgb320 = hand_input_320(canvas870)
-    return detector.detect(rgb320)
+    return filter_hand_boxes(detector.detect(rgb320))
 
 
 # ---- HandCardPositionDetector ----
@@ -510,7 +518,7 @@ class HandAutoLock:
         self.qualified_at_ms: int | None = None
         self.locked = False
 
-    def observe(self, reading: HandReading, ts_ms: int | None = None) -> None:
+    def observe(self, reading: HandReading, ts_ms: int | None = None, self_card_visible: bool = False) -> None:
         if self.locked:
             return
         self.streak = self.streak + 1 if reading == self.latest else 1
@@ -531,7 +539,7 @@ class HandAutoLock:
         pos = reading.position_count
         if pos is None:
             return
-        if self.qualified is not None:
+        if self_card_visible and self.qualified is not None:
             curr_cards, _ = self.qualified
             if cards_dict != curr_cards and fits_within(cards_dict, curr_cards):
                 return

@@ -167,7 +167,7 @@ def paste_cards(
     return placed
 
 
-def make_play_scene(assets: Assets, rng: random.Random, self_zone: bool):
+def make_play_scene(assets: Assets, rng: random.Random, self_zone: bool, occlude_joker: bool = False):
     zone = "SELF" if self_zone else rng.choice(
         ["TOP", "LEFT_TOP", "LEFT_BOTTOM", "RIGHT_TOP", "RIGHT_BOTTOM"]
     )
@@ -180,10 +180,11 @@ def make_play_scene(assets: Assets, rng: random.Random, self_zone: bool):
         [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
         weights=[18, 22, 14, 12, 9, 8, 5, 4, 3, 2, 2, 1],
     )[0]
-    if rng.random() < 0.10 and count >= 2:
-        # joker attachment: 1-2 jokers plus wild 2s
+    if rng.random() < 0.14 and count >= 2:
+        # 挂王炸弹真实牌局普遍出现在各类点数上（如 J*4+大王、K*2+小王），不仅限挂 2
         joker = "BIG_JOKER" if rng.random() < 0.6 else "SMALL_JOKER"
-        ranks = [joker] + ["TWO"] * (count - 1)
+        base_rank = "TWO" if rng.random() < 0.4 else rng.choice(C.RANKS[2:])
+        ranks = [joker] + [base_rank] * (count - 1)
     else:
         ranks = [rng.choice(C.RANKS)] * count
 
@@ -219,6 +220,28 @@ def make_play_scene(assets: Assets, rng: random.Random, self_zone: bool):
     if rng.random() < FADE_PROB:
         alpha = rng.uniform(0.55, 0.9)  # fade-in frame
     placed = paste_cards(background, tiles, (x0, y0), step, card_scale, alpha)
+    # 模拟外家牌区左下/底部被红黄圆圈或倒计时按钮盖住小半截的场景（如大王只露上半“JO”、小王左下角略遮），仅轻遮下半部分且保留王牌真值框
+    if (
+        occlude_joker
+        and not self_zone
+        and placed
+        and ranks[0] in ("BIG_JOKER", "SMALL_JOKER")
+        and alpha == 1.0
+        and rng.random() < 0.35
+    ):
+        gbox = placed[0][0]
+        gw = gbox[2] - gbox[0]
+        gh = gbox[3] - gbox[1]
+        occ_y0 = max(0, min(h - 1, int(round(gbox[1] + gh * rng.uniform(0.50, 0.62)))))
+        occ_x0 = max(0, int(round(gbox[0] - rng.uniform(2, 8))))
+        occ_x1 = min(w, int(round(gbox[0] + gw * rng.uniform(1.05, 1.8))))
+        if occ_y0 < h and occ_x1 > occ_x0:
+            if assets.negatives and rng.random() < 0.5:
+                patch = rng.choice(assets.negatives)
+                background[occ_y0:h, occ_x0:occ_x1] = cv2.resize(patch, (occ_x1 - occ_x0, h - occ_y0))
+            else:
+                color = rng.choice([(45, 55, 220), (50, 210, 240), (95, 195, 70)])
+                background[occ_y0:h, occ_x0:occ_x1] = color
     boxes = [box for box, _ in placed]
     classes = [C.RANK_TO_ID[ranks[index]] for _, index in placed]
     return background, boxes, classes
@@ -279,7 +302,8 @@ def make_pip_scene(assets: Assets, rng: random.Random):
     """Suit-only scene: 1-3 pips on a white card face, no rank glyph.
 
     No boxes and no labels: the model only learns that a suit pip is background
-    (a small club under a 3 used to be read as THREE).
+    (a small club under a 3 used to be read as THREE, and large red diamond/heart tips
+    near the bottom edge of LEFT_TOP used to be read as ACE).
     """
 
     if not assets.pipneg:
@@ -287,9 +311,15 @@ def make_pip_scene(assets: Assets, rng: random.Random):
     zone = rng.choice(["SELF", "TOP", "LEFT_TOP", "LEFT_BOTTOM", "RIGHT_TOP", "RIGHT_BOTTOM"])
     _, _, w, h = C.zone_crop_rect(zone)
     canvas = zone_background(zone, w, h, assets, rng)
+    if rng.random() < 0.45:
+        # 铺一张半截白色牌面到底部，模拟外家大牌底角露出的孤立红/黑大花色
+        face_x0 = rng.randrange(0, max(1, w // 3))
+        face_x1 = rng.randrange(min(w, face_x0 + w // 2), w + 1)
+        face_y0 = rng.randrange(max(1, h // 4), max(2, h * 3 // 4))
+        canvas[face_y0:h, face_x0:face_x1] = (248, 248, 246)
     for _ in range(rng.randint(1, 3)):
         patch = rng.choice(assets.pipneg)
-        zoom = rng.uniform(0.9, 1.15)
+        zoom = rng.uniform(0.85, 1.85)
         patch = cv2.resize(
             patch, None, fx=zoom, fy=zoom,
             interpolation=cv2.INTER_AREA if zoom < 1 else cv2.INTER_LINEAR,
@@ -338,8 +368,8 @@ def render(assets: Assets, rng: random.Random, kind: str | None = None):
     if kind is None:
         roll = rng.random()
         kind = (
-            "outside" if roll < 0.41 else "self" if roll < 0.57 else "hand" if roll < 0.89
-            else "neg" if roll < 0.94 else "pip"
+            "outside" if roll < 0.41 else "self" if roll < 0.54 else "hand" if roll < 0.82
+            else "neg" if roll < 0.87 else "pip"
         )
     if kind == "hand":
         strip, boxes, classes = make_hand_scene(assets, rng)
@@ -351,7 +381,7 @@ def render(assets: Assets, rng: random.Random, kind: str | None = None):
                  for x, y, x2, y2 in boxes]
         return image, boxes, classes
     if kind == "outside":
-        raw, boxes, classes = make_play_scene(assets, rng, self_zone=False)
+        raw, boxes, classes = make_play_scene(assets, rng, self_zone=False, occlude_joker=True)
     elif kind == "self":
         raw, boxes, classes = make_play_scene(assets, rng, self_zone=True)
     elif kind == "pip":
@@ -415,14 +445,16 @@ def build_dataset(n_train: int, n_val: int, seed: int = 20261124, clean: bool = 
     return yaml_path
 
 
-def build_align_dataset(real_repeat: int = 15) -> Path:
+def build_align_dataset(real_repeat: int = 10) -> Path:
     """Stage B list file: synthetic train tiles + over-sampled real hand frames.
 
-    A list file avoids duplicating the 5000 synthetic images on disk.
+    A list file avoids duplicating the synthetic images on disk and passes check_isolation.py.
     """
 
     root = C.SYNTH_DIR / "dataset"
     out = C.SYNTH_DIR / "dataset_align"
+    shutil.rmtree(out / "images", ignore_errors=True)
+    shutil.rmtree(out / "labels", ignore_errors=True)
     out.mkdir(parents=True, exist_ok=True)
     lines = [str(path).replace("\\", "/") for path in sorted((root / "images" / "train").glob("*.png"))]
     real = C.SYNTH_DIR / "real_hand" / "images"
@@ -457,7 +489,7 @@ def main() -> int:
     parser.add_argument("--val", type=int, default=800)
     parser.add_argument("--seed", type=int, default=20261124)
     parser.add_argument("--align", action="store_true", help="build the stage-B list file")
-    parser.add_argument("--real-repeat", type=int, default=15)
+    parser.add_argument("--real-repeat", type=int, default=10)
     args = parser.parse_args()
     if args.align:
         path = build_align_dataset(args.real_repeat)

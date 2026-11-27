@@ -20,7 +20,8 @@ class HandAutoLockTest {
         structureValid: Boolean = true
     ) = HandReading(RankCounts.of(mapOf(*pairs)), position, structureValid)
 
-    private fun HandAutoLock.feed(reading: HandReading, times: Int) = repeat(times) { observe(reading) }
+    private fun HandAutoLock.feed(reading: HandReading, times: Int, selfCardVisible: Boolean = false) =
+        repeat(times) { observe(reading, selfCardVisible) }
 
     @Test
     fun locksTheStableReadingWhenTheFightPhaseStarts() {
@@ -101,8 +102,28 @@ class HandAutoLockTest {
         val lock = HandAutoLock()
         val full = reading(Rank.KING to 2, Rank.ACE to 1)
         lock.feed(full, k)
-        lock.feed(reading(Rank.KING to 2), k + 2)
+        lock.feed(reading(Rank.KING to 2), k + 2, selfCardVisible = true)
         assertEquals(full.cards, requireNotNull(lock.lock()).cards)
+    }
+
+    @Test
+    fun aSubsetWithEmptySelfZoneMeansPostTributeReturnAndReplacesQualified() {
+        // 收到进贡临时 39 张合格，还贡后变回 38 张且面前 SELF 出牌区为空：必须替换为最终 38 张。
+        val lock = HandAutoLock()
+        val withTribute = reading(Rank.KING to 2, Rank.SIX to 1)
+        lock.feed(withTribute, k)
+        val afterReturn = reading(Rank.KING to 2)
+        lock.feed(afterReturn, k, selfCardVisible = false)
+        assertEquals(afterReturn.cards, requireNotNull(lock.lock()).cards)
+    }
+
+    @Test
+    fun filterHandDetectionsDropsTopButtonFalsePositivesBelowRowMargin() {
+        val topButtonNoise = det(Rank.FOUR, 167f, 202f)
+        val poppedTopCard = det(Rank.TWO, 171f, 212f)
+        val normalBottomCard = det(Rank.FIVE, 220f, 244f)
+        val filtered = HandLockGuard.filterHandDetections(listOf(topButtonNoise, poppedTopCard, normalBottomCard))
+        assertEquals(listOf(poppedTopCard, normalBottomCard), filtered)
     }
 
     @Test
