@@ -368,7 +368,8 @@ def make_play_scene(assets: Assets, rng: random.Random, self_zone: bool, occlude
         roll_occ = rng.random()
         if roll_occ < 0.55:
             badges = getattr(assets, "badges", [])
-            if badges and rng.random() < 0.7:
+            real_badge_prob = min(0.7, 0.25 + 0.45 * min(1.0, len(badges) / 16.0)) if badges else 0.0
+            if badges and rng.random() < real_badge_prob:
                 _paste_circle_badge(background, rng.choice(badges), occ_cx, occ_y0, rng.uniform(0.85, 1.15))
             else:
                 _draw_synthetic_turn_badge(background, occ_cx, occ_y0, rng)
@@ -397,7 +398,8 @@ def make_play_scene(assets: Assets, rng: random.Random, self_zone: bool, occlude
         badges = getattr(assets, "badges", [])
         top_y = int(round(gbox[3] + rng.uniform(1, 7)))
         if top_y < h - 4:
-            if badges and rng.random() < 0.7:
+            real_badge_prob = min(0.7, 0.25 + 0.45 * min(1.0, len(badges) / 16.0)) if badges else 0.0
+            if badges and rng.random() < real_badge_prob:
                 _paste_circle_badge(background, rng.choice(badges), gbox[0] + 4, top_y, rng.uniform(0.85, 1.10))
             else:
                 _draw_synthetic_turn_badge(background, gbox[0] + 4, top_y, rng)

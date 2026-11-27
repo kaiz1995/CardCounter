@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import sys
@@ -166,7 +167,13 @@ def _diagnose_mismatch(
 class HandGameRunner:
     """单局手机同口径手牌链路仿真器，可直接吃视频帧或 JSONL 观察记录。"""
 
-    def __init__(self, game: dict, obs_path: Path | None, vision_rule_version: str) -> None:
+    def __init__(
+        self,
+        game: dict,
+        obs_path: Path | None,
+        vision_rule_version: str,
+        hand_vision_sha: str | None = None,
+    ) -> None:
         self.game = game
         self.gid = game["gameId"]
         self.start_ms = int(game["startMs"])
@@ -204,7 +211,12 @@ class HandGameRunner:
             self.obs_handle = self.obs_tmp_path.open("w", encoding="utf-8", newline="\n")
             self.obs_handle.write(
                 json.dumps(
-                    {"_meta": True, "vision_rule_version": vision_rule_version, "model_sha256": pv.MODEL_SHA256},
+                    {
+                        "_meta": True,
+                        "vision_rule_version": vision_rule_version,
+                        "model_sha256": pv.MODEL_SHA256,
+                        "hand_vision_sha256": hand_vision_sha or hand_vision_sha256(),
+                    },
                     ensure_ascii=False,
                     separators=(",", ":"),
                 )
@@ -477,30 +489,46 @@ class HandGameRunner:
         }
 
 
-def load_obs_checked(path: Path, expected_version: str) -> list[dict]:
-    """读取观察 JSONL，强校验首行 _meta.vision_rule_version 与 model_sha256，与 ObservationJsonl.kt 同口径。"""
+def hand_vision_sha256(repo_root: Path = ds.REPO) -> str:
+    """计算 tools/dataset/hand_vision.py 文件内容的 SHA-256（换行符先归一为 \\n）。"""
+    path = repo_root / "tools" / "dataset" / "hand_vision.py"
+    text = path.read_text(encoding="utf-8").replace("\r\n", "\n").replace("\r", "\n")
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def load_obs_checked(
+    path: Path,
+    expected_version: str,
+    expected_hand_vision_sha: str | None = None,
+) -> list[dict]:
+    """读取观察 JSONL，强校验首行 _meta.vision_rule_version、model_sha256 与 hand_vision_sha256。"""
     if not path.is_file():
         raise SystemExit(f"找不到观察文件: {path}")
     lines = [ln for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
     if not lines:
         raise SystemExit(f"{path}: 观察文件为空，缺少 vision_rule_version")
+    hv_sha = expected_hand_vision_sha or hand_vision_sha256()
     first = json.loads(lines[0])
     if (
         not isinstance(first, dict)
         or first.get("_meta") is not True
         or first.get("vision_rule_version") != expected_version
         or first.get("model_sha256") != pv.MODEL_SHA256
+        or first.get("hand_vision_sha256") != hv_sha
     ):
         got_v = first.get("vision_rule_version") if isinstance(first, dict) else None
         got_m = first.get("model_sha256") if isinstance(first, dict) else None
+        got_hv = first.get("hand_vision_sha256") if isinstance(first, dict) else None
         raise SystemExit(
-            f"{path}: 视觉规则或模型不一致（观察={got_v or '缺失'}/{got_m or '缺失'}，"
-            f"当前={expected_version}/{pv.MODEL_SHA256}），请重跑 hand_eval.py（不加 --from-obs）"
+            f"{path}: 视觉规则、模型或 hand_vision 不一致"
+            f"（观察={got_v or '缺失'}/{got_m or '缺失'}/{got_hv or '缺失'}，"
+            f"当前={expected_version}/{pv.MODEL_SHA256}/{hv_sha}），请重跑 hand_eval.py（不加 --from-obs）"
         )
     return [json.loads(ln) for ln in lines[1:]]
 
 
 def run_from_videos(games: list[dict], detector: od.RankDetector, out_dir: Path, version: str) -> list[dict]:
+    hv_sha = hand_vision_sha256()
     by_video: dict[str, list[dict]] = {}
     for g in games:
         by_video.setdefault(g["video"], []).append(g)
@@ -512,7 +540,10 @@ def run_from_videos(games: list[dict], detector: od.RankDetector, out_dir: Path,
         if not cap.isOpened():
             raise SystemExit(f"打不开视频: {path}")
         fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-        runners = [HandGameRunner(g, out_dir / "obs" / f"{g['gameId']}.jsonl", version) for g in vgames]
+        runners = [
+            HandGameRunner(g, out_dir / "obs" / f"{g['gameId']}.jsonl", version, hv_sha)
+            for g in vgames
+        ]
         for r in runners:
             runners_by_id[r.gid] = r
         last_end = max(r.end_ms for r in runners)
@@ -547,10 +578,11 @@ def run_from_videos(games: list[dict], detector: od.RankDetector, out_dir: Path,
 
 
 def run_from_obs(games: list[dict], out_dir: Path, version: str) -> list[dict]:
+    hv_sha = hand_vision_sha256()
     reports = []
     for g in games:
-        obs_rows = load_obs_checked(out_dir / "obs" / f"{g['gameId']}.jsonl", version)
-        runner = HandGameRunner(g, None, version)
+        obs_rows = load_obs_checked(out_dir / "obs" / f"{g['gameId']}.jsonl", version, hv_sha)
+        runner = HandGameRunner(g, None, version, hv_sha)
         for row in obs_rows:
             runner.replay_obs_row(row)
         reports.append(runner.build_report())

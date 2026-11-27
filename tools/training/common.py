@@ -118,8 +118,9 @@ EVAL_CLIPS = ["SVID_20260728_145608_1.mp4", "SVID_20260728_145637_1.mp4", "SVID_
 # truth/screen mismatch.
 EVAL_HAND_CLIPS = list(EVAL_CLIPS)
 
-# The only source/ recordings allowed to give negative (no-card) patches to training.
-NEGATIVE_SOURCE_VIDEOS = ["SVID_20260810_102658_1.mp4"]
+# source/ recordings must NOT feed training negatives (dev/tuning/blind are forbidden).
+# Negatives and turn badges are extracted strictly from 9局 train_only clips.
+NEGATIVE_SOURCE_VIDEOS: list[str] = []
 # source/ recordings used to measure play-zone card geometry (numbers only, no
 # pixels enter training). Must stay disjoint from the evaluation recordings.
 PLAY_GEOMETRY_VIDEOS = ["SVID_20260810_102658_1.mp4", "SVID_20260727_201930_1.mp4"]

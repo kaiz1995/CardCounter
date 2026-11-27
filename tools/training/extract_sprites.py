@@ -370,12 +370,6 @@ def extract_play(bank: SpriteBank, detector, pitch: defaultdict) -> dict:
                 # centred 114-grey padding; boxes come back in crop pixels.
                 detections = detector.detect_letterbox(crop, conf=0.5, iou=0.4)
                 if not detections:
-                    # Real empty play-zone crop (felt + overlay + count board).
-                    # stable_hash, not hash(): str hashing is randomised per process.
-                    if (video.name in C.NEGATIVE_SOURCE_VIDEOS and len(bank.entries) and stats["empty_bg"] < 120
-                            and C.stable_hash(video.name, zone, int(second)) % 3 == 0):
-                        if bank.add_negative(crop.copy(), C.clip_key(video)):
-                            stats["empty_bg"] += 1
                     continue
                 if len(detections) > 12:
                     continue
@@ -388,21 +382,29 @@ def extract_play(bank: SpriteBank, detector, pitch: defaultdict) -> dict:
     return dict(stats)
 
 
-def extract_negatives(bank: SpriteBank, count_per_video: int = 120) -> int:
+def extract_negatives(bank: SpriteBank, count_per_video: int = 80) -> int:
     rng = np.random.default_rng(7)
-    videos = C.nine_games(train_only=True)[:3] + [C.ensure_allowed(C.SOURCE / n) for n in C.NEGATIVE_SOURCE_VIDEOS]
+    videos = C.nine_games(train_only=True) + [C.ensure_allowed(C.SOURCE / n) for n in C.NEGATIVE_SOURCE_VIDEOS]
     total = 0
+    empty_bg = 0
     for video in videos:
         capture = C.open_video(video)
         duration = capture.get(cv2.CAP_PROP_FRAME_COUNT) / max(1.0, capture.get(cv2.CAP_PROP_FPS))
         capture.release()
-        times = np.linspace(2.0, max(3.0, min(duration, 400.0) - 3.0), 40)
+        times = np.linspace(0.5, max(1.0, duration - 0.5), 16)
         frames = C.grab_frames(video, [float(t) for t in times])
-        every = max(1, len(frames) // 10)
-        for index, (_, frame) in enumerate(frames.items()):
-            if index % every:
-                continue
-            for _ in range(count_per_video // 10):
+        for second, frame in frames.items():
+            for zone in C.ZONES:
+                if empty_bg >= 120:
+                    break
+                crop = C.zone_crop(frame, zone)
+                if crop.size == 0 or white_mask(crop).mean() > 0.02:
+                    continue
+                if C.stable_hash(video.name, zone, round(second, 2)) % 3 == 0:
+                    if bank.add_negative(crop.copy(), C.clip_key(video)):
+                        empty_bg += 1
+                        total += 1
+            for _ in range(max(1, count_per_video // len(frames))):
                 size = int(rng.integers(40, 160))
                 x = int(rng.integers(0, C.FRAME_W - size))
                 y = int(rng.integers(0, C.FRAME_H - size))
@@ -423,7 +425,7 @@ def extract_negatives(bank: SpriteBank, count_per_video: int = 120) -> int:
 
 
 def extract_turn_badges(bank: SpriteBank, limit: int = 24) -> int:
-    """Extract clean circular '出牌' turn badges from empty play zones of NEGATIVE_SOURCE_VIDEOS."""
+    """Extract clean circular '出牌' turn badges from empty play zones of training videos only."""
     badge_anchors = {
         "TOP": (781, 56),
         "LEFT_TOP": (314, 124),
@@ -432,11 +434,12 @@ def extract_turn_badges(bank: SpriteBank, limit: int = 24) -> int:
         "RIGHT_BOTTOM": (966, 284),
     }
     total = 0
-    for video in [C.ensure_allowed(C.SOURCE / n) for n in C.NEGATIVE_SOURCE_VIDEOS]:
+    videos = C.nine_games(train_only=True) + [C.ensure_allowed(C.SOURCE / n) for n in C.NEGATIVE_SOURCE_VIDEOS]
+    for video in videos:
         capture = C.open_video(video)
         duration = capture.get(cv2.CAP_PROP_FRAME_COUNT) / max(1.0, capture.get(cv2.CAP_PROP_FPS))
         capture.release()
-        times = [float(t) for t in np.arange(30.0, min(duration, 450.0), 1.5)]
+        times = [float(t) for t in np.arange(0.5, max(1.0, duration - 0.3), 0.25)]
         for _, frame in C.grab_frames(video, times).items():
             for zone, (cx, cy) in badge_anchors.items():
                 crop = C.zone_crop(frame, zone)

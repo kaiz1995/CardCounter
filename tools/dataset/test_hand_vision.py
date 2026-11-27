@@ -1,12 +1,16 @@
 """Unit tests for HandAutoLock parity in tools/dataset/hand_vision.py."""
 from __future__ import annotations
 
+import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import hand_eval as he  # noqa: E402
 import hand_vision as hv  # noqa: E402
+import phone_vision as pv  # noqa: E402
 
 
 def _reading(cards: dict[str, int], pos: int | None, structure_valid: bool) -> hv.HandReading:
@@ -49,6 +53,45 @@ class HandAutoLockPythonTest(unittest.TestCase):
         self.assertIsNotNone(locked)
         self.assertEqual(locked[1], 12)
         self.assertEqual({k: v for k, v in locked[0].items() if v > 0}, {"TWO": 4, "QUEEN": 4, "JACK": 4})
+
+    def test_load_obs_checked_rejects_missing_or_mismatched_hand_vision_sha(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            obs = Path(tmp) / "g.jsonl"
+            obs.write_text(
+                json.dumps({
+                    "_meta": True,
+                    "vision_rule_version": pv.VISION_RULE_VERSION,
+                    "model_sha256": pv.MODEL_SHA256,
+                }) + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaises(SystemExit) as ctx:
+                he.load_obs_checked(obs, pv.VISION_RULE_VERSION)
+            self.assertIn("hand_eval.py", str(ctx.exception))
+
+            obs.write_text(
+                json.dumps({
+                    "_meta": True,
+                    "vision_rule_version": pv.VISION_RULE_VERSION,
+                    "model_sha256": pv.MODEL_SHA256,
+                    "hand_vision_sha256": "0" * 64,
+                }) + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaises(SystemExit) as ctx2:
+                he.load_obs_checked(obs, pv.VISION_RULE_VERSION)
+            self.assertIn("hand_eval.py", str(ctx2.exception))
+
+            obs.write_text(
+                json.dumps({
+                    "_meta": True,
+                    "vision_rule_version": pv.VISION_RULE_VERSION,
+                    "model_sha256": pv.MODEL_SHA256,
+                    "hand_vision_sha256": he.hand_vision_sha256(),
+                }) + "\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(he.load_obs_checked(obs, pv.VISION_RULE_VERSION), [])
 
 
 if __name__ == "__main__":
