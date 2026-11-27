@@ -5,6 +5,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 data class CaptureProbeSnapshot(
     val running: Boolean = false,
+    /** 系统停掉了投屏（用户在下拉栏点停止等）：悬浮窗保留并显示“已暂停”，等用户点“继续记牌”。 */
+    val pausedBySystem: Boolean = false,
     val width: Int? = null,
     val height: Int? = null,
     val frameCount: Long = 0,
@@ -22,6 +24,7 @@ data class CaptureProbeSnapshot(
                     "；手牌候选变化 ${"%.1f".format(it)}%，本次最大 ${"%.1f".format(maxHandChangePercent)}%，稳定样本 $stableHandSamples"
                 }.orEmpty()
         running -> "启动中：等待首帧"
+        pausedBySystem -> "已暂停：系统停止了截屏，可在悬浮窗点“继续记牌”"
         else -> "未启动"
     }
 }
@@ -62,6 +65,16 @@ object CaptureProbeStatus {
 
     fun stopped() {
         current = current.copy(running = false)
+    }
+
+    /** 系统停掉了投屏：不再记牌，但保留暂停标记让悬浮窗知道可以继续。 */
+    fun systemStopped() {
+        current = current.copy(running = false, pausedBySystem = true)
+    }
+
+    /** 用户主动停止记牌（或重新开始）时清掉暂停标记。 */
+    fun clearPause() {
+        current = current.copy(pausedBySystem = false)
     }
 }
 

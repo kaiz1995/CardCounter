@@ -21,6 +21,15 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".ResumeCaptureActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:launchMode="singleTop"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|smallestScreenSize"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <service
             android:name=".service.OverlayService"
             android:exported="false"

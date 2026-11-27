@@ -231,6 +231,8 @@ class MainActivity : Activity() {
         val captureRunning = CaptureProbeStatus.snapshot().running
         val probe = OverlayProbeState.snapshot()
         val mainStatus = when {
+            !captureRunning && CaptureProbeStatus.snapshot().pausedBySystem ->
+                "状态：已暂停（系统停止了截屏），点“开始记牌”或悬浮窗的“继续记牌”接着记"
             !captureRunning -> "状态：未开始"
             state.phase == SessionPhase.PAUSED ->
                 "状态：已停记（${state.pauseReason?.displayName ?: "未知原因"}）"

@@ -472,11 +472,27 @@ fun playZoneVisibility(frame: Raster, step: Int = PLAY_VISIBILITY_STEP): Map<Pla
 fun isTableVisible(frame: Raster): Boolean =
     isTableVisible { x, y -> isTablePointGreen(frame, x, y) }
 
-private fun isTablePointGreen(frame: Raster, canonicalX: Int, canonicalY: Int): Boolean {
+private fun tablePointRgb(frame: Raster, canonicalX: Int, canonicalY: Int): Int {
     val sx = (canonicalX * frame.width / ScreenScale.CANVAS_WIDTH).coerceIn(0, frame.width - 1)
     val sy = (canonicalY * frame.height / ScreenScale.CANVAS_HEIGHT).coerceIn(0, frame.height - 1)
-    val rgb = frame.rgb(sx, sy)
+    return frame.rgb(sx, sy) and 0xffffff
+}
+
+private fun isTablePointGreen(frame: Raster, canonicalX: Int, canonicalY: Int): Boolean {
+    val rgb = tablePointRgb(frame, canonicalX, canonicalY)
     return isTableGreen((rgb shr 16) and 0xff, (rgb shr 8) and 0xff, rgb and 0xff)
+}
+
+/** 一个牌桌探针点的读数，只给诊断日志用；判定本身仍走 [isTableVisible]。 */
+data class TableProbeReading(val x: Int, val y: Int, val rgb: Int, val green: Boolean) {
+    fun describe(): String =
+        "($x,$y)=${(rgb shr 16) and 0xff}/${(rgb shr 8) and 0xff}/${rgb and 0xff}${if (green) "+" else "-"}"
+}
+
+/** 每个探针点此刻的颜色与是否判绿，顺序同 [TABLE_GREEN_PROBES]。 */
+fun tableProbeReadings(frame: Raster): List<TableProbeReading> = TABLE_GREEN_PROBES.map { (x, y) ->
+    val rgb = tablePointRgb(frame, x, y)
+    TableProbeReading(x, y, rgb, isTableGreen((rgb shr 16) and 0xff, (rgb shr 8) and 0xff, rgb and 0xff))
 }
 
 /** YOLO会把“过牌”等文字误识别成牌，必须同时存在白色牌面。 */
@@ -501,18 +517,23 @@ fun isDimmedOrNormalTableGreen(red: Int, green: Int, blue: Int): Boolean =
 fun hasLocalTableGreen(greenSamples: Int, totalSamples: Int): Boolean =
     totalSamples > 0 && greenSamples * 100 >= totalSamples * 12
 
-/** 7 个探针点分布在牌桌四周安全绿布上，避开中央特效动画、所有悬浮窗和出牌区，至少命中 3 个即视为牌桌可见。 */
+/**
+ * 7 个探针点全部在 y<=335 的牌桌上半部绿布上：手牌区（HandRegions.YOLO_TOP=350 起，选中的牌上抬约 20px 也在 y>=330 以下）
+ * 和手牌取样行都在它们下面；同时避开中央特效、六个出牌区（含长串扩展）、所有悬浮窗和屏幕暗角。
+ * 至少命中 [TABLE_GREEN_MIN_HITS] 个才算牌桌可见：真机截屏、录屏帧上 7 个点全中，大厅、结算等硬反例帧上 0 个中，
+ * 「王3/送3」压暗面板只暗中央、四周仍是绿的，所以不作为反例。
+ */
 val TABLE_GREEN_PROBES: List<Pair<Int, Int>> = listOf(
-    30 to 250,
-    30 to 420,
-    150 to 420,
-    460 to 75,
-    830 to 130,
-    1120 to 420,
-    1200 to 420
+    583 to 83,
+    387 to 292,
+    393 to 315,
+    370 to 308,
+    886 to 147,
+    352 to 291,
+    391 to 141
 )
 
-const val TABLE_GREEN_MIN_HITS: Int = 3
+const val TABLE_GREEN_MIN_HITS: Int = 5
 
 fun isTableVisible(isGreenAt: (x: Int, y: Int) -> Boolean): Boolean =
     TABLE_GREEN_PROBES.count { (x, y) -> isGreenAt(x, y) } >= TABLE_GREEN_MIN_HITS

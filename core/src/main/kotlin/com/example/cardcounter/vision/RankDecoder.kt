@@ -10,7 +10,7 @@ object RankModelContract {
     const val MODEL_SHA256 = "27391b7d826db83d988a48825c36707e9fac852aa06c97a7019a204dcaa39203"
 
     /** 视觉后处理规则与模型版本标识（由 VisionRuleVersionGuardTest 机械校验代码与 ONNX 模型 SHA-256 一致）。 */
-    const val VISION_RULE_VERSION = "v4-49c1fa4a2d34"
+    const val VISION_RULE_VERSION = "v4-0b8f5900569d"
 
     /** 类别号 = Rank.entries 的顺序（0 BIG_JOKER … 14 THREE）。 */
     const val CLASS_COUNT = 15
