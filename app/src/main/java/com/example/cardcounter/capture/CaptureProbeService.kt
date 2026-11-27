@@ -72,7 +72,10 @@ class CaptureProbeService : Service() {
     private var stableHandSamples = 0
     private var maxHandChangePercent = 0.0
     private val rankProbeGate = SingleFlightGate()
-    private val stablePlayGate = StablePlayGate()
+    private val gateCoordinator = RankGateCoordinator { task ->
+        if (::rankHandler.isInitialized) rankHandler.post(task) else false
+    }
+    private val stablePlayGate: StablePlayGate get() = gateCoordinator.stablePlayGate
     private val zoneSignals = ZoneSignalTracker()
     private val roiEventCache = RoiPlayEventCache<RoiFrame>(
         isStill = { previous, current -> RoiFingerprint.isStill(previous.fingerprint, current.fingerprint) },
@@ -80,7 +83,7 @@ class CaptureProbeService : Service() {
     )
     private var lastRoiSampleAt = 0L
     private var restartPrimeDeadlineAt = 0L
-    @Volatile private var captureGeneration = 0L
+    private val captureGeneration: Long get() = gateCoordinator.generation
     @Volatile private var handRevision = 0L
     /**
      * 手牌画面编号：亮度指纹变化超过 STABLE_CHANGE_PERCENT（或新局后第一次取指纹）就加一，只在回调线程写。
@@ -105,8 +108,8 @@ class CaptureProbeService : Service() {
     @Volatile private var gameSkipped = false
     /** 中途打开连续多帧判定器：仅统计 OUTSIDE 区，连续 5 次采样可见才判中途打开。 */
     private val midGameOpenDetector = MidGameOpenDetector()
-    /** 开局换牌期门控：只认任意 OUTSIDE 区“出牌”圆标被连续帧确认之后才算进入正式出牌阶段，同时触发手牌自动锁定。 */
-    private val openingPlayGate = OpeningPlayGate()
+    /** 开局换牌期门控：由 [gateCoordinator] 统一在识别线程重置与推进，避免跨线程竞态。 */
+    private val openingPlayGate: OpeningPlayGate get() = gateCoordinator.openingPlayGate
     private lateinit var sessionLedger: SessionRepository
     private lateinit var sessionActor: SessionActor
     private lateinit var diagnosticsLog: DiagnosticsLog
@@ -153,14 +156,14 @@ class CaptureProbeService : Service() {
         display = null
         reader = null
         projection = null
-        // 先在锁里标记退出并清掉手牌截图：之后识别线程不再写回，确认手牌也不再存证据。
+        // 先在锁里标记退出、推进代数并清掉手牌截图：之后识别线程不再写回，确认手牌也不再存证据。
         synchronized(this) {
             destroyed = true
             replaceHandProbe(null)
+            roiEventCache.reset(gateCoordinator.nextGeneration(), primeExistingTable = false)
         }
         publicPlayYolo?.close()
         publicPlayYolo = null
-        roiEventCache.reset(++captureGeneration, primeExistingTable = false)
         issueSampleStore.close()
         sessionActor.shutdown()
         OverlayProbeState.reset()
@@ -296,17 +299,19 @@ class CaptureProbeService : Service() {
                         val frames = handFrames(image, withCanvas = modelLoaded)
                         val area = frames.area.also { handArea = it }
                         val yoloFrame = frames.canvas.also { handYoloFrame = it }
+                        val generation = captureGeneration
                         val revision = handRevision
                         val scene = handScene
                         val selfCardVisible = handProbeOnTable && selfCardOnTable
                         posted = rankHandler.post {
                             var handAreaKept = false
                             try {
-                                if (gameSkipped || revision != handRevision || handLocked || !handProbeOnTable) return@post
+                                if (generation != captureGeneration || gameSkipped || revision != handRevision || handLocked || !handProbeOnTable) return@post
                                 val rowCounts = handCardPositionDetector.rowCounts(luma)
                                 val validRows = handCardPositionDetector.validRowCounts(rowCounts)
                                 val positionCount = validRows?.let { it.first + it.second }
                                 val rawYoloCards = yoloFrame?.let(::detectYoloCards)
+                                if (generation != captureGeneration || gameSkipped || revision != handRevision || handLocked || !handProbeOnTable) return@post
                                 val yoloCards = rawYoloCards?.let { cardsResult ->
                                     val kept = HandLockGuard.filterHandDetections(cardsResult.detections)
                                     if (kept.size == cardsResult.detections.size) cardsResult
@@ -785,17 +790,15 @@ class CaptureProbeService : Service() {
                 if (signals.any) {
                     if (signals.turned) Log.i(TAG, "TURN_BADGE zone=$zone")
                     if (signals.longCleared) Log.i(TAG, "LONG_CLEAR_UNLOCK zone=$zone")
-                    rankHandler.post {
-                        if (generation != captureGeneration) return@post
-                        val wasReady = openingPlayGate.isReady()
-                        val retries = routeZoneSignals(
-                            zone, signals, now, stablePlayGate, openingPlayGate
-                        ) { it in onTable }
-                        if (!wasReady && openingPlayGate.isReady()) {
-                            lockHand(generation)
-                        }
-                        replaySkippedPlays(retries, now)
-                    }
+                    gateCoordinator.postZoneSignals(
+                        expectedGeneration = generation,
+                        zone = zone,
+                        signals = signals,
+                        nowMs = now,
+                        isOnTable = { it in onTable },
+                        onOpened = { lockHand(generation) },
+                        onReplay = { retries -> replaySkippedPlays(retries, generation, now) }
+                    )
                 }
             }
         }
@@ -841,6 +844,7 @@ class CaptureProbeService : Service() {
                 Log.w(TAG, "ROI_RULE_SUSPICIOUS zone=${finalized.zone} code=${ruleCheck.code} cards=$cards")
                 return
             }
+            if (finalized.generation != captureGeneration || gameSkipped) return
             val ledgerState = sessionLedger.state
             if (ledgerState.phase != SessionPhase.ACTIVE) {
                 // 暂停期间交出的牌不入账，但要留诊断记录（与 eval 的 NOT_ACTIVE 一致）。
@@ -854,27 +858,34 @@ class CaptureProbeService : Service() {
                 Log.i(TAG, "NOT_ACTIVE zone=${finalized.zone} cards=$cards")
                 return
             }
-            if (!openingPlayGate.isReady()) {
-                // 记下这一手：开局门稍后因圆标打开时，桌上还摆着的会补记。
-                openingPlayGate.notePrePlaySkipped(finalized.zone, cards, sampleTimeMs)
-                saveEvidence(finalized, voted, "PRE_PLAY_SKIPPED", cards, candidates)
-                recordDiagnostics(
-                    null, finalized.zone,
-                    quantity = cards.total(),
-                    rankTotal = cards.total(),
-                    decision = DiagnosticsLog.Decision.RETRY,
-                    reason = "PRE_PLAY_SKIPPED"
-                )
-                Log.i(TAG, "PRE_PLAY_SKIPPED zone=${finalized.zone} cards=$cards")
-                return
-            }
-            admitPlay(
-                finalized.zone, cards, voteOutcome.mergedFromDisagreement, sampleTimeMs,
-                finalizeReason = finalized.reason,
-                fingerprint = finalized.frames.lastOrNull()?.fingerprint
-            ) { reason ->
-                saveEvidence(finalized, voted, reason, cards, candidates)
-            }
+            gateCoordinator.handleFinalizedPlay(
+                expectedGeneration = finalized.generation,
+                zone = finalized.zone,
+                cards = cards,
+                sampleTimeMs = sampleTimeMs,
+                onPrePlaySkipped = {
+                    // 记下这一手：开局门稍后因圆标打开时，桌上还摆着的会补记。
+                    saveEvidence(finalized, voted, "PRE_PLAY_SKIPPED", cards, candidates)
+                    recordDiagnostics(
+                        null, finalized.zone,
+                        quantity = cards.total(),
+                        rankTotal = cards.total(),
+                        decision = DiagnosticsLog.Decision.RETRY,
+                        reason = "PRE_PLAY_SKIPPED"
+                    )
+                    Log.i(TAG, "PRE_PLAY_SKIPPED zone=${finalized.zone} cards=$cards")
+                },
+                onAdmit = {
+                    admitPlay(
+                        finalized.zone, cards, voteOutcome.mergedFromDisagreement, sampleTimeMs,
+                        expectedGeneration = finalized.generation,
+                        finalizeReason = finalized.reason,
+                        fingerprint = finalized.frames.lastOrNull()?.fingerprint
+                    ) { reason ->
+                        saveEvidence(finalized, voted, reason, cards, candidates)
+                    }
+                }
+            )
         } finally {
             finalized.frames.forEach { it.bitmap?.recycle() }
         }
@@ -889,10 +900,12 @@ class CaptureProbeService : Service() {
         cards: RankCounts,
         merged: Boolean,
         sampleTimeMs: Long,
+        expectedGeneration: Long,
         finalizeReason: FinalizeReason? = null,
         fingerprint: IntArray? = null,
         evidence: (String) -> Unit
     ) {
+        if (expectedGeneration != captureGeneration || gameSkipped) return
         val stable = when (val gateDecision = stablePlayGate.check(zone, cards, sampleTimeMs, fingerprint)) {
             is PlayGateDecision.Accept -> gateDecision.play
             is PlayGateDecision.Suppressed -> {
@@ -932,7 +945,10 @@ class CaptureProbeService : Service() {
         )
         // 单写者派发：evidenceId 兼作账本事件 id，重试不会重复扣牌。
         val command = stable.toLedgerCommand()
-        val result = sessionActor.post(command)
+        val result = synchronized(this) {
+            if (destroyed || expectedGeneration != captureGeneration || gameSkipped) return
+            sessionActor.post(command)
+        }
         recordDiagnostics(
             command.evidenceId, zone,
             quantity = stable.cards.total(),
@@ -942,8 +958,9 @@ class CaptureProbeService : Service() {
         )
         when (result) {
             is DispatchResult.Accepted -> {
+                if (expectedGeneration != captureGeneration) return
                 stablePlayGate.commitAccepted(zone, stable.cards, sampleTimeMs, fingerprint, finalizeReason) {
-                    roiEventCache.isCleared(it, captureGeneration)
+                    roiEventCache.isCleared(it, expectedGeneration)
                 }
                 OverlayService.refresh(this)
                 Log.i(
@@ -969,9 +986,13 @@ class CaptureProbeService : Service() {
     }
 
     /** 开局门因圆标打开后，补记门控打开前交出过、牌还在桌上的几手：走和正常交出一样的去重门、账本。 */
-    private fun replaySkippedPlays(plays: List<OpeningPlayGate.SkippedPlay>, sampleTimeMs: Long) {
+    private fun replaySkippedPlays(
+        plays: List<OpeningPlayGate.SkippedPlay>,
+        expectedGeneration: Long,
+        sampleTimeMs: Long
+    ) {
         for (i in plays.indices) {
-            if (gameSkipped) return
+            if (expectedGeneration != captureGeneration || gameSkipped) return
             if (sessionLedger.state.phase != SessionPhase.ACTIVE) {
                 for (j in i until plays.size) {
                     val skipped = plays[j]
@@ -988,7 +1009,10 @@ class CaptureProbeService : Service() {
             }
             val play = plays[i]
             Log.i(TAG, "PRE_PLAY_REPLAYED zone=${play.zone} cards=${play.cards}")
-            admitPlay(play.zone, play.cards, merged = false, sampleTimeMs = sampleTimeMs) { }
+            admitPlay(
+                play.zone, play.cards, merged = false, sampleTimeMs = sampleTimeMs,
+                expectedGeneration = expectedGeneration
+            ) { }
         }
     }
 
@@ -1079,28 +1103,29 @@ class CaptureProbeService : Service() {
      * 忽略桌上上一局残留的牌、牌桌第一次出现时判断是不是中途打开、本局是否已进入正式出牌阶段，是三回事，各管各的。
      */
     private fun resetSessionTracking(reset: SessionTrackingReset) {
-        val generation = ++captureGeneration
-        roiEventCache.reset(generation, primeExistingTable = reset.primeExistingTable)
-        zoneSignals.reset()
-        restartPrimeDeadlineAt = if (reset.primeExistingTable) {
-            SystemClock.elapsedRealtime() + RESTART_TABLE_GRACE_MS
-        } else {
-            0L
+        val generation = synchronized(this) {
+            val next = gateCoordinator.nextGeneration()
+            roiEventCache.reset(next, primeExistingTable = reset.primeExistingTable)
+            zoneSignals.reset()
+            restartPrimeDeadlineAt = if (reset.primeExistingTable) {
+                SystemClock.elapsedRealtime() + RESTART_TABLE_GRACE_MS
+            } else {
+                0L
+            }
+            val ledgerState = sessionLedger.state
+            val alreadyLocked = isHandAlreadyLocked(reset, ledgerState.handConfirmed, ledgerState.phase)
+            resetHandProbe(alreadyLocked)
+            lastHandSignature = null
+            lastHandSampleAt = 0L
+            stableHandSamples = 0
+            maxHandChangePercent = 0.0
+            lastRankProbeAt = 0L
+            lastRoiSampleAt = 0L
+            gameSkipped = false
+            midGameOpenDetector.reset(reset.checkMidOpen)
+            next
         }
-        val ledgerState = sessionLedger.state
-        val alreadyLocked = isHandAlreadyLocked(reset, ledgerState.handConfirmed, ledgerState.phase)
-        resetHandProbe(alreadyLocked)
-        lastHandSignature = null
-        lastHandSampleAt = 0L
-        stableHandSamples = 0
-        maxHandChangePercent = 0.0
-        lastRankProbeAt = 0L
-        lastRoiSampleAt = 0L
-        gameSkipped = false
-        midGameOpenDetector.reset(reset.checkMidOpen)
-        openingPlayGate.reset(alreadyInPlay = reset.alreadyInPlay)
-        rankHandler.post {
-            stablePlayGate.reset()
+        gateCoordinator.postReset(generation, reset.alreadyInPlay) {
             handMerger.reset()
             positionVoter.reset()
             handSampleThrottle.reset()
