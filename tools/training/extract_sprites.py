@@ -186,14 +186,15 @@ class SpriteBank:
         )
         return True
 
-    def add_negative(self, patch: np.ndarray, source: str, folder: str = "_neg") -> bool:
+    def add_negative(self, patch: np.ndarray, source: str, folder: str = "_neg", tag: str = "") -> bool:
         """Write a negative patch; False when an identical patch was already kept."""
 
         digest = hashlib.sha1(patch.tobytes()).hexdigest()[:10]
         if digest in self.hashes:
             return False
         self.hashes.add(digest)
-        cv2.imwrite(str(C.SPRITE_DIR / folder / f"{source}_{digest}.png"), patch)
+        prefix = f"{source}_{tag}_" if tag else f"{source}_"
+        cv2.imwrite(str(C.SPRITE_DIR / folder / f"{prefix}{digest}.png"), patch)
         return True
 
     def save(self) -> None:
@@ -417,6 +418,53 @@ def extract_negatives(bank: SpriteBank, count_per_video: int = 120) -> int:
                 )
                 if kept:  # duplicates dropped by hash are not counted
                     total += 1
+    total += extract_turn_badges(bank)
+    return total
+
+
+def extract_turn_badges(bank: SpriteBank, limit: int = 24) -> int:
+    """Extract clean circular '出牌' turn badges from empty play zones of NEGATIVE_SOURCE_VIDEOS."""
+    badge_anchors = {
+        "TOP": (781, 56),
+        "LEFT_TOP": (314, 124),
+        "LEFT_BOTTOM": (314, 284),
+        "RIGHT_TOP": (966, 124),
+        "RIGHT_BOTTOM": (966, 284),
+    }
+    total = 0
+    for video in [C.ensure_allowed(C.SOURCE / n) for n in C.NEGATIVE_SOURCE_VIDEOS]:
+        capture = C.open_video(video)
+        duration = capture.get(cv2.CAP_PROP_FRAME_COUNT) / max(1.0, capture.get(cv2.CAP_PROP_FPS))
+        capture.release()
+        times = [float(t) for t in np.arange(30.0, min(duration, 450.0), 1.5)]
+        for _, frame in C.grab_frames(video, times).items():
+            for zone, (cx, cy) in badge_anchors.items():
+                crop = C.zone_crop(frame, zone)
+                if crop.size == 0 or white_mask(crop).mean() > 0.02:
+                    continue
+                roi = frame[max(0, cy - 36):min(C.FRAME_H, cy + 30), max(0, cx - 32):min(C.FRAME_W, cx + 32)]
+                if roi.shape[0] < 40 or roi.shape[1] < 40:
+                    continue
+                hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+                non_felt = ~((hsv[:, :, 0] >= 40) & (hsv[:, :, 0] <= 95) & (hsv[:, :, 1] >= 50) & (hsv[:, :, 2] < 170))
+                if roi.shape[0] > 58:
+                    non_felt[58:, :] = False
+                ys, xs = np.nonzero(non_felt)
+                if ys.size < 200:
+                    continue
+                y0, y1, x0, x1 = int(ys.min()), int(ys.max()) + 1, int(xs.min()), int(xs.max()) + 1
+                bw, bh = x1 - x0, y1 - y0
+                if not (34 <= bw <= 62 and 34 <= bh <= 62 and abs(bw - bh) <= 12):
+                    continue
+                badge = roi[y0:y1, x0:x1]
+                b, g, r = badge[:, :, 0].astype(int), badge[:, :, 1].astype(int), badge[:, :, 2].astype(int)
+                red = ((r >= 65) & (r - g >= 45) & (r - b >= 45)).mean()
+                yellow = ((r >= 85) & (g >= 70) & (r - b >= 40) & (g - b >= 30)).mean()
+                if red >= 0.25 and yellow >= 0.06:
+                    if bank.add_negative(badge, C.clip_key(video), tag="badge"):
+                        total += 1
+                        if total >= limit:
+                            return total
     return total
 
 
