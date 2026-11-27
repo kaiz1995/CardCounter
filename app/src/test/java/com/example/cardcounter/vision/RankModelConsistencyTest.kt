@@ -145,7 +145,7 @@ class RankModelConsistencyTest {
     }
 
     private companion object {
-        const val MODEL_SHA256 = "d206890df69e44673e8392f90e1211fdc5a66fe45f864840fff62e4bd5df5bf3"
+        const val MODEL_SHA256 = "f330379a5468ae300276c693da7e3146c516276ccd8a2627ea20ce7b7de2d5f6"
         const val MODEL_SIZE = 10_450_050L
     }
 }

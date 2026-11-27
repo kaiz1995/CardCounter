@@ -174,7 +174,7 @@ def main() -> None:
                     "w": round(w, 4),
                     "h": round(h, 4),
                 }
-                for c, s, cx, cy, w, h in sorted(dets_mask, key=lambda d: (round(d[3] / 12.0), d[2], d[0]))
+                for c, s, cx, cy, w, h in sorted(dets_mask, key=lambda d: (round(d[3] / 20.0), d[2], d[0]))
             ],
             "single": {r: merge.single[r] for r in ds.RANK_ORDER if merge.single[r] > 0},
             "merged": {r: merge.merged[r] for r in ds.RANK_ORDER if merge.merged[r] > 0},

@@ -190,7 +190,7 @@ class HandGoldenConsistencyTest {
                     val wantDets = want.getJSONArray("detections")
                     val sortedDetections = detections.sortedWith(
                         compareBy<com.example.cardcounter.vision.YoloDetection>(
-                            { kotlin.math.round(it.centerY / 12f).toInt() },
+                            { kotlin.math.round(it.centerY / 20f).toInt() },
                             { it.centerX },
                             { it.rank.ordinal }
                         )
