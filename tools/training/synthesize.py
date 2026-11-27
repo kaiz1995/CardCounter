@@ -277,12 +277,25 @@ def make_play_scene(assets: Assets, rng: random.Random, self_zone: bool, occlude
         [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
         weights=[18, 22, 14, 12, 9, 8, 5, 4, 3, 2, 2, 1],
     )[0]
-    joker_prob = 0.24 if not self_zone else 0.14
+    joker_prob = 0.28 if not self_zone else 0.14
     if rng.random() < joker_prob and count >= 2:
-        # 挂王炸弹真实牌局普遍出现在各类点数上（如 J*4+大王、K*2+小王），不仅限挂 2
+        # 挂王炸弹真实牌局包括纯同点（大王+J*4）和带 2 混搭（大王+2+9*4）
         joker = "BIG_JOKER" if rng.random() < 0.6 else "SMALL_JOKER"
-        base_rank = "TWO" if rng.random() < 0.3 else rng.choice(C.RANKS[2:])
-        ranks = [joker] + [base_rank] * (count - 1)
+        if count >= 3 and rng.random() < 0.45:
+            n_two = rng.randint(1, min(2, count - 2))
+            base_rank = rng.choice(C.RANKS[3:])
+            ranks = [joker] + ["TWO"] * n_two + [base_rank] * (count - 1 - n_two)
+        else:
+            base_rank = "TWO" if rng.random() < 0.25 else rng.choice(C.RANKS[3:])
+            ranks = [joker] + [base_rank] * (count - 1)
+    elif count >= 2 and rng.random() < 0.18:
+        # 常见带 2 出牌（2+9*4）或混点数序列，防止模型靠相邻牌猜测当前牌
+        if rng.random() < 0.75:
+            n_two = rng.randint(1, min(2, count - 1))
+            base_rank = rng.choice(C.RANKS[3:])
+            ranks = ["TWO"] * n_two + [base_rank] * (count - n_two)
+        else:
+            ranks = [rng.choice(C.RANKS[2:]) for _ in range(count)]
     elif count == 1 and not self_zone and rng.random() < 0.08:
         ranks = ["BIG_JOKER" if rng.random() < 0.6 else "SMALL_JOKER"]
     else:
